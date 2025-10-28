@@ -1,0 +1,1230 @@
+import { useState, useEffect, useRef } from 'react'
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet'
+import { Upload, MapPin, Filter, Ruler, X, Plus, Image as ImageIcon, Save, Trash2, Download, Share2, FolderPlus, Edit2, Route } from 'lucide-react'
+import { Button } from '@/components/ui/button.jsx'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.jsx'
+import { Input } from '@/components/ui/input.jsx'
+import { Label } from '@/components/ui/label.jsx'
+import { Textarea } from '@/components/ui/textarea.jsx'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select.jsx'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.jsx'
+import { supabase } from './lib/supabase'
+import JSZip from 'jszip'
+import L from 'leaflet'
+import { Network } from '@capacitor/network'
+import { Preferences } from '@capacitor/preferences'
+import './App.css'
+
+// Fix para ícones do Leaflet
+delete L.Icon.Default.prototype._getIconUrl
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+})
+
+// Bairros padrão
+const DEFAULT_BAIRROS = [
+  'Ponta Verde',
+  'Pajuçara',
+  'Jatiúca',
+  'Mangabeiras',
+  'Farol',
+  'Prado',
+  'Centro',
+  'Jaraguá',
+  'Poço',
+  'Levada'
+]
+
+// Componente para ajustar o mapa quando os marcadores mudam
+function MapBounds({ markers }) {
+  const map = useMap()
+  
+  useEffect(() => {
+    if (markers.length > 0) {
+      const bounds = L.latLngBounds(markers.map(m => [m.lat, m.lng]))
+      map.fitBounds(bounds, { padding: [50, 50] })
+    }
+  }, [markers, map])
+  
+  return null
+}
+
+// Componente para desenhar rota animada
+function AnimatedRoute({ routeCoordinates, onRouteComplete }) {
+  const map = useMap()
+  const polylineRef = useRef(null)
+  
+  useEffect(() => {
+    if (!routeCoordinates || routeCoordinates.length === 0) {
+      if (polylineRef.current) {
+        map.removeLayer(polylineRef.current)
+        polylineRef.current = null
+      }
+      return
+    }
+
+    // Remover polyline anterior se existir
+    if (polylineRef.current) {
+      map.removeLayer(polylineRef.current)
+    }
+
+    // Criar polyline animada
+    let currentIndex = 0
+    const animatedCoords = []
+    
+    const polyline = L.polyline([], {
+      color: '#06B6D4',
+      weight: 4,
+      opacity: 0.8,
+      smoothFactor: 1
+    }).addTo(map)
+    
+    polylineRef.current = polyline
+
+    // Animar o desenho da rota
+    const animate = () => {
+      if (currentIndex < routeCoordinates.length) {
+        animatedCoords.push(routeCoordinates[currentIndex])
+        polyline.setLatLngs(animatedCoords)
+        currentIndex++
+        setTimeout(animate, 10) // Velocidade da animação
+      } else {
+        // Ajustar o mapa para mostrar toda a rota
+        const bounds = L.latLngBounds(routeCoordinates)
+        map.fitBounds(bounds, { padding: [50, 50] })
+        if (onRouteComplete) onRouteComplete()
+      }
+    }
+    
+    animate()
+
+    return () => {
+      if (polylineRef.current) {
+        map.removeLayer(polylineRef.current)
+        polylineRef.current = null
+      }
+    }
+  }, [routeCoordinates, map, onRouteComplete])
+  
+  return null
+}
+
+function App() {
+  const [markers, setMarkers] = useState([])
+  const [filteredMarkers, setFilteredMarkers] = useState([])
+  const [selectedBairro, setSelectedBairro] = useState('todos')
+  const [editingMarker, setEditingMarker] = useState(null)
+  const [selectedForDistance, setSelectedForDistance] = useState([])
+  const [distanceResult, setDistanceResult] = useState(null)
+  const [uploading, setUploading] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [bairros, setBairros] = useState(DEFAULT_BAIRROS)
+  const [showAddBairro, setShowAddBairro] = useState(false)
+  const [newBairro, setNewBairro] = useState('')
+  const [activeTab, setActiveTab] = useState('todos')
+  const [routeCoordinates, setRouteCoordinates] = useState([])
+  const [calculatingRoute, setCalculatingRoute] = useState(false)
+  const [isOnline, setIsOnline] = useState(true)
+  const [syncPending, setSyncPending] = useState(false)
+
+  // Carregar bairros personalizados do localStorage
+  useEffect(() => {
+    const savedBairros = localStorage.getItem('jamaaw_bairros')
+    if (savedBairros) {
+      setBairros(JSON.parse(savedBairros))
+    }
+  }, [])
+
+  // Salvar bairros personalizados no localStorage
+  const saveBairros = (newBairros) => {
+    setBairros(newBairros)
+    localStorage.setItem('jamaaw_bairros', JSON.stringify(newBairros))
+  }
+
+  // Adicionar novo bairro
+  const handleAddBairro = () => {
+    if (newBairro.trim() && !bairros.includes(newBairro.trim())) {
+      const updatedBairros = [...bairros, newBairro.trim()]
+      saveBairros(updatedBairros)
+      setNewBairro('')
+      setShowAddBairro(false)
+    }
+  }
+
+  // Remover bairro
+  const handleRemoveBairro = (bairro) => {
+    if (DEFAULT_BAIRROS.includes(bairro)) {
+      alert('Não é possível remover bairros padrão.')
+      return
+    }
+    if (confirm(`Deseja remover o bairro "${bairro}"?`)) {
+      const updatedBairros = bairros.filter(b => b !== bairro)
+      saveBairros(updatedBairros)
+      if (selectedBairro === bairro) {
+        setSelectedBairro('todos')
+      }
+      if (activeTab === bairro) {
+        setActiveTab('todos')
+      }
+    }
+  }
+
+  // Monitorar conectividade
+  useEffect(() => {
+    const checkConnectivity = async () => {
+      const status = await Network.getStatus()
+      setIsOnline(status.connected)
+    }
+
+    checkConnectivity()
+
+    // Listener para mudanças de conectividade
+    const networkListener = Network.addListener('networkStatusChange', status => {
+      setIsOnline(status.connected)
+      if (status.connected && syncPending) {
+        // Quando voltar online, sincronizar dados pendentes
+        loadMarkers()
+        setSyncPending(false)
+      }
+    })
+
+    return () => {
+      networkListener.remove()
+    }
+  }, [syncPending])
+
+  // Carregar marcações do Supabase ao iniciar
+  useEffect(() => {
+    loadMarkers()
+  }, [])
+
+  // Função para carregar marcações do Supabase ou cache local
+  const loadMarkers = async () => {
+    try {
+      setLoading(true)
+      
+      // Tentar carregar do Supabase se estiver online
+      if (isOnline) {
+        const { data, error } = await supabase
+          .from('marcacoes')
+          .select('*')
+          .order('created_at', { ascending: false })
+
+        if (error) {
+          if (error.code === '42P01') {
+            console.log('Tabela não existe, será criada no primeiro upload')
+          } else {
+            console.error('Erro ao carregar marcações:', error)
+            // Se falhar, tentar carregar do cache local
+            await loadMarkersFromCache()
+          }
+        } else {
+          setMarkers(data || [])
+          // Salvar no cache local para uso offline
+          await Preferences.set({
+            key: 'jamaaw_markers',
+            value: JSON.stringify(data || [])
+          })
+        }
+      } else {
+        // Se offline, carregar do cache local
+        await loadMarkersFromCache()
+      }
+    } catch (error) {
+      console.error('Erro ao carregar marcações:', error)
+      // Em caso de erro, tentar carregar do cache local
+      await loadMarkersFromCache()
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Função para carregar marcações do cache local
+  const loadMarkersFromCache = async () => {
+    try {
+      const { value } = await Preferences.get({ key: 'jamaaw_markers' })
+      if (value) {
+        const cachedMarkers = JSON.parse(value)
+        setMarkers(cachedMarkers)
+        console.log('Marcações carregadas do cache local')
+      }
+    } catch (error) {
+      console.error('Erro ao carregar marcações do cache:', error)
+    }
+  }
+
+  // Função para salvar marcação no Supabase
+  const saveMarkerToSupabase = async (marker) => {
+    try {
+      const { data, error } = await supabase
+        .from('marcacoes')
+        .insert([{
+          name: marker.name,
+          lat: marker.lat,
+          lng: marker.lng,
+          bairro: marker.bairro || null,
+          rua: marker.rua || null,
+          descricao: marker.descricao || null,
+          fotos: marker.fotos || []
+        }])
+        .select()
+
+      if (error) throw error
+      return data[0]
+    } catch (error) {
+      console.error('Erro ao salvar marcação:', error)
+      return null
+    }
+  }
+
+  // Função para atualizar marcação no Supabase
+  const updateMarkerInSupabase = async (marker) => {
+    try {
+      const { error } = await supabase
+        .from('marcacoes')
+        .update({
+          name: marker.name,
+          bairro: marker.bairro,
+          rua: marker.rua,
+          descricao: marker.descricao,
+          fotos: marker.fotos,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', marker.id)
+
+      if (error) throw error
+      return true
+    } catch (error) {
+      console.error('Erro ao atualizar marcação:', error)
+      return false
+    }
+  }
+
+  // Função para deletar marcação do Supabase
+  const deleteMarkerFromSupabase = async (markerId) => {
+    try {
+      const { error } = await supabase
+        .from('marcacoes')
+        .delete()
+        .eq('id', markerId)
+
+      if (error) throw error
+      return true
+    } catch (error) {
+      console.error('Erro ao deletar marcação:', error)
+      return false
+    }
+  }
+
+  // Filtrar marcadores por bairro e aba ativa
+  useEffect(() => {
+    try {
+      let filtered = [...markers] // Criar cópia do array
+      
+      if (activeTab && activeTab !== 'todos') {
+        filtered = filtered.filter(m => m.bairro === activeTab)
+      }
+      
+      if (selectedBairro && selectedBairro !== 'todos') {
+        filtered = filtered.filter(m => m.bairro === selectedBairro)
+      }
+      
+      setFilteredMarkers(filtered)
+    } catch (error) {
+      console.error('Erro ao filtrar marcadores:', error)
+      setFilteredMarkers([])
+    }
+  }, [selectedBairro, markers, activeTab])
+
+  // Função para fazer upload de arquivo KML/KMZ
+  const handleFileUpload = async (event) => {
+    const file = event.target.files[0]
+    if (!file) return
+
+    setUploading(true)
+    try {
+      let kmlContent = ''
+
+      if (file.name.endsWith('.kmz')) {
+        const zip = new JSZip()
+        const contents = await zip.loadAsync(file)
+        const kmlFile = Object.keys(contents.files).find(name => name.endsWith('.kml'))
+        if (kmlFile) {
+          kmlContent = await contents.files[kmlFile].async('string')
+        }
+      } else {
+        kmlContent = await file.text()
+      }
+
+      const parser = new DOMParser()
+      const xmlDoc = parser.parseFromString(kmlContent, 'text/xml')
+      const placemarks = xmlDoc.getElementsByTagName('Placemark')
+
+      const newMarkers = []
+      for (let i = 0; i < placemarks.length; i++) {
+        const placemark = placemarks[i]
+        const name = placemark.getElementsByTagName('name')[0]?.textContent || `Marcação ${i + 1}`
+        const coordinates = placemark.getElementsByTagName('coordinates')[0]?.textContent.trim()
+        
+        if (coordinates) {
+          const [lng, lat] = coordinates.split(',').map(parseFloat)
+          const markerData = {
+            name,
+            lat,
+            lng,
+            bairro: '',
+            rua: '',
+            descricao: '',
+            fotos: []
+          }
+          
+          const savedMarker = await saveMarkerToSupabase(markerData)
+          if (savedMarker) {
+            newMarkers.push(savedMarker)
+          }
+        }
+      }
+
+      setMarkers(prev => [...newMarkers, ...prev])
+      
+      const { data, error } = await supabase.storage
+        .from('kmz-files')
+        .upload(`uploads/${Date.now()}_${file.name}`, file)
+
+      if (error) {
+        console.error('Erro ao fazer upload:', error)
+      }
+
+      alert(`${newMarkers.length} marcações importadas com sucesso!`)
+    } catch (error) {
+      console.error('Erro ao processar arquivo:', error)
+      alert('Erro ao processar arquivo. Verifique se é um arquivo KML/KMZ válido.')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  // Função para obter nome da rua via geocoding reverso
+  const getRuaFromCoords = async (lat, lng) => {
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`
+      )
+      const data = await response.json()
+      return data.address?.road || data.display_name || 'Endereço não encontrado'
+    } catch (error) {
+      console.error('Erro ao buscar endereço:', error)
+      return 'Erro ao buscar endereço'
+    }
+  }
+
+  // Função para editar marcador
+  const handleEditMarker = async (marker) => {
+    const rua = marker.rua || await getRuaFromCoords(marker.lat, marker.lng)
+    setEditingMarker({ ...marker, rua })
+  }
+
+  // Função para salvar edição
+  const handleSaveEdit = async () => {
+    const success = await updateMarkerInSupabase(editingMarker)
+    if (success) {
+      setMarkers(prev =>
+        prev.map(m => (m.id === editingMarker.id ? editingMarker : m))
+      )
+      setEditingMarker(null)
+    } else {
+      alert('Erro ao salvar alterações')
+    }
+  }
+
+  // Função para deletar marcação
+  const handleDeleteMarker = async (markerId) => {
+    if (!confirm('Tem certeza que deseja deletar esta marcação?')) return
+    
+    const success = await deleteMarkerFromSupabase(markerId)
+    if (success) {
+      setMarkers(prev => prev.filter(m => m.id !== markerId))
+      if (editingMarker?.id === markerId) {
+        setEditingMarker(null)
+      }
+    } else {
+      alert('Erro ao deletar marcação')
+    }
+  }
+
+  // Função para upload de fotos
+  const handlePhotoUpload = async (event) => {
+    const files = Array.from(event.target.files)
+    const uploadedUrls = []
+
+    for (const file of files) {
+      try {
+        const { data, error } = await supabase.storage
+          .from('kmz-files')
+          .upload(`photos/${Date.now()}_${file.name}`, file)
+
+        if (error) throw error
+
+        const { data: { publicUrl } } = supabase.storage
+          .from('kmz-files')
+          .getPublicUrl(data.path)
+
+        uploadedUrls.push(publicUrl)
+      } catch (error) {
+        console.error('Erro ao fazer upload de foto:', error)
+      }
+    }
+
+    setEditingMarker(prev => ({
+      ...prev,
+      fotos: [...(prev.fotos || []), ...uploadedUrls]
+    }))
+  }
+
+  // Função para obter rota usando OSRM (Open Source Routing Machine) API pública
+  const getRouteFromAPI = async (start, end) => {
+    try {
+      // OSRM usa formato: lng,lat;lng,lat
+      const response = await fetch(
+        `https://router.project-osrm.org/route/v1/foot/${start[0]},${start[1]};${end[0]},${end[1]}?overview=full&geometries=geojson`,
+        {
+          headers: {
+            'Accept': 'application/json'
+          }
+        }
+      )
+
+      if (!response.ok) {
+        throw new Error('Erro na API de roteamento')
+      }
+
+      const data = await response.json()
+      
+      if (data.routes && data.routes[0] && data.routes[0].geometry) {
+        const coordinates = data.routes[0].geometry.coordinates
+        // Converter de [lng, lat] para [lat, lng] para o Leaflet
+        return coordinates.map(coord => [coord[1], coord[0]])
+      }
+      
+      return null
+    } catch (error) {
+      console.error('Erro ao buscar rota:', error)
+      return null
+    }
+  }
+
+  // Função para calcular distância usando OSRM Table API (Distance Matrix)
+  const calculateDistanceMatrix = async (coordinates) => {
+    try {
+      // OSRM Table API usa formato: lng,lat;lng,lat
+      const coordsString = coordinates.map(c => `${c[0]},${c[1]}`).join(';')
+      const response = await fetch(
+        `https://router.project-osrm.org/table/v1/foot/${coordsString}?annotations=distance`,
+        {
+          headers: {
+            'Accept': 'application/json'
+          }
+        }
+      )
+
+      if (!response.ok) {
+        throw new Error('Erro na API de Distance Matrix')
+      }
+
+      const data = await response.json()
+      return data.distances
+    } catch (error) {
+      console.error('Erro ao calcular distância via API:', error)
+      return null
+    }
+  }
+
+  // Função para calcular distância entre dois pontos (Haversine - fallback)
+  const calculateDistance = (lat1, lng1, lat2, lng2) => {
+    const R = 6371e3
+    const φ1 = (lat1 * Math.PI) / 180
+    const φ2 = (lat2 * Math.PI) / 180
+    const Δφ = ((lat2 - lat1) * Math.PI) / 180
+    const Δλ = ((lng2 - lng1) * Math.PI) / 180
+
+    const a =
+      Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+      Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2)
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+
+    return R * c
+  }
+
+  // Função para selecionar marcadores para cálculo de distância
+  const toggleDistanceSelection = (marker) => {
+    setSelectedForDistance(prev => {
+      const exists = prev.find(m => m.id === marker.id)
+      if (exists) {
+        return prev.filter(m => m.id !== marker.id)
+      } else {
+        if (prev.length >= 2) {
+          return [prev[1], marker]
+        }
+        return [...prev, marker]
+      }
+    })
+  }
+
+  // Função para calcular distância entre marcadores selecionados com visualização de rota
+  const handleCalculateDistance = async () => {
+    if (selectedForDistance.length === 2) {
+      setCalculatingRoute(true)
+      const [m1, m2] = selectedForDistance
+      
+      // Buscar rota da API
+      const route = await getRouteFromAPI([m1.lng, m1.lat], [m2.lng, m2.lat])
+      
+      if (route) {
+        // Desenhar rota no mapa
+        setRouteCoordinates(route)
+        
+        // Calcular distância usando Distance Matrix
+        const coordinates = [
+          [m1.lng, m1.lat],
+          [m2.lng, m2.lat]
+        ]
+        
+        const distanceMatrix = await calculateDistanceMatrix(coordinates)
+        let distance
+
+        if (distanceMatrix && distanceMatrix[0] && distanceMatrix[0][1]) {
+          distance = distanceMatrix[0][1]
+        } else {
+          distance = calculateDistance(m1.lat, m1.lng, m2.lat, m2.lng)
+        }
+
+        setDistanceResult({
+          type: 'dois',
+          distance: distance.toFixed(2),
+          markers: [m1.name, m2.name],
+          method: 'rota'
+        })
+      } else {
+        // Fallback: linha reta
+        const distance = calculateDistance(m1.lat, m1.lng, m2.lat, m2.lng)
+        setRouteCoordinates([[m1.lat, m1.lng], [m2.lat, m2.lng]])
+        
+        setDistanceResult({
+          type: 'dois',
+          distance: distance.toFixed(2),
+          markers: [m1.name, m2.name],
+          method: 'linha reta'
+        })
+      }
+      
+      setCalculatingRoute(false)
+    } else {
+      alert('Selecione exatamente 2 marcadores para calcular a distância.')
+    }
+  }
+
+  // Função para limpar rota do mapa
+  const handleClearRoute = () => {
+    setRouteCoordinates([])
+    setDistanceResult(null)
+    setSelectedForDistance([])
+  }
+
+  // Função para calcular distância entre todos os marcadores
+  const handleCalculateAllDistances = () => {
+    const markersToCalculate = activeTab === 'todos' 
+      ? markers 
+      : markers.filter(m => m.bairro === activeTab)
+
+    if (markersToCalculate.length < 2) {
+      alert('É necessário ter pelo menos 2 marcadores.')
+      return
+    }
+
+    let totalDistance = 0
+    const distances = []
+
+    for (let i = 0; i < markersToCalculate.length - 1; i++) {
+      for (let j = i + 1; j < markersToCalculate.length; j++) {
+        const m1 = markersToCalculate[i]
+        const m2 = markersToCalculate[j]
+        const distance = calculateDistance(m1.lat, m1.lng, m2.lat, m2.lng)
+        totalDistance += distance
+        distances.push({
+          from: m1.name,
+          to: m2.name,
+          distance: distance.toFixed(2)
+        })
+      }
+    }
+
+    setDistanceResult({
+      type: 'todos',
+      totalDistance: totalDistance.toFixed(2),
+      count: distances.length,
+      distances: distances.slice(0, 10),
+      method: 'linha reta'
+    })
+  }
+
+  // Função para exportar marcações como KML
+  const handleExportKML = () => {
+    const markersToExport = activeTab === 'todos' 
+      ? markers 
+      : markers.filter(m => m.bairro === activeTab)
+
+    if (markersToExport.length === 0) {
+      alert('Nenhuma marcação para exportar.')
+      return
+    }
+
+    let kmlContent = `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>Marcações Jamaaw</name>
+    <description>Exportado do Jamaaw Map</description>
+`
+
+    markersToExport.forEach(marker => {
+      kmlContent += `
+    <Placemark>
+      <name>${marker.name}</name>
+      <description>${marker.bairro || ''} - ${marker.rua || ''}</description>
+      <Point>
+        <coordinates>${marker.lng},${marker.lat},0</coordinates>
+      </Point>
+    </Placemark>`
+    })
+
+    kmlContent += `
+  </Document>
+</kml>`
+
+    const blob = new Blob([kmlContent], { type: 'application/vnd.google-earth.kml+xml' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `jamaaw-marcacoes-${Date.now()}.kml`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  // Função para compartilhar localização
+  const handleShareLocation = (marker) => {
+    const url = `https://www.google.com/maps?q=${marker.lat},${marker.lng}`
+    if (navigator.share) {
+      navigator.share({
+        title: marker.name,
+        text: `${marker.name} - ${marker.bairro || ''}`,
+        url: url
+      })
+    } else {
+      navigator.clipboard.writeText(url)
+      alert('Link copiado para a área de transferência!')
+    }
+  }
+
+  // Contar marcações por bairro
+  const getMarkerCountByBairro = (bairro) => {
+    if (bairro === 'todos') return markers.length
+    return markers.filter(m => m.bairro === bairro).length
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-cyan-50 via-blue-50 to-purple-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-500 mx-auto"></div>
+          <p className="mt-4 text-gray-700 font-medium">Carregando marcações...</p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-cyan-50 via-blue-50 to-purple-50 pb-20 md:pb-0">
+      {/* Header */}
+      <header className="bg-gradient-to-r from-slate-800 via-slate-900 to-slate-800 shadow-lg border-b border-cyan-500/20 sticky top-0 z-50">
+        <div className="container mx-auto px-3 py-3 md:px-4 md:py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <img src="/jamaaw-logo.jpg" alt="Jamaaw" className="w-10 h-10 md:w-12 md:h-12 rounded-lg" />
+              <div>
+                <h1 className="text-lg md:text-2xl font-bold text-white">Jamaaw Map</h1>
+                <p className="text-xs md:text-sm text-cyan-400 hidden sm:block">Gerenciador de Marcações</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {routeCoordinates.length > 0 && (
+                <Button
+                  onClick={handleClearRoute}
+                  variant="outline"
+                  size="sm"
+                  className="border-red-500/30 text-red-400 hover:bg-red-500/10"
+                >
+                  <X className="w-4 h-4 md:mr-2" />
+                  <span className="hidden md:inline">Cancelar</span>
+                </Button>
+              )}
+              <Button
+                onClick={handleExportKML}
+                variant="outline"
+                size="sm"
+                className="hidden md:flex border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10"
+              >
+                <Download className="w-4 h-4 md:mr-2" />
+                <span className="hidden md:inline">Exportar</span>
+              </Button>
+              <Input
+                type="file"
+                accept=".kml,.kmz"
+                onChange={handleFileUpload}
+                className="hidden"
+                id="file-upload"
+              />
+              <Label htmlFor="file-upload">
+                <Button asChild disabled={uploading} size="sm" className="bg-cyan-500 hover:bg-cyan-600 text-white">
+                  <span className="cursor-pointer">
+                    <Upload className="w-4 h-4 md:mr-2" />
+                    <span className="hidden md:inline">{uploading ? 'Carregando...' : 'Importar'}</span>
+                  </span>
+                </Button>
+              </Label>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <div className="container mx-auto px-2 py-3 md:px-4 md:py-6">
+        <div className="flex flex-col md:grid md:grid-cols-3 gap-3 md:gap-6">
+          {/* Mapa */}
+          <div className="order-1 md:order-2 md:col-span-2">
+            <Card className="h-[50vh] md:h-[calc(100vh-12rem)] border-cyan-200 shadow-xl">
+              <CardContent className="p-0 h-full relative">
+                <MapContainer
+                  center={[-9.6658, -35.7353]}
+                  zoom={13}
+                  className="h-full w-full rounded-lg"
+                  zoomControl={true}
+                >
+                  <TileLayer
+                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+                    url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+                    subdomains="abcd"
+                    maxZoom={20}
+                  />
+                  {filteredMarkers.map(marker => (
+                    <Marker
+                      key={marker.id}
+                      position={[marker.lat, marker.lng]}
+                      eventHandlers={{
+                        click: () => handleEditMarker(marker)
+                      }}
+                    >
+                      <Popup>
+                        <div className="text-sm">
+                          <h3 className="font-semibold text-slate-900">{marker.name}</h3>
+                          {marker.bairro && <p className="text-xs text-gray-600">{marker.bairro}</p>}
+                          {marker.rua && <p className="text-xs text-gray-600">{marker.rua}</p>}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="mt-2 w-full"
+                            onClick={() => handleShareLocation(marker)}
+                          >
+                            <Share2 className="w-3 h-3 mr-1" />
+                            Compartilhar
+                          </Button>
+                        </div>
+                      </Popup>
+                    </Marker>
+                  ))}
+                  <AnimatedRoute routeCoordinates={routeCoordinates} />
+                  <MapBounds markers={filteredMarkers} />
+                </MapContainer>
+                {calculatingRoute && (
+                  <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur-sm px-4 py-2 rounded-lg shadow-lg z-[1000] flex items-center gap-2">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-cyan-500"></div>
+                    <span className="text-sm font-medium text-slate-700">Calculando rota...</span>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Sidebar */}
+          <div className="order-2 md:order-1 md:col-span-1 space-y-3 md:space-y-4">
+            {/* Abas de Bairros */}
+            <Card className="border-cyan-200 shadow-lg">
+              <CardHeader className="pb-3 bg-gradient-to-r from-cyan-50 to-blue-50">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center gap-2 text-base md:text-lg text-slate-900">
+                    <FolderPlus className="w-4 h-4 md:w-5 md:h-5 text-cyan-600" />
+                    Pastas
+                  </CardTitle>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setShowAddBairro(!showAddBairro)}
+                    className="h-7 border-cyan-200 hover:bg-cyan-50"
+                  >
+                    <Plus className="w-3 h-3" />
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {showAddBairro && (
+                  <div className="flex gap-2">
+                    <Input
+                      value={newBairro}
+                      onChange={(e) => setNewBairro(e.target.value)}
+                      placeholder="Nome do bairro"
+                      className="h-8 text-sm border-cyan-200"
+                      onKeyPress={(e) => e.key === 'Enter' && handleAddBairro()}
+                    />
+                    <Button size="sm" onClick={handleAddBairro} className="h-8 bg-cyan-500 hover:bg-cyan-600">
+                      <Plus className="w-3 h-3" />
+                    </Button>
+                  </div>
+                )}
+                <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                  <TabsList className="w-full flex-wrap h-auto gap-1 bg-cyan-50/50">
+                    <TabsTrigger value="todos" className="text-xs data-[state=active]:bg-cyan-500 data-[state=active]:text-white">
+                      Todos ({getMarkerCountByBairro('todos')})
+                    </TabsTrigger>
+                    {bairros.map(bairro => (
+                      <div key={bairro} className="relative group">
+                        <TabsTrigger 
+                          value={bairro} 
+                          className="text-xs data-[state=active]:bg-cyan-500 data-[state=active]:text-white pr-6"
+                        >
+                          {bairro} ({getMarkerCountByBairro(bairro)})
+                        </TabsTrigger>
+                        {!DEFAULT_BAIRROS.includes(bairro) && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleRemoveBairro(bairro)
+                            }}
+                            className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <X className="w-3 h-3 text-red-500" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </TabsList>
+                </Tabs>
+              </CardContent>
+            </Card>
+
+            {/* Filtros */}
+            <Card className="border-cyan-200 shadow-lg">
+              <CardHeader className="pb-3 bg-gradient-to-r from-cyan-50 to-blue-50">
+                <CardTitle className="flex items-center gap-2 text-base md:text-lg text-slate-900">
+                  <Filter className="w-4 h-4 md:w-5 md:h-5 text-cyan-600" />
+                  Filtros
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div>
+                  <Label className="text-sm text-slate-700">Filtrar por Bairro</Label>
+                  <Select value={selectedBairro} onValueChange={setSelectedBairro}>
+                    <SelectTrigger className="h-9 border-cyan-200 focus:ring-cyan-500">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todos">Todos os Bairros</SelectItem>
+                      {bairros.map(bairro => (
+                        <SelectItem key={bairro} value={bairro}>{bairro}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="pt-2 border-t border-cyan-100">
+                  <p className="text-sm text-slate-700">
+                    <strong className="text-cyan-600">{filteredMarkers.length}</strong> marcações exibidas
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Cálculo de Distâncias */}
+            <Card className="border-cyan-200 shadow-lg">
+              <CardHeader className="pb-3 bg-gradient-to-r from-purple-50 to-blue-50">
+                <CardTitle className="flex items-center gap-2 text-base md:text-lg text-slate-900">
+                  <Ruler className="w-4 h-4 md:w-5 md:h-5 text-purple-600" />
+                  Distâncias
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="space-y-2">
+                  <Button 
+                    onClick={handleCalculateDistance} 
+                    className="w-full h-9 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600"
+                    size="sm"
+                    disabled={selectedForDistance.length !== 2 || calculatingRoute}
+                  >
+                    <Route className="w-4 h-4 mr-2" />
+                    {calculatingRoute ? 'Calculando...' : 'Calcular Rota entre 2 Postes'}
+                  </Button>
+                  <p className="text-xs text-slate-600">
+                    {selectedForDistance.length} marcações selecionadas
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Button 
+                    onClick={handleCalculateAllDistances} 
+                    className="w-full h-9 bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600"
+                    size="sm"
+                  >
+                    <Ruler className="w-4 h-4 mr-2" />
+                    Calcular Todas
+                  </Button>
+                  <p className="text-xs text-slate-600">
+                    {activeTab === 'todos' ? 'Todas as marcações' : `Pasta ${activeTab}`}
+                  </p>
+                </div>
+
+                {distanceResult && (
+                  <div className="mt-3 p-3 bg-gradient-to-r from-cyan-50 to-blue-50 rounded-lg border border-cyan-200">
+                    <div className="flex justify-between items-start mb-2">
+                      <h4 className="font-semibold text-sm text-slate-900">Resultado</h4>
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={() => setDistanceResult(null)}
+                        className="h-6 w-6 p-0 hover:bg-cyan-100"
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+                    {distanceResult.type === 'dois' ? (
+                      <div>
+                        <p className="text-xs text-slate-600 mb-1">
+                          {distanceResult.markers[0]} → {distanceResult.markers[1]}
+                        </p>
+                        <p className="text-lg font-bold text-cyan-600">
+                          {distanceResult.distance} metros
+                        </p>
+                        <p className="text-xs text-slate-500 mt-1">
+                          Método: {distanceResult.method}
+                        </p>
+                      </div>
+                    ) : (
+                      <div>
+                        <p className="text-xs text-slate-600 mb-1">
+                          {distanceResult.count} pares calculados
+                        </p>
+                        <p className="text-lg font-bold text-purple-600">
+                          Total: {distanceResult.totalDistance} metros
+                        </p>
+                        <p className="text-xs text-slate-500 mt-1">
+                          Método: {distanceResult.method}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Lista de Marcações */}
+            <Card className="border-cyan-200 shadow-lg">
+              <CardHeader className="pb-3 bg-gradient-to-r from-blue-50 to-cyan-50">
+                <CardTitle className="text-base md:text-lg text-slate-900">
+                  Marcações ({filteredMarkers.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2 max-h-64 md:max-h-96 overflow-y-auto">
+                  {filteredMarkers.map(marker => (
+                    <div
+                      key={marker.id}
+                      className="p-2 md:p-3 border border-cyan-100 rounded-lg hover:bg-cyan-50 transition-colors"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0 cursor-pointer" onClick={() => handleEditMarker(marker)}>
+                          <h4 className="font-semibold text-sm truncate text-slate-900">{marker.name}</h4>
+                          {marker.bairro && (
+                            <p className="text-xs text-slate-600 truncate">{marker.bairro}</p>
+                          )}
+                        </div>
+                        <div className="flex gap-1">
+                          <Button
+                            variant={selectedForDistance.find(m => m.id === marker.id) ? "default" : "outline"}
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              toggleDistanceSelection(marker)
+                            }}
+                            className={`h-8 w-8 p-0 ${selectedForDistance.find(m => m.id === marker.id) ? 'bg-cyan-500 hover:bg-cyan-600' : 'border-cyan-200'}`}
+                          >
+                            <Ruler className="w-3 h-3" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleDeleteMarker(marker.id)
+                            }}
+                            className="h-8 w-8 p-0 text-red-600 hover:text-red-700 border-red-200"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {filteredMarkers.length === 0 && (
+                    <p className="text-sm text-slate-500 text-center py-8">
+                      Nenhuma marcação encontrada. Importe um arquivo KML/KMZ para começar.
+                    </p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </div>
+
+      {/* Modal de Edição */}
+      {editingMarker && (
+        <div className="fixed inset-0 bg-black/50 flex items-end md:items-center justify-center z-[9999] p-0 md:p-4">
+          <Card className="w-full md:max-w-2xl max-h-[90vh] overflow-y-auto rounded-t-2xl md:rounded-lg border-cyan-200">
+            <CardHeader className="sticky top-0 bg-gradient-to-r from-cyan-50 to-blue-50 z-10 border-b border-cyan-200">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-lg md:text-xl text-slate-900">Editar Marcação</CardTitle>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setEditingMarker(null)}
+                  className="h-8 w-8 p-0 hover:bg-cyan-100"
+                >
+                  <X className="w-5 h-5" />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4 p-4 md:p-6">
+              <div>
+                <Label className="text-sm text-slate-700">Nome</Label>
+                <Input
+                  value={editingMarker.name}
+                  onChange={(e) => setEditingMarker({ ...editingMarker, name: e.target.value })}
+                  className="h-10 border-cyan-200 focus:ring-cyan-500"
+                />
+              </div>
+              <div>
+                <Label className="text-sm text-slate-700">Bairro</Label>
+                <Select
+                  value={editingMarker.bairro}
+                  onValueChange={(value) => setEditingMarker({ ...editingMarker, bairro: value })}
+                >
+                  <SelectTrigger className="h-10 border-cyan-200 focus:ring-cyan-500">
+                    <SelectValue placeholder="Selecione um bairro" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {bairros.map(bairro => (
+                      <SelectItem key={bairro} value={bairro}>{bairro}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-sm text-slate-700">Rua</Label>
+                <Input
+                  value={editingMarker.rua}
+                  onChange={(e) => setEditingMarker({ ...editingMarker, rua: e.target.value })}
+                  placeholder="Nome da rua"
+                  className="h-10 border-cyan-200 focus:ring-cyan-500"
+                />
+              </div>
+              <div>
+                <Label className="text-sm text-slate-700">Descrição</Label>
+                <Textarea
+                  value={editingMarker.descricao}
+                  onChange={(e) => setEditingMarker({ ...editingMarker, descricao: e.target.value })}
+                  placeholder="Adicione uma descrição..."
+                  rows={3}
+                  className="border-cyan-200 focus:ring-cyan-500"
+                />
+              </div>
+              <div>
+                <Label className="text-sm text-slate-700">Fotos</Label>
+                <div className="space-y-2">
+                  <Input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={handlePhotoUpload}
+                    className="hidden"
+                    id="photo-upload"
+                  />
+                  <Label htmlFor="photo-upload">
+                    <Button asChild variant="outline" size="sm" className="w-full h-10 border-cyan-200 hover:bg-cyan-50">
+                      <span className="cursor-pointer">
+                        <ImageIcon className="w-4 h-4 mr-2" />
+                        Adicionar Fotos
+                      </span>
+                    </Button>
+                  </Label>
+                  {editingMarker.fotos && editingMarker.fotos.length > 0 && (
+                    <div className="grid grid-cols-3 gap-2 mt-2">
+                      {editingMarker.fotos.map((foto, index) => (
+                        <div key={index} className="relative aspect-square">
+                          <img
+                            src={foto}
+                            alt={`Foto ${index + 1}`}
+                            className="w-full h-full object-cover rounded-lg border-2 border-cyan-200"
+                          />
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            className="absolute top-1 right-1 h-6 w-6 p-0"
+                            onClick={() => {
+                              setEditingMarker({
+                                ...editingMarker,
+                                fotos: editingMarker.fotos.filter((_, i) => i !== index)
+                              })
+                            }}
+                          >
+                            <X className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="flex gap-2 pt-4">
+                <Button 
+                  onClick={handleSaveEdit} 
+                  className="flex-1 h-11 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600"
+                >
+                  <Save className="w-4 h-4 mr-2" />
+                  Salvar
+                </Button>
+                <Button 
+                  onClick={() => setEditingMarker(null)} 
+                  variant="outline" 
+                  className="flex-1 h-11 border-cyan-200 hover:bg-cyan-50"
+                >
+                  Cancelar
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default App
+
