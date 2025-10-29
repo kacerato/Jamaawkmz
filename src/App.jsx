@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet'
-import { Upload, MapPin, Ruler, X, Download, Share2, Edit2, Menu, LogOut, Heart, MapPinned, Layers, Play, Pause, Square, FolderOpen, Save, Navigation, Clock, Cloud, CloudOff, Archive, Camera, Plus } from 'lucide-react'
+import { Upload, MapPin, Ruler, X, Download, Share2, Edit2, Menu, LogOut, Heart, MapPinned, Layers, Play, Pause, Square, FolderOpen, Save, Navigation, Clock, Cloud, CloudOff, Archive, Camera, Plus, Star } from 'lucide-react'
 import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.jsx'
 import { Input } from '@/components/ui/input.jsx'
@@ -18,6 +18,8 @@ import { Preferences } from '@capacitor/preferences'
 import axios from 'axios'
 import { BackupManager } from './components/BackupManager'
 import ARCamera from './components/ARCamera'
+import ResumoProjeto from './components/ResumoProjeto';
+import ControlesRastreamento from './components/ControlesRastreamento';
 import './App.css'
 
 // Fix para ícones do Leaflet
@@ -2086,8 +2088,8 @@ function App() {
               }}
             >
               <Popup className="custom-popup">
-                <div className="text-sm min-w-[200px] max-w-[280px] p-4">
-                  <div className="flex items-start justify-between mb-3 gap-2">
+                <div className="text-sm min-w-[200px] max-w-[280px] p-1">
+                  <div className="flex items-start justify-between mb-2 gap-2">
                     <h3 className="font-bold text-base text-slate-900 flex-1">{marker.name}</h3>
                     <button
                       onClick={(e) => {
@@ -2102,31 +2104,31 @@ function App() {
                     </button>
                   </div>
     
-                  <div className="space-y-2 mb-3">
+                  <div className="space-y-1 mb-2">
                     {marker.bairro && (
-                      <div className="flex items-center gap-2 text-xs text-gray-700 bg-gray-50 px-2 py-1.5 rounded">
-                        <MapPin className="w-3.5 h-3.5 text-cyan-600 flex-shrink-0" />
+                      <div className="flex items-center gap-2 text-xs text-gray-700">
+                        <MapPin className="w-3 h-3 text-cyan-600 flex-shrink-0" />
                         <span className="font-medium">{marker.bairro}</span>
                       </div>
                     )}
                     {marker.rua && (
-                      <div className="flex items-center gap-2 text-xs text-gray-700 bg-gray-50 px-2 py-1.5 rounded">
-                        <MapPin className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
+                      <div className="flex items-center gap-2 text-xs text-gray-700">
+                        <MapPin className="w-3 h-3 text-blue-600 flex-shrink-0" />
                         <span>{marker.rua}</span>
                       </div>
                     )}
                   </div>
     
                   {marker.descricao && (
-                    <p className="text-xs text-gray-600 bg-blue-50 p-2 rounded mb-3 leading-relaxed">{marker.descricao}</p>
+                    <p className="text-xs text-gray-600 bg-blue-50 p-2 rounded mb-2 leading-relaxed">{marker.descricao}</p>
                   )}
                   <Button
                     size="sm"
                     className="w-full bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white shadow-md"
                     onClick={() => handleShareLocation(marker)}
                   >
-                    <Share2 className="w-3.5 h-3.5 mr-1.5" />
-                    Compartilhar Localização
+                    <Share2 className="w-3 h-3 mr-1.5" />
+                    Compartilhar
                   </Button>
                 </div>
               </Popup>
@@ -2660,24 +2662,14 @@ function App() {
           </div>
         </div>
 
-        {/* Botão da Régua Manual */}
         <Button
-          size="icon"
-          className="bg-gradient-to-br from-orange-500 to-red-600 backdrop-blur-sm hover:from-orange-600 hover:to-red-700 text-white shadow-xl border border-orange-600/50 transition-all-smooth hover-lift"
-          onClick={() => setShowRulerPopup(!showRulerPopup)}
-        >
-          <Navigation className="w-5 h-5" />
-        </Button>
-
-        {/* Botão de Realidade Aumentada */}
-        <Button
-          size="icon"
-          className="bg-gradient-to-br from-pink-500 to-rose-600 backdrop-blur-sm hover:from-pink-600 hover:to-rose-700 text-white shadow-xl border border-pink-600/50 transition-all-smooth hover-lift"
-          onClick={handleARMode}
-          title="Modo Realidade Aumentada"
-        >
-          <Camera className="w-5 h-5" />
-        </Button>
+  size="icon"
+  className="bg-gradient-to-br from-slate-800 to-slate-700 backdrop-blur-sm hover:from-slate-700 hover:to-slate-600 text-white shadow-xl border border-slate-600/50 transition-all-smooth hover-lift"
+  onClick={() => setShowRulerPopup(!showRulerPopup)}
+  data-testid="tools-button"
+>
+  <Star className="w-5 h-5" />
+</Button>
       </div>
 
       {/* Popup da Régua Manual */}
@@ -2688,7 +2680,7 @@ function App() {
               <div className="flex items-center justify-between">
                 <CardTitle className="text-lg font-bold text-white flex items-center gap-2">
                   <Ruler className="w-5 h-5 text-cyan-400" />
-                  Régua Manual
+                  Ferramentas
                 </CardTitle>
                 <Button
                   size="sm"
@@ -2699,39 +2691,17 @@ function App() {
                   <X className="w-3 h-3" />
                 </Button>
               </div>
-              <p className="text-xs text-gray-400 mt-1">Crie medições precisas no mapa</p>
+              <p className="text-xs text-gray-400 mt-1">Crie medições e explore em Realidade Aumentada</p>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* Configuração de Alinhamento */}
-              <div className="bg-slate-700/30 rounded-lg p-3 border border-slate-600/50">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-3">
-                    <Navigation className="w-4 h-4 text-cyan-400" />
-                    <div>
-                      <span className="text-gray-300 font-medium text-sm">Alinhamento Automático</span>
-                      <p className="text-xs text-gray-400">Alinhar pontos à rede viária</p>
-                    </div>
-                  </div>
-                  
-                  <label className="toggle-switch">
-                    <input 
-                      type="checkbox" 
-                      checked={snappingEnabled} 
-                      onChange={() => setSnappingEnabled(!snappingEnabled)}
-                    />
-                    <span className="toggle-slider"></span>
-                  </label>
-                </div>
-                
-                <div className="flex items-center justify-center gap-2 mt-2 p-2 bg-slate-600/30 rounded">
-                  <div className={`w-2 h-2 rounded-full ${snappingEnabled ? 'bg-green-500 animate-pulse' : 'bg-gray-500'}`}></div>
-                  <span className="text-xs text-cyan-400">
-                    {snappingEnabled ? 'Alinhamento ativo' : 'Alinhamento desativado'}
-                  </span>
-                </div>
-              </div>
+              <Button
+                onClick={handleARMode}
+                className="w-full bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-600 hover:to-rose-700 text-white font-medium py-3 text-base"
+              >
+                <Camera className="w-4 h-4 mr-2" />
+                Realidade Aumentada
+              </Button>
 
-              {/* Seletor de Modo */}
               <div className="space-y-3">
                 <span className="text-gray-300 font-medium text-sm">Modo de Rastreamento</span>
                 <div className="flex gap-2">
@@ -2791,16 +2761,11 @@ function App() {
               {/* Botão Iniciar - ATUALIZADO */}
               <Button
                 onClick={currentProject ? () => {
-                  // Se já tem projeto carregado, pergunta se quer continuar ou novo
-                  if (confirm(`Deseja continuar no projeto "${currentProject.name}" ou criar um novo projeto?`)) {
-                    // Continuar no projeto atual
+                  if (confirm(`Deseja continuar no projeto "${currentProject.name}"?`)) {
                     setTracking(true);
                     setPaused(false);
                     setShowTrackingControls(true);
                     setShowRulerPopup(false);
-                  } else {
-                    // Criar novo projeto
-                    startNewProject();
                   }
                 } : startTracking}
                 className="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-medium py-3 text-base"
@@ -3158,27 +3123,12 @@ function App() {
               />
             </div>
             
-            <div className="bg-slate-800/30 p-4 rounded-lg border border-slate-700/50">
-              <p className="text-sm text-cyan-400 font-medium mb-2">Resumo do Projeto</p>
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div className="text-center p-2 bg-slate-700/30 rounded">
-                  <div className="text-cyan-400 font-bold">{manualPoints.length}</div>
-                  <div className="text-gray-400 text-xs">Pontos</div>
-                </div>
-                <div className="text-center p-2 bg-slate-700/30 rounded">
-                  <div className="text-cyan-400 font-bold">{(totalDistance / 1000).toFixed(2)} km</div>
-                  <div className="text-gray-400 text-xs">Distância</div>
-                </div>
-                <div className="text-center p-2 bg-slate-700/30 rounded">
-                  <div className="text-cyan-400 font-bold">{selectedBairro !== 'todos' ? selectedBairro : 'Vários'}</div>
-                  <div className="text-gray-400 text-xs">Bairro</div>
-                </div>
-                <div className="text-center p-2 bg-slate-700/30 rounded">
-                  <div className="text-cyan-400 font-bold">{trackingMode === 'manual' ? 'Manual' : 'Automático'}</div>
-                  <div className="text-gray-400 text-xs">Modo</div>
-                </div>
-              </div>
-            </div>
+            <ResumoProjeto
+              manualPoints={manualPoints}
+              totalDistance={totalDistance}
+              selectedBairro={selectedBairro}
+              trackingMode={trackingMode}
+            />
 
             <div className="flex gap-2 pt-2">
               <Button 
@@ -3203,184 +3153,23 @@ function App() {
         </DialogContent> 
       </Dialog>
 
-      {/* Controles de Rastreamento */}
       {tracking && showTrackingControls && (
-        <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50 animate-slide-in-bottom">
-          <div className="bg-gradient-to-r from-slate-800 to-slate-700 backdrop-blur-lg border border-slate-600/50 rounded-2xl shadow-2xl p-4 min-w-[320px] max-w-[90vw]">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className="relative">
-                  <div className={`w-3 h-3 rounded-full ${paused ? 'bg-yellow-500' : 'bg-green-500 animate-pulse'} border-2 border-white`}></div>
-                  {!paused && (
-                    <div className="absolute inset-0 rounded-full bg-green-500 animate-ping opacity-75"></div>
-                  )}
-                </div>
-                <div>
-                  <h3 className="text-white font-semibold text-sm">
-                    {paused ? 'Rastreamento Pausado' : 'Rastreamento Ativo'}
-                  </h3>
-                  <p className="text-cyan-400 text-xs font-medium">
-                    {manualPoints.length === 1 ? '1 ponto' : `${manualPoints.length} pontos`} • {trackingMode === 'manual' ? 'Modo Manual' : 'Modo Automático'}
-                  </p>
-                </div>
-              </div>
-              <div className="text-right">
-                <p className="text-white font-bold text-xl bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent">
-                  {totalDistance < 1000 ? `${Math.round(totalDistance)} m` : `${(totalDistance / 1000).toFixed(3)} km`}
-                </p>
-                <p className="text-cyan-400 text-xs font-medium">Distância total</p>
-              </div>
-            </div>
-
-            {/* Informações do projeto atual */}
-            {currentProject && (
-              <div className="mb-3 p-3 bg-cyan-500/10 rounded-lg border border-cyan-500/30">
-                <div className="flex items-center gap-2 mb-1">
-                  <FolderOpen className="w-4 h-4 text-cyan-400" />
-                  <span className="text-cyan-400 font-medium text-sm">Projeto Atual:</span>
-                </div>
-                <p className="text-white text-sm font-medium truncate">{currentProject.name}</p>
-                <p className="text-cyan-400 text-xs">
-                  {currentProject.points.length} pontos • {((currentProject.totalDistance || currentProject.total_distance || 0) / 1000).toFixed(2)} km
-                </p>
-              </div>
-            )}
-
-            <div className="w-full bg-slate-600/50 rounded-full h-2 mb-4">
-              <div 
-                className="bg-gradient-to-r from-cyan-500 to-blue-500 h-2 rounded-full transition-all duration-300"
-                style={{ 
-                  width: `${Math.min((totalDistance / 5000) * 100, 100)}%` 
-                }}
-              ></div>
-            </div>
-
-            <div className="flex gap-2 mb-3">
-              <Button
-                onClick={pauseTracking}
-                className={`flex-1 text-xs h-9 font-medium ${
-                  paused 
-                    ? 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white' 
-                    : 'bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-600 hover:to-amber-700 text-white'
-                }`}
-              >
-                {paused ? (
-                  <>
-                    <Play className="w-4 h-4 mr-1" />
-                    <span>Retomar</span>
-                  </>
-                ) : (
-                  <>
-                    <Pause className="w-4 h-4 mr-1" />
-                    <span>Pausar</span>
-                  </>
-                )}
-              </Button>
-
-              {trackingMode === 'manual' && (
-                <Button
-                  onClick={addManualPoint}
-                  disabled={paused || !currentPosition}
-                  className="flex-1 text-xs h-9 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-medium"
-                >
-                  <MapPin className="w-4 h-4 mr-1" />
-                  <span>Add Ponto</span>
-                </Button>
-              )}
-
-              {manualPoints.length > 0 && (
-                <Button
-                  onClick={() => setShowProjectDialog(true)}
-                  className="flex-1 text-xs h-9 bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white font-medium"
-                >
-                  <Save className="w-4 h-4 mr-1" />
-                  <span>Salvar</span>
-                </Button>
-              )}
-
-              <Button
-                onClick={stopTracking}
-                className="flex-1 text-xs h-9 bg-gradient-to-r from-red-500 to-orange-600 hover:from-red-600 hover:to-orange-700 text-white font-medium"
-                >
-                <Square className="w-4 h-4 mr-1" />
-                <span>Parar</span>
-              </Button>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${snappingEnabled ? 'bg-green-500 animate-pulse' : 'bg-gray-500'}`}></div>
-                <span className="text-cyan-400 text-xs font-medium">
-                  Alinhamento {snappingEnabled ? 'ON' : 'OFF'}
-                </span>
-              </div>
-              
-              <div className="flex items-center gap-3 text-xs">
-                {gpsAccuracy && (
-                  <div className="flex items-center gap-1">
-                    <Navigation className="w-3 h-3 text-cyan-400" />
-                    <span className={`font-medium ${
-                      gpsAccuracy <= 10 ? 'text-green-400' : 
-                      gpsAccuracy <= 20 ? 'text-yellow-400' : 'text-red-400'
-                    }`}>
-                      ±{gpsAccuracy.toFixed(0)}m
-                    </span>
-                  </div>
-                )}
-                {speed > 0 && (
-                  <div className="flex items-center gap-1">
-                    <Clock className="w-3 h-3 text-cyan-400" />
-                    <span className="text-cyan-400 font-medium">
-                      {(speed * 3.6).toFixed(1)} km/h
-                    </span>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {totalDistance > 0 && (
-              <div className="mt-3 pt-3 border-t border-slate-600/50">
-                <div className="grid grid-cols-2 gap-4 text-xs">
-                  <div className="text-center">
-                    <div className="text-gray-400">Distância Atual</div>
-                    <div className="text-white font-bold">
-                      {totalDistance < 1000 ? 
-                        `${Math.round(totalDistance)} metros` : 
-                        `${(totalDistance / 1000).toFixed(3)} quilômetros`
-                      }
-                    </div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-gray-400">Pontos no Traçado</div>
-                    <div className="text-white font-bold">
-                      {manualPoints.length} {manualPoints.length === 1 ? 'ponto' : 'pontos'}
-                    </div>
-                  </div>
-                </div>
-                
-                {gpsAccuracy && (
-                  <div className="mt-2">
-                    <div className="flex justify-between text-xs text-gray-400 mb-1">
-                      <span>Precisão do GPS</span>
-                      <span className={gpsAccuracy <= 10 ? 'text-green-400' : gpsAccuracy <= 20 ? 'text-yellow-400' : 'text-red-400'}>
-                        {gpsAccuracy <= 10 ? 'Excelente' : gpsAccuracy <= 20 ? 'Boa' : 'Baixa'}
-                      </span>
-                    </div>
-                    <div className="w-full bg-slate-600/50 rounded-full h-1.5">
-                      <div 
-                        className={`h-1.5 rounded-full transition-all duration-300 ${
-                          gpsAccuracy <= 10 ? 'bg-green-500' : 
-                          gpsAccuracy <= 20 ? 'bg-yellow-500' : 'bg-red-500'
-                        }`}
-                        style={{ width: `${Math.max(0, 100 - (gpsAccuracy * 5))}%` }}
-                      ></div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
+        <ControlesRastreamento
+          tracking={tracking}
+          paused={paused}
+          pauseTracking={pauseTracking}
+          addManualPoint={addManualPoint}
+          stopTracking={stopTracking}
+          setShowProjectDialog={setShowProjectDialog}
+          manualPoints={manualPoints}
+          totalDistance={totalDistance}
+          trackingMode={trackingMode}
+          currentPosition={currentPosition}
+          currentProject={currentProject}
+          snappingEnabled={snappingEnabled}
+          gpsAccuracy={gpsAccuracy}
+          speed={speed}
+        />
       )}
 
       {/* Gerenciador de Backup */}
