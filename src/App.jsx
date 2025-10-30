@@ -957,20 +957,57 @@ function App() {
   // Função para download de KML
   const downloadKML = (kmlContent, filename) => {
     try {
-      const blob = new Blob([kmlContent], { type: 'application/vnd.google-earth.kml+xml;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      const blob = new Blob([kmlContent], {
+        type: 'application/vnd.google-earth.kml+xml;charset=utf-8'
+      })
+
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      a.style.display = 'none'
+
+      document.body.appendChild(a)
+      a.click()
+
+      setTimeout(() => {
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+      }, 1000)
+
+      setTimeout(() => {
+        const checkDownload = () => {
+          if (!document.hidden) {
+            console.log('Download pode ter falhado, abrindo em nova aba...')
+
+            const dataUrl = 'data:application/vnd.google-earth.kml+xml;charset=utf-8,' + encodeURIComponent(kmlContent)
+            const newWindow = window.open(dataUrl, '_blank')
+
+            if (!newWindow) {
+              alert(`Download bloqueado pelo navegador. \n\nSalve manualmente: \n1. Copie o conteúdo abaixo\n2. Cole em um editor de texto\n3. Salve como "${filename}"\n\n${kmlContent}`)
+            }
+          }
+        }
+
+        setTimeout(checkDownload, 2000)
+      }, 100)
+
     } catch (error) {
-      console.error('Erro ao exportar KML:', error);
-      alert('Erro ao exportar arquivo KML. Tente novamente.');
+      console.error('Erro ao exportar KML:', error)
+
+      try {
+        const dataUrl = 'data:application/vnd.google-earth.kml+xml;charset=utf-8,' + encodeURIComponent(kmlContent)
+        const newWindow = window.open(dataUrl, '_blank')
+
+        if (!newWindow) {
+          alert(`Erro ao baixar arquivo. \n\nPara salvar manualmente:\n1. Copie o texto abaixo\n2. Cole em um editor\n3. Salve como "${filename}"\n\nConteúdo:\n${kmlContent.substring(0, 1000)}${kmlContent.length > 1000 ? '...' : ''}`)
+        }
+      } catch (fallbackError) {
+        console.error('Fallback também falhou:', fallbackError)
+        alert('Erro ao exportar arquivo KML. Tente novamente.')
+      }
     }
-  };
+  }
 
   const formatDistance = (distanceInMeters) => {
     if (distanceInMeters >= 1000) {
