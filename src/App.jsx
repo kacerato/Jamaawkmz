@@ -1349,7 +1349,6 @@ function App() {
     setPaused(false);
     setManualPoints([]);
     setTotalDistance(0);
-    setCurrentProject(null);
     setLastAutoPointTime(Date.now());
     setShowTrackingControls(true);
     setShowRulerPopup(false);
