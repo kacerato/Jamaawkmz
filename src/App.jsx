@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from 'react'
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import Map, { Marker, Popup, Source, Layer, NavigationControl } from 'react-map-gl'
 import { Upload, MapPin, Ruler, X, Download, Share2, Edit2, Menu, LogOut, Heart, MapPinned, Layers, Play, Pause, Square, FolderOpen, Save, Navigation, Clock, Cloud, CloudOff, Archive, Camera, Plus, Star } from 'lucide-react'
 import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.jsx'
@@ -12,7 +12,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { supabase } from './lib/supabase'
 import Auth from './components/Auth'
 import JSZip from 'jszip'
-import L from 'leaflet'
 import { Network } from '@capacitor/network'
 import { Preferences } from '@capacitor/preferences'
 import axios from 'axios'
@@ -20,15 +19,8 @@ import { BackupManager } from './components/BackupManager'
 import ARCamera from './components/ARCamera'
 import ResumoProjeto from './components/ResumoProjeto';
 import ControlesRastreamento from './components/ControlesRastreamento';
+import 'mapbox-gl/dist/mapbox-gl.css'
 import './App.css'
-
-// Fix para ícones do Leaflet
-delete L.Icon.Default.prototype._getIconUrl
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-})
 
 // Bairros padrão
 const DEFAULT_BAIRROS = [
@@ -46,31 +38,11 @@ const DEFAULT_BAIRROS = [
 
 // Opções de mapas modernos
 const mapStyles = {
-  osm: {
-    name: 'OpenStreetMap',
-    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-  },
-  satellite: {
-    name: 'Satélite',
-    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    attribution: '&copy; <a href="https://www.esri.com/">Esri</a>'
-  },
-  topographic: {
-    name: 'Topográfico',
-    url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://opentopomap.org">OpenTopoMap</a>'
-  },
-  dark: {
-    name: 'Escuro',
-    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
-  },
-  modern: {
-    name: 'Moderno',
-    url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
-  }
+  streets: { name: 'Ruas', url: 'mapbox://styles/mapbox/streets-v11' },
+  satellite: { name: 'Satélite', url: 'mapbox://styles/mapbox/satellite-streets-v11' },
+  dark: { name: 'Escuro', url: 'mapbox://styles/mapbox/dark-v10' },
+  light: { name: 'Claro', url: 'mapbox://styles/mapbox/light-v10' },
+  outdoors: { name: 'Ar Livre', url: 'mapbox://styles/mapbox/outdoors-v11' },
 };
 
 // Filtro Kalman para suavização GPS
@@ -98,93 +70,6 @@ class KalmanFilter {
     }
     return this.x;
   }
-}
-
-// Componente para ajustar o mapa apenas quando necessário
-function MapBounds({ markers, active, onBoundsAdjusted }) {
-  const map = useMap()
-  
-  useEffect(() => {
-    if (active && markers.length > 0) {
-      const bounds = L.latLngBounds(markers.map(m => [m.lat, m.lng]))
-      map.fitBounds(bounds, { padding: [50, 50] })
-      if (onBoundsAdjusted) {
-        onBoundsAdjusted()
-      }
-    }
-  }, [markers, map, active, onBoundsAdjusted])
-  
-  return null
-}
-
-// Componente para rota animada
-function AnimatedRoute({ routeCoordinates }) {
-  const map = useMap()
-  const polylineRef = useRef(null)
-  
-  useEffect(() => {
-    if (!routeCoordinates || routeCoordinates.length === 0) {
-      if (polylineRef.current) {
-        map.removeLayer(polylineRef.current)
-        polylineRef.current = null
-      }
-      return
-    }
-
-    if (polylineRef.current) {
-      map.removeLayer(polylineRef.current)
-    }
-
-    const polyline = L.polyline(routeCoordinates, {
-      color: '#06B6D4',
-      weight: 4,
-      opacity: 0.8,
-      smoothFactor: 1
-    }).addTo(map)
-    
-    polylineRef.current = polyline
-
-    const bounds = L.latLngBounds(routeCoordinates)
-    map.fitBounds(bounds, { padding: [50, 50] })
-
-    return () => {
-      if (polylineRef.current) {
-        map.removeLayer(polylineRef.current)
-      }
-    }
-  }, [routeCoordinates, map])
-  
-  return null
-}
-
-// Componente para controle de localização
-function LocationControl({ currentPosition }) {
-  const map = useMap();
-  
-  const handleLocate = () => {
-    if (currentPosition) {
-      map.setView([currentPosition.lat, currentPosition.lng], 18, {
-        animate: true,
-        duration: 1
-      });
-    } else {
-      map.locate({setView: true, maxZoom: 18});
-    }
-  };
-
-  return (
-    <div className="leaflet-top leaflet-right">
-      <div className="leaflet-control">
-        <button 
-          className="location-button"
-          onClick={handleLocate}
-          title="Centralizar na minha localização"
-        >
-          <Navigation className="w-5 h-5" />
-        </button>
-      </div>
-    </div>
-  );
 }
 
 // Função para validar projeto
@@ -263,12 +148,15 @@ class RoadSnappingService {
 }
 
 function App() {
+  const mapboxToken = 'pk.eyJ1Ijoia2FjZXJhdG8iLCJhIjoiY21oZG1nNnViMDRybjJub2VvZHV1aHh3aiJ9.l7tCaIPEYqcqDI8_aScm7Q';
+  const mapRef = useRef();
   const [user, setUser] = useState(null)
   const [authLoading, setAuthLoading] = useState(true)
   const [markers, setMarkers] = useState([])
   const [filteredMarkers, setFilteredMarkers] = useState([])
   const [selectedBairro, setSelectedBairro] = useState('todos')
   const [editingMarker, setEditingMarker] = useState(null)
+  const [popupInfo, setPopupInfo] = useState(null);
   const [selectedForDistance, setSelectedForDistance] = useState([])
   const [distanceResult, setDistanceResult] = useState(null)
   const [uploading, setUploading] = useState(false)
@@ -306,7 +194,7 @@ function App() {
   const [editingProject, setEditingProject] = useState(null);
   const [snappingEnabled, setSnappingEnabled] = useState(true);
   const [snappingPoints, setSnappingPoints] = useState([]);
-  const [mapStyle, setMapStyle] = useState('modern');
+  const [mapStyle, setMapStyle] = useState('streets');
   
   // Estados para controle de zoom
   const [adjustBoundsForMarkers, setAdjustBoundsForMarkers] = useState(false);
@@ -1069,57 +957,27 @@ function App() {
   // Função para download de KML
   const downloadKML = (kmlContent, filename) => {
     try {
-      const blob = new Blob([kmlContent], {
-        type: 'application/vnd.google-earth.kml+xml;charset=utf-8'
-      })
-      
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = filename
-      a.style.display = 'none'
-      
-      document.body.appendChild(a)
-      a.click()
-      
-      setTimeout(() => {
-        document.body.removeChild(a)
-        URL.revokeObjectURL(url)
-      }, 1000)
-      
-      setTimeout(() => {
-        const checkDownload = () => {
-          if (!document.hidden) {
-            console.log('Download pode ter falhado, abrindo em nova aba...')
-            
-            const dataUrl = 'data:application/vnd.google-earth.kml+xml;charset=utf-8,' + encodeURIComponent(kmlContent)
-            const newWindow = window.open(dataUrl, '_blank')
-            
-            if (!newWindow) {
-              alert(`Download bloqueado pelo navegador. \n\nSalve manualmente: \n1. Copie o conteúdo abaixo\n2. Cole em um editor de texto\n3. Salve como "${filename}"\n\n${kmlContent}`)
-            }
-          }
-        }
-        
-        setTimeout(checkDownload, 2000)
-      }, 100)
-      
+      const blob = new Blob([kmlContent], { type: 'application/vnd.google-earth.kml+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
     } catch (error) {
-      console.error('Erro ao exportar KML:', error)
-      
-      try {
-        const dataUrl = 'data:application/vnd.google-earth.kml+xml;charset=utf-8,' + encodeURIComponent(kmlContent)
-        const newWindow = window.open(dataUrl, '_blank')
-        
-        if (!newWindow) {
-          alert(`Erro ao baixar arquivo. \n\nPara salvar manualmente:\n1. Copie o texto abaixo\n2. Cole em um editor\n3. Salve como "${filename}"\n\nConteúdo:\n${kmlContent.substring(0, 1000)}${kmlContent.length > 1000 ? '...' : ''}`)
-        }
-      } catch (fallbackError) {
-        console.error('Fallback também falhou:', fallbackError)
-        alert('Erro ao exportar arquivo KML. Tente novamente.')
-      }
+      console.error('Erro ao exportar KML:', error);
+      alert('Erro ao exportar arquivo KML. Tente novamente.');
     }
-  }
+  };
+
+  const formatDistance = (distanceInMeters) => {
+    if (distanceInMeters >= 1000) {
+      return `${(distanceInMeters / 1000).toFixed(2)} km`;
+    }
+    return `${distanceInMeters.toFixed(2)} m`;
+  };
 
   // Função para calcular distância entre dois pontos
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
@@ -1363,10 +1221,13 @@ function App() {
   }
 
   // Função para editar marcador
-  const handleEditMarker = (marker) => {
-    setEditingMarker({ ...marker })
-    setShowEditDialog(true)
-  }
+  const handleEditMarker = useCallback((marker) => {
+    setPopupInfo({
+      longitude: marker.lng,
+      latitude: marker.lat,
+      ...marker
+    });
+  }, []);
 
   // Função para salvar edição
   const handleSaveEdit = async () => {
@@ -2032,6 +1893,7 @@ function App() {
     await supabase.auth.signOut()
     setMarkers([])
     setFilteredMarkers([])
+    setPopupInfo(null)
   }
 
   // Funções para backup
@@ -2059,208 +1921,133 @@ function App() {
     <div className="relative h-screen w-screen overflow-hidden bg-slate-900">
       {/* Mapa em tela cheia */}
       <div className="absolute inset-0 z-0">
-        <MapContainer
-          center={[-9.6658, -35.7353]}
-          zoom={13}
-          className="h-full w-full"
-          zoomControl={false}
+      <Map
+          ref={mapRef}
+          initialViewState={{
+            longitude: -35.7353,
+            latitude: -9.6658,
+            zoom: 13
+          }}
+          style={{ width: '100%', height: '100%' }}
+          mapStyle={mapStyles[mapStyle].url}
+          mapboxAccessToken={mapboxToken}
         >
-          <TileLayer
-            attribution={mapStyles[mapStyle].attribution}
-            url={mapStyles[mapStyle].url}
-            maxZoom={20}
-            minZoom={3}
-            detectRetina={true}
-          />
-          
-          {/* Componente de localização */}
-          <LocationControl currentPosition={currentPosition} />
+          <NavigationControl position="top-right" />
 
-          {/* Marcadores existentes */}
           {filteredMarkers.map(marker => (
             <Marker
               key={marker.id}
-              position={[marker.lat, marker.lng]}
-              eventHandlers={{
-                click: () => {
-                  handleEditMarker(marker)
-                }
-              }}
+              longitude={marker.lng}
+              latitude={marker.lat}
+              onClick={() => handleEditMarker(marker)}
+            />
+          ))}
+
+          {popupInfo && (
+            <Popup
+              longitude={popupInfo.longitude}
+              latitude={popupInfo.latitude}
+              onClose={() => setPopupInfo(null)}
+              closeOnClick={false}
+              className="custom-popup"
             >
-              <Popup className="custom-popup">
-                <div className="text-sm min-w-[200px] max-w-[280px] p-1">
-                  <div className="flex items-start justify-between mb-2 gap-2">
-                    <h3 className="font-bold text-base text-slate-900 flex-1">{marker.name}</h3>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        toggleFavorite(marker.id)
-                      }}
-                      className="flex-shrink-0 p-1 hover:bg-gray-100 rounded transition-colors"
-                    >
-                      <Heart 
-                        className={`w-5 h-5 ${favorites.includes(marker.id) ? 'fill-red-500 text-red-500' : 'text-gray-400 hover:text-red-400'}`}
-                      />
-                    </button>
-                  </div>
-    
-                  <div className="space-y-1 mb-2">
-                    {marker.bairro && (
-                      <div className="flex items-center gap-2 text-xs text-gray-700">
-                        <MapPin className="w-3 h-3 text-cyan-600 flex-shrink-0" />
-                        <span className="font-medium">{marker.bairro}</span>
-                      </div>
-                    )}
-                    {marker.rua && (
-                      <div className="flex items-center gap-2 text-xs text-gray-700">
-                        <MapPin className="w-3 h-3 text-blue-600 flex-shrink-0" />
-                        <span>{marker.rua}</span>
-                      </div>
-                    )}
-                  </div>
-    
-                  {marker.descricao && (
-                    <p className="text-xs text-gray-600 bg-blue-50 p-2 rounded mb-2 leading-relaxed">{marker.descricao}</p>
-                  )}
-                  <Button
-                    size="sm"
-                    className="w-full bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white shadow-md"
-                    onClick={() => handleShareLocation(marker)}
+              <div className="text-sm min-w-[200px] max-w-[280px] p-1">
+                <div className="flex items-start justify-between mb-2 gap-2">
+                  <h3 className="font-bold text-base text-slate-900 flex-1">{popupInfo.name}</h3>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleFavorite(popupInfo.id);
+                    }}
+                    className="flex-shrink-0 p-1 hover:bg-gray-100 rounded transition-colors"
                   >
-                    <Share2 className="w-3 h-3 mr-1.5" />
-                    Compartilhar
-                  </Button>
+                    <Heart
+                      className={`w-5 h-5 ${favorites.includes(popupInfo.id) ? 'fill-red-500 text-red-500' : 'text-gray-400 hover:text-red-400'}`}
+                    />
+                  </button>
                 </div>
-              </Popup>
-            </Marker>
-          ))}
-
-          {/* Pontos do traçado manual - AGORA COM ÍCONES DE POSTE */}
-          {manualPoints.map((point, index) => (
-            <Marker
-              key={point.id}
-              position={[point.lat, point.lng]}
-              icon={L.divIcon({
-                className: snappingEnabled ? 'ruler-point-snapped' : 'ruler-point-marker',
-                html: `<div>${index + 1}</div>`,
-                iconSize: [16, 24],
-                iconAnchor: [8, 24]
-              })}
-            >
-              <Popup className="modern-popup">
-                <div className="bg-gradient-to-br from-slate-800 to-slate-700 text-white rounded-lg p-4 min-w-[200px] border border-slate-600/50 shadow-2xl">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="w-10 h-10 bg-gradient-to-br from-cyan-500 to-blue-500 rounded-lg flex items-center justify-center">
-                      <span className="text-white font-bold text-sm">{index + 1}</span>
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-white">Ponto {index + 1}</h3>
-                      <p className="text-cyan-400 text-xs">Traçado Manual</p>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2 mb-3">
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-gray-400">Latitude:</span>
-                      <span className="text-white font-mono">{point.lat.toFixed(6)}</span>
-                    </div>
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-gray-400">Longitude:</span>
-                      <span className="text-white font-mono">{point.lng.toFixed(6)}</span>
-                    </div>
-                  </div>
-
-                  {point.timestamp && (
-                    <div className="bg-slate-700/50 rounded-lg p-3 mb-3">
-                      <div className="flex items-center gap-2 text-xs text-cyan-400">
-                        <Clock className="w-3 h-3" />
-                        <span>{new Date(point.timestamp).toLocaleString('pt-BR')}</span>
-                      </div>
+                <div className="space-y-1 mb-2">
+                  {popupInfo.bairro && (
+                    <div className="flex items-center gap-2 text-xs text-gray-700">
+                      <MapPin className="w-3 h-3 text-cyan-600 flex-shrink-0" />
+                      <span className="font-medium">{popupInfo.bairro}</span>
                     </div>
                   )}
-
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white text-xs"
-                      onClick={() => {
-                        const url = `https://www.google.com/maps?q=${point.lat},${point.lng}`;
-                        navigator.clipboard.writeText(url);
-                        alert('Coordenadas copiadas!');
-                      }}
-                    >
-                      <MapPin className="w-3 h-3 mr-1" />
-                      Copiar
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="text-gray-400 border-slate-600 hover:bg-slate-700 text-xs"
-                      onClick={() => {
-                        const updatedPoints = manualPoints.filter((_, i) => i !== index);
-                        setManualPoints(updatedPoints);
-                        
-                        if (updatedPoints.length > 1) {
-                          let newTotal = 0;
-                          for (let i = 0; i < updatedPoints.length - 1; i++) {
-                            newTotal += calculateDistance(
-                              updatedPoints[i].lat, updatedPoints[i].lng,
-                              updatedPoints[i + 1].lat, updatedPoints[i + 1].lng
-                            );
-                          }
-                          setTotalDistance(newTotal);
-                        } else {
-                          setTotalDistance(0);
-                        }
-                      }}
-                    >
-                      <X className="w-3 h-3 mr-1" />
-                      Remover
-                    </Button>
-                  </div>
+                  {popupInfo.rua && (
+                    <div className="flex items-center gap-2 text-xs text-gray-700">
+                      <MapPin className="w-3 h-3 text-blue-600 flex-shrink-0" />
+                      <span>{popupInfo.rua}</span>
+                    </div>
+                  )}
                 </div>
-              </Popup>
-            </Marker>
-          ))}
-
-          {/* Linha do traçado */}
-          {manualPoints.length > 1 && (
-            <Polyline
-              positions={manualPoints}
-              color="#1e3a8a"
-              weight={4}
-              opacity={0.8}
-            />
+                {popupInfo.descricao && (
+                  <p className="text-xs text-gray-600 bg-blue-50 p-2 rounded mb-2 leading-relaxed">{popupInfo.descricao}</p>
+                )}
+                <Button
+                  size="sm"
+                  className="w-full bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white shadow-md"
+                  onClick={() => handleShareLocation(popupInfo)}
+                >
+                  <Share2 className="w-3 h-3 mr-1.5" />
+                  Compartilhar
+                </Button>
+              </div>
+            </Popup>
           )}
 
-          {/* Posição atual do usuário - SEMPRE VISÍVEL */}
+          {manualPoints.length > 0 && (
+            <>
+              {manualPoints.map((point, index) => (
+                <Marker key={point.id} longitude={point.lng} latitude={point.lat}>
+                  <div className="ruler-point-marker">{index + 1}</div>
+                </Marker>
+              ))}
+              <Source id="manual-route" type="geojson" data={{
+                type: 'Feature',
+                geometry: {
+                  type: 'LineString',
+                  coordinates: manualPoints.map(p => [p.lng, p.lat])
+                }
+              }}>
+                <Layer
+                  id="manual-route-layer"
+                  type="line"
+                  paint={{
+                    'line-color': '#1e3a8a',
+                    'line-width': 4,
+                    'line-opacity': 0.8
+                  }}
+                />
+              </Source>
+            </>
+          )}
+
+          {routeCoordinates.length > 0 && (
+            <Source id="calculated-route" type="geojson" data={{
+              type: 'Feature',
+              geometry: {
+                type: 'LineString',
+                coordinates: routeCoordinates.map(c => [c[1], c[0]])
+              }
+            }}>
+              <Layer
+                id="calculated-route-layer"
+                type="line"
+                paint={{
+                  'line-color': '#06B6D4',
+                  'line-width': 4,
+                  'line-opacity': 0.8
+                }}
+              />
+            </Source>
+          )}
+
           {currentPosition && (
-            <Marker
-              position={[currentPosition.lat, currentPosition.lng]}
-              icon={L.divIcon({
-                className: 'current-position-marker',
-                html: '<div class="current-position"></div>',
-                iconSize: [16, 16],
-                iconAnchor: [8, 8]
-              })}
-            />
+            <Marker longitude={currentPosition.lng} latitude={currentPosition.lat}>
+              <div className="current-position-marker" />
+            </Marker>
           )}
-
-          <AnimatedRoute routeCoordinates={routeCoordinates} />
-          
-          {/* Componentes MapBounds separados para controle independente do zoom */}
-          <MapBounds 
-            markers={filteredMarkers} 
-            active={adjustBoundsForMarkers}
-            onBoundsAdjusted={handleBoundsAdjustedForMarkers}
-          />
-          
-          <MapBounds 
-            markers={manualPoints} 
-            active={adjustBoundsForProject}
-            onBoundsAdjusted={handleBoundsAdjustedForProject}
-          />
-        </MapContainer>
+        </Map>
       </div>
 
       {/* Barra de ferramentas flutuante no topo */}
