@@ -14,6 +14,7 @@ import Auth from './components/Auth'
 import JSZip from 'jszip'
 import { Network } from '@capacitor/network'
 import { Preferences } from '@capacitor/preferences'
+import { Filesystem, Directory } from '@capacitor/filesystem'
 import axios from 'axios'
 import { BackupManager } from './components/BackupManager'
 import ARCamera from './components/ARCamera'
@@ -228,28 +229,6 @@ function App() {
     return () => subscription.unsubscribe()
   }, [])
 
-  // Efeito para ativar a localização ao iniciar o app
-  useEffect(() => {
-    if (navigator.geolocation && !currentPosition) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const { latitude, longitude } = position.coords
-          setCurrentPosition({
-            lat: latitude,
-            lng: longitude
-          });
-        },
-        (error) => {
-          console.log('Localização inicial não disponível:', error)
-        },
-        {
-          enableHighAccuracy: false,
-          timeout: 10000,
-          maximumAge: 30000
-        }
-      );
-    }
-  }, []);
 
   // FUNÇÕES PARA SUPABASE - PROJETOS
   // Carregar projetos do Supabase
@@ -474,6 +453,7 @@ function App() {
     }
   }, [user])
 
+  // Efeito para rastrear posição do usuário
   // Efeito para rastrear posição do usuário
   useEffect(() => {
     let watchId = null
@@ -955,59 +935,43 @@ function App() {
   }
 
   // Função para download de KML
-  const downloadKML = (kmlContent, filename) => {
+  const downloadKML = async (kmlContent, filename) => {
     try {
-      const blob = new Blob([kmlContent], {
-        type: 'application/vnd.google-earth.kml+xml;charset=utf-8'
-      })
+      await Filesystem.writeFile({
+        path: filename,
+        data: kmlContent,
+        directory: Directory.Documents,
+        encoding: 'utf-8',
+      });
 
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = filename
-      a.style.display = 'none'
-
-      document.body.appendChild(a)
-      a.click()
-
-      setTimeout(() => {
-        document.body.removeChild(a)
-        URL.revokeObjectURL(url)
-      }, 1000)
-
-      setTimeout(() => {
-        const checkDownload = () => {
-          if (!document.hidden) {
-            console.log('Download pode ter falhado, abrindo em nova aba...')
-
-            const dataUrl = 'data:application/vnd.google-earth.kml+xml;charset=utf-8,' + encodeURIComponent(kmlContent)
-            const newWindow = window.open(dataUrl, '_blank')
-
-            if (!newWindow) {
-              alert(`Download bloqueado pelo navegador. \n\nSalve manualmente: \n1. Copie o conteúdo abaixo\n2. Cole em um editor de texto\n3. Salve como "${filename}"\n\n${kmlContent}`)
-            }
-          }
-        }
-
-        setTimeout(checkDownload, 2000)
-      }, 100)
-
+      alert(`Arquivo salvo em: Documentos/${filename}`);
     } catch (error) {
-      console.error('Erro ao exportar KML:', error)
+      console.error('Erro ao salvar arquivo KML:', error);
 
       try {
-        const dataUrl = 'data:application/vnd.google-earth.kml+xml;charset=utf-8,' + encodeURIComponent(kmlContent)
-        const newWindow = window.open(dataUrl, '_blank')
+        const blob = new Blob([kmlContent], {
+          type: 'application/vnd.google-earth.kml+xml;charset=utf-8'
+        });
 
-        if (!newWindow) {
-          alert(`Erro ao baixar arquivo. \n\nPara salvar manualmente:\n1. Copie o texto abaixo\n2. Cole em um editor\n3. Salve como "${filename}"\n\nConteúdo:\n${kmlContent.substring(0, 1000)}${kmlContent.length > 1000 ? '...' : ''}`)
-        }
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.style.display = 'none';
+
+        document.body.appendChild(a);
+        a.click();
+
+        setTimeout(() => {
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        }, 1000);
       } catch (fallbackError) {
-        console.error('Fallback também falhou:', fallbackError)
-        alert('Erro ao exportar arquivo KML. Tente novamente.')
+        console.error('Erro no fallback de download:', fallbackError);
+        alert('Erro ao exportar arquivo KML. Tente novamente.');
       }
     }
-  }
+  };
 
   const formatDistance = (distanceInMeters) => {
     if (distanceInMeters >= 1000) {
@@ -2106,7 +2070,7 @@ function App() {
                   <MapPinned className="w-6 h-6 text-white" />
                 </div>
                 <div>
-                  <p className="text-lg font-bold">Jamaaw App</p>
+                  <p className="text-lg font-bold">{currentProject ? currentProject.name : 'Jamaaw App'}</p>
                   <p className="text-xs text-cyan-400 font-normal">Gerenciador de Marcações</p>
                 </div>
               </SheetTitle>
@@ -2466,7 +2430,7 @@ function App() {
             <MapPinned className="w-5 h-5 text-white" />
           </div>
           <div className="flex-1">
-            <span className="font-bold text-white text-sm sm:text-base">Jamaaw App</span>
+            <span className="font-bold text-white text-sm sm:text-base">{currentProject ? currentProject.name : 'Jamaaw App'}</span>
             {!isOnline && (
               <span className="text-xs text-orange-400 ml-2 bg-orange-500/20 px-2 py-0.5 rounded-full">Offline</span>
             )}
