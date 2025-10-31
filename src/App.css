@@ -316,10 +316,6 @@
 
 /* ========== CORREÇÃO DA LOCALIZAÇÃO DO USUÁRIO ========== */
 .current-position-marker {
-  z-index: 1000 !important;
-}
-
-.current-position {
   background: #06B6D4 !important;
   border: 2px solid #ffffff !important;
   border-radius: 50% !important;
