@@ -1386,9 +1386,6 @@ function App() {
     setTracking(false);
     setPaused(false);
     setShowTrackingControls(false);
-    setManualPoints([]);
-    setTotalDistance(0);
-    setCurrentProject(null);
     setPositionHistory([]);
     setGpsAccuracy(null);
     setSpeed(0);
