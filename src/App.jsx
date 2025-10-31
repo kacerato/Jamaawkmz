@@ -1388,7 +1388,6 @@ function App() {
     setShowTrackingControls(false);
     setManualPoints([]);
     setTotalDistance(0);
-    setCurrentProject(null);
     setPositionHistory([]);
     setGpsAccuracy(null);
     setSpeed(0);
@@ -1928,7 +1927,7 @@ function App() {
             latitude: -9.6658,
             zoom: 13
           }}
-          style={{ width: '100%', height: '100%' }}
+          style={{ width: '100%', height: '100%', position: 'relative' }}
           mapStyle={mapStyles[mapStyle].url}
           mapboxAccessToken={mapboxToken}
         >
