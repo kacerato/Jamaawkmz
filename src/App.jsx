@@ -20,6 +20,7 @@ import { BackupManager } from './components/BackupManager'
 import ARCamera from './components/ARCamera'
 import ResumoProjeto from './components/ResumoProjeto';
 import ControlesRastreamento from './components/ControlesRastreamento';
+import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css'
 import './App.css'
 
@@ -1872,6 +1873,35 @@ function App() {
   };
 
   // Efeito para melhorar compatibilidade com WebView
+  useEffect(() => {
+    const fitMapToBounds = () => {
+      if (!mapRef.current) return;
+
+      const points = manualPoints.length > 0 ? manualPoints : filteredMarkers;
+      if (points.length === 0) return;
+
+      const bounds = points.reduce((bounds, point) => {
+        return bounds.extend([point.lng, point.lat]);
+      }, new mapboxgl.LngLatBounds(points[0].lng, points[0].lat));
+
+      mapRef.current.fitBounds(bounds, {
+        padding: 60,
+        duration: 1000,
+      });
+    };
+
+    const handleResize = () => {
+      fitMapToBounds();
+    };
+
+    window.addEventListener('resize', handleResize);
+    fitMapToBounds(); // Fit map on initial load or when points change
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [filteredMarkers, manualPoints]);
+
   useEffect(() => {
     const handleBodyClick = (event) => {
       if (event.target.closest('button')?.textContent.includes('Exportar') ||
