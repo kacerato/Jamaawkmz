@@ -19,6 +19,7 @@ import axios from 'axios'
 import ARCamera from './components/ARCamera'
 import ResumoProjeto from './components/ResumoProjeto';
 import ControlesRastreamento from './components/ControlesRastreamento';
+import MarkerDetailsPopup from './components/MarkerDetailsPopup';
 import 'mapbox-gl/dist/mapbox-gl.css'
 import './App.css'
 
@@ -156,6 +157,7 @@ function App() {
   const [filteredMarkers, setFilteredMarkers] = useState([])
   const [selectedBairro, setSelectedBairro] = useState('todos')
   const [editingMarker, setEditingMarker] = useState(null)
+  const [selectedMarkerForPopup, setSelectedMarkerForPopup] = useState(null);
   const [popupInfo, setPopupInfo] = useState(null);
   const [selectedForDistance, setSelectedForDistance] = useState([])
   const [distanceResult, setDistanceResult] = useState(null)
@@ -1252,10 +1254,16 @@ function App() {
     })
   }
 
-  // Função para editar marcador
+  // Função para ABRIR POPUP do marcador
+  const handleMarkerClick = useCallback((marker) => {
+    setSelectedMarkerForPopup(marker);
+  }, []);
+
+  // Função para editar marcador (abre o diálogo de edição)
   const handleEditMarker = useCallback((marker) => {
     setEditingMarker(marker);
     setShowEditDialog(true);
+    setSelectedMarkerForPopup(null); // Fecha o popup de detalhes
   }, []);
 
   // Função para salvar edição
@@ -1280,27 +1288,28 @@ function App() {
   }
 
   // Função para deletar marcador
-  const handleDeleteMarker = async () => {
-    if (!editingMarker) return
+  const handleDeleteMarker = async (markerId) => {
+    if (!markerId) return;
 
-    if (confirm(`Deseja realmente deletar "${editingMarker.name}"?`)) {
+    const markerToDelete = markers.find(m => m.id === markerId);
+    if (!markerToDelete) return;
+
+    if (confirm(`Deseja realmente deletar "${markerToDelete.name}"?`)) {
       if (isOnline) {
-        const success = await deleteMarkerFromSupabase(editingMarker.id)
+        const success = await deleteMarkerFromSupabase(markerToDelete.id);
         if (success) {
-          setMarkers(prev => prev.filter(m => m.id !== editingMarker.id))
-          setShowEditDialog(false)
-          setEditingMarker(null)
+          setMarkers(prev => prev.filter(m => m.id !== markerToDelete.id));
+          setSelectedMarkerForPopup(null); // Fechar popup após deletar
         } else {
-          alert('Erro ao deletar marcação')
+          alert('Erro ao deletar marcação');
         }
       } else {
-        setMarkers(prev => prev.filter(m => m.id !== editingMarker.id))
-        setSyncPending(true)
-        setShowEditDialog(false)
-        setEditingMarker(null)
+        setMarkers(prev => prev.filter(m => m.id !== markerToDelete.id));
+        setSyncPending(true);
+        setSelectedMarkerForPopup(null); // Fechar popup após deletar
       }
     }
-  }
+  };
 
   // Função para detectar nome da rua usando geocodificação reversa
   const detectStreetName = async (lat, lng) => {
@@ -1395,33 +1404,51 @@ function App() {
     startTracking();
   };
 
-  // Parar rastreamento - CORRIGIDO
+  // Parar rastreamento - CORRIGIDO COM TRATAMENTO DE ERRO
   const stopTracking = async () => {
     const pointsToSave = [...manualPoints];
-    if (pointsToSave.length > 0) {
-      console.log('💾 Salvamento automático ao parar rastreamento...');
-      await saveProject(true, pointsToSave);
+    try {
+      if (pointsToSave.length > 0) {
+        console.log('💾 Salvamento automático ao parar rastreamento...');
+        await saveProject(true, pointsToSave);
+      }
+    } catch (error) {
+      console.error('Falha ao salvar o projeto ao parar:', error);
+      if (error.message.includes('Invalid Refresh Token')) {
+        alert('Sua sessão expirou. Por favor, faça login novamente.');
+        handleLogout();
+      } else {
+        alert('Ocorreu um erro ao salvar seu progresso. Verifique sua conexão.');
+      }
+    } finally {
+      setTracking(false);
+      setPaused(false);
+      setShowTrackingControls(false);
+      setManualPoints([]);
+      setTotalDistance(0);
+      setPositionHistory([]);
+      setGpsAccuracy(null);
+      setSpeed(0);
     }
-
-    setTracking(false);
-    setPaused(false);
-    setShowTrackingControls(false);
-    setManualPoints([]);
-    setTotalDistance(0);
-    setPositionHistory([]);
-    setGpsAccuracy(null);
-    setSpeed(0);
   };
 
-  // Pausar rastreamento - CORRIGIDO
+  // Pausar rastreamento - CORRIGIDO COM TRATAMENTO DE ERRO
   const pauseTracking = async () => {
     const pointsToSave = [...manualPoints];
-    if (pointsToSave.length > 0 && tracking && !paused) {
-      console.log('⏸️ Salvamento automático ao pausar...');
-      await saveProject(true, pointsToSave);
+    try {
+      if (pointsToSave.length > 0 && tracking && !paused) {
+        console.log('⏸️ Salvamento automático ao pausar...');
+        await saveProject(true, pointsToSave);
+      }
+    } catch (error) {
+      console.error('Falha ao salvar o projeto ao pausar:', error);
+      if (error.message.includes('Invalid Refresh Token')) {
+        alert('Sua sessão expirou. Por favor, faça login novamente.');
+        handleLogout();
+      }
+    } finally {
+      setPaused(!paused);
     }
-    
-    setPaused(!paused);
   };
 
   // Adicionar ponto manual com snapping
@@ -1950,7 +1977,7 @@ function App() {
   }
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden bg-slate-900">
+    <div className="relative h-screen w-screen overflow-hidden bg-slate-900" style={{ zIndex: 1 }}>
       {/* Mapa em tela cheia */}
       <div className="absolute inset-0 z-0">
       <Map
@@ -1973,7 +2000,7 @@ function App() {
               latitude={marker.lat}
               onClick={(e) => {
                 e.originalEvent.stopPropagation();
-                handleEditMarker(marker);
+                handleMarkerClick(marker);
               }}
               color={marker.color || '#FF0000'}
             />
@@ -2856,7 +2883,7 @@ function App() {
               </div>
 
               <div className="flex gap-2 pt-4 border-t border-slate-700/50">
-                <Button onClick={handleDeleteMarker} variant="outline" className="flex-1 border-red-500/50 text-red-400 hover:bg-red-500/20 hover:text-red-300">
+                <Button onClick={() => handleDeleteMarker(editingMarker.id)} variant="outline" className="flex-1 border-red-500/50 text-red-400 hover:bg-red-500/20 hover:text-red-300">
                   <X className="w-4 h-4 mr-2"/>
                   Deletar
                 </Button>
@@ -3081,6 +3108,31 @@ function App() {
         onChange={handleProjectImport}
         className="hidden"
       />
+
+      {/* Popup de Detalhes do Marcador */}
+      {selectedMarkerForPopup && (
+        <MarkerDetailsPopup
+          marker={selectedMarkerForPopup}
+          distance={
+            currentPosition
+              ? formatDistance(
+                  calculateDistance(
+                    currentPosition.lat,
+                    currentPosition.lng,
+                    selectedMarkerForPopup.lat,
+                    selectedMarkerForPopup.lng
+                  )
+                )
+              : 'Calculando...'
+          }
+          isFavorite={favorites.includes(selectedMarkerForPopup.id)}
+          onClose={() => setSelectedMarkerForPopup(null)}
+          onEdit={() => handleEditMarker(selectedMarkerForPopup)}
+          onDelete={() => handleDeleteMarker(selectedMarkerForPopup.id)}
+          onShare={() => handleShareLocation(selectedMarkerForPopup)}
+          onToggleFavorite={() => toggleFavorite(selectedMarkerForPopup.id)}
+        />
+      )}
     </div>
   )
 }
