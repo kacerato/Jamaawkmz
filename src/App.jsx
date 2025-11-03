@@ -1254,11 +1254,8 @@ function App() {
 
   // Função para editar marcador
   const handleEditMarker = useCallback((marker) => {
-    setPopupInfo({
-      longitude: marker.lng,
-      latitude: marker.lat,
-      ...marker
-    });
+    setEditingMarker(marker);
+    setShowEditDialog(true);
   }, []);
 
   // Função para salvar edição
@@ -1400,8 +1397,9 @@ function App() {
 
   // Parar rastreamento - ATUALIZADA COM SALVAMENTO AUTOMÁTICO
   const stopTracking = async () => {
+    const pointsToSave = [...manualPoints];
     // SALVAMENTO AUTOMÁTICO AO PARAR
-    if (manualPoints.length > 0) {
+    if (pointsToSave.length > 0) {
       console.log('💾 Salvamento automático ao parar rastreamento...');
       
       // Se já existe um projeto, atualiza. Se não, cria um novo com nome padrão
@@ -1410,9 +1408,7 @@ function App() {
       }
       
       // Aguarda um pouco para garantir que o estado foi atualizado
-      setTimeout(() => {
-        saveProject(true); // autoSave = true
-      }, 100);
+      await saveProject(true, pointsToSave); // autoSave = true
     }
 
     setTracking(false);
@@ -1427,17 +1423,16 @@ function App() {
 
   // Pausar rastreamento - ATUALIZADA COM SALVAMENTO AUTOMÁTICO
   const pauseTracking = () => {
+    const pointsToSave = [...manualPoints];
     // SALVAMENTO AUTOMÁTICO AO PAUSAR (se houver pontos)
-    if (manualPoints.length > 0 && tracking && !paused) {
+    if (pointsToSave.length > 0 && tracking && !paused) {
       console.log('⏸️ Salvamento automático ao pausar...');
       
       if (!currentProject && !projectName.trim()) {
         setProjectName(`Rastreamento ${new Date().toLocaleString('pt-BR')}`);
       }
       
-      setTimeout(() => {
-        saveProject(true); // autoSave = true
-      }, 100);
+      saveProject(true, pointsToSave); // autoSave = true
     }
     
     setPaused(!paused);
@@ -1628,9 +1623,9 @@ function App() {
   };
 
   // FUNÇÃO SALVAR PROJETO - ATUALIZADA PARA SALVAR NO MESMO PROJETO
-  const saveProject = async (autoSave = false) => {
+  const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
     // Se for salvamento automático e não há pontos, não salva
-    if (autoSave && manualPoints.length === 0) {
+    if (autoSave && pointsToSave.length === 0) {
       return;
     }
 
@@ -1640,18 +1635,18 @@ function App() {
       projectNameToUse = currentProject.name;
     }
 
-    if (!projectNameToUse.trim() && manualPoints.length === 0) {
+    if (!projectNameToUse.trim() && pointsToSave.length === 0) {
       if (!autoSave) {
         alert('Digite um nome para o projeto e certifique-se de ter pontos no traçado.');
       }
       return;
     }
     
-    const calculatedTotalDistance = calculateTotalDistance(manualPoints);
+    const calculatedTotalDistance = calculateTotalDistance(pointsToSave);
     
     const projectData = {
       name: projectNameToUse.trim(),
-      points: manualPoints,
+      points: pointsToSave,
       total_distance: calculatedTotalDistance,
       bairro: selectedBairro !== 'todos' ? selectedBairro : 'Vários',
       tracking_mode: trackingMode,
@@ -1980,11 +1975,6 @@ function App() {
           style={{ width: '100%', height: '100%', position: 'relative' }}
           mapStyle={mapStyles[mapStyle].url}
           mapboxAccessToken={mapboxToken}
-          onClick={async (e) => {
-            const { lng, lat } = e.lngLat;
-            const streetName = await detectStreetName(lat, lng);
-            setNewMarkerData({ lat, lng, rua: streetName, color: '#FF0000' });
-          }}
         >
           <NavigationControl position="top-right" />
 
@@ -1993,62 +1983,14 @@ function App() {
               key={marker.id}
               longitude={marker.lng}
               latitude={marker.lat}
-              onClick={() => handleEditMarker(marker)}
+              onClick={(e) => {
+                e.originalEvent.stopPropagation();
+                handleEditMarker(marker);
+              }}
               color={marker.color || '#FF0000'}
             />
           ))}
 
-          {popupInfo && (
-            <Popup
-              longitude={popupInfo.longitude}
-              latitude={popupInfo.latitude}
-              onClose={() => setPopupInfo(null)}
-              closeOnClick={false}
-              className="custom-popup"
-            >
-              <div className="text-sm min-w-[200px] max-w-[280px] p-1">
-                <div className="flex items-start justify-between mb-2 gap-2">
-                  <h3 className="font-bold text-base text-slate-900 flex-1">{popupInfo.name}</h3>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleFavorite(popupInfo.id);
-                    }}
-                    className="flex-shrink-0 p-1 hover:bg-gray-100 rounded transition-colors"
-                  >
-                    <Heart
-                      className={`w-5 h-5 ${favorites.includes(popupInfo.id) ? 'fill-red-500 text-red-500' : 'text-gray-400 hover:text-red-400'}`}
-                    />
-                  </button>
-                </div>
-                <div className="space-y-1 mb-2">
-                  {popupInfo.bairro && (
-                    <div className="flex items-center gap-2 text-xs text-gray-700">
-                      <MapPin className="w-3 h-3 text-cyan-600 flex-shrink-0" />
-                      <span className="font-medium">{popupInfo.bairro}</span>
-                    </div>
-                  )}
-                  {popupInfo.rua && (
-                    <div className="flex items-center gap-2 text-xs text-gray-700">
-                      <MapPin className="w-3 h-3 text-blue-600 flex-shrink-0" />
-                      <span>{popupInfo.rua}</span>
-                    </div>
-                  )}
-                </div>
-                {popupInfo.descricao && (
-                  <p className="text-xs text-gray-600 bg-blue-50 p-2 rounded mb-2 leading-relaxed">{popupInfo.descricao}</p>
-                )}
-                <Button
-                  size="sm"
-                  className="w-full bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white shadow-md"
-                  onClick={() => handleShareLocation(popupInfo)}
-                >
-                  <Share2 className="w-3 h-3 mr-1.5" />
-                  Compartilhar
-                </Button>
-              </div>
-            </Popup>
-          )}
 
           {manualPoints.length > 0 && (
             <>
@@ -2778,7 +2720,7 @@ function App() {
 
       {/* Diálogo de Detalhes do Projeto */}
       <Dialog open={showProjectDetails} onOpenChange={setShowProjectDetails}>
-        <DialogContent className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white border-slate-700/50 max-w-md shadow-2xl">
+        <DialogContent className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white border-slate-700/50 shadow-2xl fixed bottom-4 left-4 right-4 w-auto sm:max-w-sm sm:left-auto sm:right-4">
           <DialogHeader>
             <DialogTitle className="text-cyan-400 text-xl font-bold flex items-center gap-2">
               <FolderOpen className="w-5 h-5" />
