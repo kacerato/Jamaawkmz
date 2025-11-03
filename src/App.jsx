@@ -16,7 +16,6 @@ import { Network } from '@capacitor/network'
 import { Preferences } from '@capacitor/preferences'
 import { Filesystem, Directory } from '@capacitor/filesystem'
 import axios from 'axios'
-import { BackupManager } from './components/BackupManager'
 import ARCamera from './components/ARCamera'
 import ResumoProjeto from './components/ResumoProjeto';
 import ControlesRastreamento from './components/ControlesRastreamento';
@@ -164,6 +163,7 @@ function App() {
   const [loading, setLoading] = useState(true)
   const [bairros, setBairros] = useState(DEFAULT_BAIRROS)
   const [showAddBairro, setShowAddBairro] = useState(false)
+  const [showBairroManager, setShowBairroManager] = useState(false)
   const [newBairro, setNewBairro] = useState('')
   const [routeCoordinates, setRouteCoordinates] = useState([])
   const [calculatingRoute, setCalculatingRoute] = useState(false)
@@ -193,6 +193,8 @@ function App() {
   const [trackingMode, setTrackingMode] = useState('manual')
   const [lastAutoPointTime, setLastAutoPointTime] = useState(0)
   const [editingProject, setEditingProject] = useState(null);
+  const [showProjectDetails, setShowProjectDetails] = useState(false);
+  const [newMarkerData, setNewMarkerData] = useState(null);
   const [snappingEnabled, setSnappingEnabled] = useState(true);
   const [snappingPoints, setSnappingPoints] = useState([]);
   const [mapStyle, setMapStyle] = useState('streets');
@@ -202,7 +204,6 @@ function App() {
   const [adjustBoundsForProject, setAdjustBoundsForProject] = useState(false);
 
   // Estados para backup
-  const [showBackupManager, setShowBackupManager] = useState(false);
   const [backupStatus, setBackupStatus] = useState('idle');
 
   // Estados para Realidade Aumentada
@@ -537,6 +538,7 @@ function App() {
       saveBairros(updatedBairros)
       setNewBairro('')
       setShowAddBairro(false)
+	  setShowBairroManager(false)
     }
   }
 
@@ -1392,6 +1394,7 @@ function App() {
     setProjectName('');
     setManualPoints([]);
     setTotalDistance(0);
+    setShowProjectDetails(false);
     startTracking();
   };
 
@@ -1767,6 +1770,7 @@ function App() {
       
       setSidebarOpen(false);
       setShowRulerPopup(false);
+      setShowProjectDetails(true);
       
       console.log(`📁 Projeto "${project.name}" carregado com sucesso! Próximos salvamentos atualizarão este projeto.`);
       
@@ -1945,10 +1949,6 @@ function App() {
     setPopupInfo(null)
   }
 
-  // Funções para backup
-  const handleBackupStatusChange = (status) => {
-    setBackupStatus(status);
-  };
 
   // Renderizar tela de autenticação se não estiver logado
   if (authLoading) {
@@ -1980,6 +1980,11 @@ function App() {
           style={{ width: '100%', height: '100%', position: 'relative' }}
           mapStyle={mapStyles[mapStyle].url}
           mapboxAccessToken={mapboxToken}
+          onClick={async (e) => {
+            const { lng, lat } = e.lngLat;
+            const streetName = await detectStreetName(lat, lng);
+            setNewMarkerData({ lat, lng, rua: streetName, color: '#FF0000' });
+          }}
         >
           <NavigationControl position="top-right" />
 
@@ -1989,6 +1994,7 @@ function App() {
               longitude={marker.lng}
               latitude={marker.lat}
               onClick={() => handleEditMarker(marker)}
+              color={marker.color || '#FF0000'}
             />
           ))}
 
@@ -2293,31 +2299,12 @@ function App() {
                   <Button
                     size="sm"
                     variant="ghost"
-                    onClick={() => setShowAddBairro(!showAddBairro)}
-                    className="h-6 w-6 p-0 text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10"
+                    onClick={() => setShowBairroManager(true)}
+                    className="h-6 px-2 text-xs text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10"
                   >
-                    +
+                    Gerenciar
                   </Button>
                 </div>
-
-                {showAddBairro && (
-                  <div className="flex gap-2 mb-3 p-2 bg-slate-800/30 rounded-lg">
-                    <Input
-                      value={newBairro}
-                      onChange={(e) => setNewBairro(e.target.value)}
-                      placeholder="Novo bairro"
-                      className="h-8 text-sm bg-slate-700/50 border-slate-600 text-white flex-1"
-                      onKeyPress={(e) => e.key === 'Enter' && handleAddBairro()}
-                    />
-                    <Button
-                      size="sm"
-                      onClick={handleAddBairro}
-                      className="h-8 px-3 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600"
-                    >
-                      Add
-                    </Button>
-                  </div>
-                )}
 
                 <div className="space-y-1">
                   <div
@@ -2408,14 +2395,6 @@ function App() {
                   Limpar Marcações Importadas
                 </Button>
 
-                {/* Botão de Backup */}
-                <Button
-                  className="w-full justify-start bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white border border-purple-500/30"
-                  onClick={() => setShowBackupManager(true)}
-                >
-                  <Archive className="w-4 h-4 mr-3" />
-                  Backup & Restauração
-                </Button>
 
                 {/* Botão de Realidade Aumentada */}
                 <Button
@@ -2797,6 +2776,39 @@ function App() {
         </DialogContent>
       </Dialog>
 
+      {/* Diálogo de Detalhes do Projeto */}
+      <Dialog open={showProjectDetails} onOpenChange={setShowProjectDetails}>
+        <DialogContent className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white border-slate-700/50 max-w-md shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-cyan-400 text-xl font-bold flex items-center gap-2">
+              <FolderOpen className="w-5 h-5" />
+              Detalhes do Projeto
+            </DialogTitle>
+          </DialogHeader>
+          {currentProject && (
+            <div className="space-y-4">
+              <div>
+                <Label className="text-gray-300 font-medium">Nome</Label>
+                <p className="text-white text-lg">{currentProject.name}</p>
+              </div>
+              <div>
+                <Label className="text-gray-300 font-medium">Distância Total</Label>
+                <p className="text-white text-lg">{formatDistance(currentProject.totalDistance)}</p>
+              </div>
+              <Button
+                onClick={() => {
+                  handleRemovePoints();
+                  setShowProjectDetails(false);
+                }}
+                className="w-full bg-gradient-to-r from-red-500 to-orange-500 hover:from-red-600 hover:to-orange-600"
+              >
+                Limpar Pontos
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* Botão de Centralizar */}
       <div className="absolute bottom-24 right-4 z-10">
         <Button
@@ -2950,6 +2962,100 @@ function App() {
         </DialogContent>
       </Dialog>
 
+      {/* Diálogo de Gerenciamento de Bairros */}
+      <Dialog open={showBairroManager} onOpenChange={setShowBairroManager}>
+        <DialogContent className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white border-slate-700/50 max-w-md shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-cyan-400 text-xl font-bold flex items-center gap-2">
+              <MapPin className="w-5 h-5" />
+              Gerenciar Bairros
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="flex gap-2">
+              <Input
+                value={newBairro}
+                onChange={(e) => setNewBairro(e.target.value)}
+                placeholder="Adicionar novo bairro"
+                className="bg-slate-800/50 border-slate-700 text-white focus:border-cyan-500 focus:ring-cyan-500/20"
+                onKeyPress={(e) => e.key === 'Enter' && handleAddBairro()}
+              />
+              <Button onClick={handleAddBairro} className="bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600">
+                Adicionar
+              </Button>
+            </div>
+            <div className="max-h-60 overflow-y-auto space-y-2 pr-2">
+              {bairros.map(bairro => (
+                <div key={bairro} className="flex items-center justify-between p-2 bg-slate-800/50 rounded-lg">
+                  <span>{bairro}</span>
+                  {!DEFAULT_BAIRROS.includes(bairro) && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 w-6 p-0 text-red-400 hover:text-red-300 hover:bg-red-500/20"
+                      onClick={() => handleRemoveBairro(bairro)}
+                    >
+                      <X className="w-3 h-3" />
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Diálogo de Novo Marcador */}
+      {newMarkerData && (
+        <Dialog open={true} onOpenChange={() => setNewMarkerData(null)}>
+          <DialogContent className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white border-slate-700/50 max-w-md shadow-2xl">
+            <DialogHeader>
+              <DialogTitle className="text-cyan-400 text-xl font-bold flex items-center gap-2">
+                <MapPin className="w-5 h-5" />
+                Novo Marcador
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label className="text-gray-300 font-medium">Rua</Label>
+                <Input
+                  value={newMarkerData.rua}
+                  onChange={(e) => setNewMarkerData({ ...newMarkerData, rua: e.target.value })}
+                  className="bg-slate-800/50 border-slate-700 text-white"
+                />
+              </div>
+              <div>
+                <Label className="text-gray-300 font-medium">Cor</Label>
+                <Input
+                  type="color"
+                  value={newMarkerData.color}
+                  onChange={(e) => setNewMarkerData({ ...newMarkerData, color: e.target.value })}
+                  className="bg-slate-800/50 border-slate-700 text-white"
+                />
+              </div>
+              <Button
+                onClick={async () => {
+                  const savedMarker = await saveMarkerToSupabase({
+                    name: `Marcador ${markers.length + 1}`,
+                    lat: newMarkerData.lat,
+                    lng: newMarkerData.lng,
+                    rua: newMarkerData.rua,
+                    color: newMarkerData.color,
+                  });
+                  if (savedMarker) {
+                    setMarkers(prev => [...prev, savedMarker]);
+                  }
+                  setNewMarkerData(null);
+                }}
+                className="w-full bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600"
+              >
+                Salvar Marcador
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
       {/* Dialog para Salvar Projeto */}
       <Dialog open={showProjectDialog} onOpenChange={(open) => {
         setShowProjectDialog(open);
@@ -3029,15 +3135,6 @@ function App() {
         />
       )}
 
-      {/* Gerenciador de Backup */}
-      <BackupManager 
-        open={showBackupManager}
-        onOpenChange={setShowBackupManager}
-        user={user}
-        projects={projects}
-        markers={markers}
-        onStatusChange={handleBackupStatusChange}
-      />
 
       {/* Componente de Realidade Aumentada */}
       {arMode && (
