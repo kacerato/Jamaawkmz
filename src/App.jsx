@@ -756,6 +756,35 @@ function App() {
   }
 
   // Função para processar arquivo KML/KMZ
+  const handleProjectImport = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    try {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const project = JSON.parse(e.target.result);
+          if (isValidProject(project)) {
+            loadProject(project);
+            alert(`Projeto "${project.name}" importado com sucesso!`);
+          } else {
+            alert('Arquivo de projeto inválido ou corrompido.');
+          }
+        } catch (error) {
+          console.error('Erro ao processar arquivo do projeto:', error);
+          alert('Erro ao ler o arquivo do projeto. Certifique-se de que é um JSON válido.');
+        }
+      };
+      reader.readAsText(file);
+    } catch (error) {
+      console.error('Erro ao importar projeto:', error);
+      alert('Não foi possível importar o projeto.');
+    } finally {
+      event.target.value = '';
+    }
+  };
+
   const handleFileImport = async (event) => {
     const file = event.target.files[0]
     if (!file) return
@@ -1587,6 +1616,14 @@ function App() {
     setLastAutoPointTime(0)
   }
 
+  // Função para remover pontos de um projeto carregado
+  const handleRemovePoints = () => {
+    if (currentProject && confirm(`Tem certeza que deseja remover todos os pontos do projeto "${currentProject.name}"?`)) {
+      setManualPoints([]);
+      setTotalDistance(0);
+    }
+  };
+
   // FUNÇÃO SALVAR PROJETO - ATUALIZADA PARA SALVAR NO MESMO PROJETO
   const saveProject = async (autoSave = false) => {
     // Se for salvamento automático e não há pontos, não salva
@@ -2344,6 +2381,14 @@ function App() {
                   <Upload className="w-4 h-4 mr-3" />
                   {uploading ? 'Importando...' : 'Importar KML/KMZ'}
                 </Button>
+
+                <Button
+                  className="w-full justify-start bg-slate-800/50 hover:bg-slate-800 border border-slate-700 text-white"
+                  onClick={() => document.getElementById('project-input').click()}
+                >
+                  <FolderOpen className="w-4 h-4 mr-3" />
+                  Importar Projeto
+                </Button>
                 
                 <Button
                   className="w-full justify-start bg-slate-800/50 hover:bg-slate-800 border border-slate-700 text-white"
@@ -2980,6 +3025,7 @@ function App() {
           snappingEnabled={snappingEnabled}
           gpsAccuracy={gpsAccuracy}
           speed={speed}
+          handleRemovePoints={handleRemovePoints}
         />
       )}
 
@@ -3019,6 +3065,15 @@ function App() {
         accept="image/*"
         multiple
         onChange={handlePhotoUpload}
+        className="hidden"
+      />
+
+      {/* Input oculto para importação de projeto */}
+      <input
+        id="project-input"
+        type="file"
+        accept=".json"
+        onChange={handleProjectImport}
         className="hidden"
       />
     </div>
