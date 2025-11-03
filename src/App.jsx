@@ -1395,20 +1395,12 @@ function App() {
     startTracking();
   };
 
-  // Parar rastreamento - ATUALIZADA COM SALVAMENTO AUTOMÁTICO
+  // Parar rastreamento - CORRIGIDO
   const stopTracking = async () => {
     const pointsToSave = [...manualPoints];
-    // SALVAMENTO AUTOMÁTICO AO PARAR
     if (pointsToSave.length > 0) {
       console.log('💾 Salvamento automático ao parar rastreamento...');
-      
-      // Se já existe um projeto, atualiza. Se não, cria um novo com nome padrão
-      if (!currentProject && !projectName.trim()) {
-        setProjectName(`Rastreamento ${new Date().toLocaleString('pt-BR')}`);
-      }
-      
-      // Aguarda um pouco para garantir que o estado foi atualizado
-      await saveProject(true, pointsToSave); // autoSave = true
+      await saveProject(true, pointsToSave);
     }
 
     setTracking(false);
@@ -1421,18 +1413,12 @@ function App() {
     setSpeed(0);
   };
 
-  // Pausar rastreamento - ATUALIZADA COM SALVAMENTO AUTOMÁTICO
-  const pauseTracking = () => {
+  // Pausar rastreamento - CORRIGIDO
+  const pauseTracking = async () => {
     const pointsToSave = [...manualPoints];
-    // SALVAMENTO AUTOMÁTICO AO PAUSAR (se houver pontos)
     if (pointsToSave.length > 0 && tracking && !paused) {
       console.log('⏸️ Salvamento automático ao pausar...');
-      
-      if (!currentProject && !projectName.trim()) {
-        setProjectName(`Rastreamento ${new Date().toLocaleString('pt-BR')}`);
-      }
-      
-      saveProject(true, pointsToSave); // autoSave = true
+      await saveProject(true, pointsToSave);
     }
     
     setPaused(!paused);
@@ -1633,6 +1619,8 @@ function App() {
     let projectNameToUse = projectName;
     if (currentProject && !projectName.trim()) {
       projectNameToUse = currentProject.name;
+    } else if (autoSave && !projectName.trim() && !currentProject) {
+      projectNameToUse = `Rastreamento ${new Date().toLocaleString('pt-BR')}`;
     }
 
     if (!projectNameToUse.trim() && pointsToSave.length === 0) {
@@ -2820,83 +2808,61 @@ function App() {
           <DialogHeader>
             <DialogTitle className="text-cyan-400 text-xl font-bold flex items-center gap-2">
               <Edit2 className="w-5 h-5" />
-              Editar Marcação
+              Personalizar Marcação
             </DialogTitle>
             <DialogDescription className="text-gray-400 text-sm">
-              Edite os dados da marcação no mapa
+              Atualize as informações da marcação. O nome é automático e não pode ser alterado aqui.
             </DialogDescription>
           </DialogHeader>
           {editingMarker && (
-            <div className="space-y-4">
-              <div>
-                <Label className="text-gray-300 font-medium">Nome</Label>
-                <Input
-                  value={editingMarker.name}
-                  onChange={(e) => setEditingMarker({ ...editingMarker, name: e.target.value })}
-                  className="bg-slate-800/50 border-slate-700 text-white focus:border-cyan-500 focus:ring-cyan-500/20"
-                />
-              </div>
-
-              <div>
-                <Label className="text-gray-300 font-medium">Bairro</Label>
-                <Select
-                  value={editingMarker.bairro || ''}
-                  onValueChange={(value) => setEditingMarker({ ...editingMarker, bairro: value })}
-                >
-                  <SelectTrigger className="bg-slate-800/50 border-slate-700 text-white focus:border-cyan-500 focus:ring-cyan-500/20">
-                    <SelectValue placeholder="Selecione um bairro" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-slate-800 border-slate-700 text-white z-[9999]">
-                    {bairros.map(bairro => (
-                      <SelectItem key={bairro} value={bairro}>{bairro}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div>
-                <Label className="text-gray-300 font-medium">Rua</Label>
-                <Input
-                  value={editingMarker.rua || ''}
-                  onChange={(e) => setEditingMarker({ ...editingMarker, rua: e.target.value })}
-                  className="bg-slate-800/50 border-slate-700 text-white focus:border-cyan-500 focus:ring-cyan-500/20"
-                  placeholder="Nome da rua"
-                />
-              </div>
-
-              <div>
-                <Label className="text-gray-300 font-medium">Descrição</Label>
-                <Textarea
-                  value={editingMarker.descricao || ''}
-                  onChange={(e) => setEditingMarker({ ...editingMarker, descricao: e.target.value })}
-                  className="bg-slate-800/50 border-slate-700 text-white focus:border-cyan-500 focus:ring-cyan-500/20"
-                  rows={3}
-                />
-              </div>
-
-              <div>
-                <Label className="text-gray-300 font-medium">Fotos</Label>
-                <div className="flex flex-wrap gap-2 mt-2">
-                  {editingMarker.fotos?.map((foto, index) => (
-                    <img key={index} src={foto} alt={`Foto ${index + 1}`} className="w-20 h-20 object-cover rounded-lg border-2 border-slate-700" />
-                  ))}
+            <div className="space-y-4 py-4">
+              <div className="grid grid-cols-1 gap-4">
+                <div>
+                  <Label className="text-gray-300 font-medium">Nome</Label>
+                  <Input
+                    value={editingMarker.name}
+                    disabled
+                    className="bg-slate-800/50 border-slate-700 text-gray-400"
+                  />
                 </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="mt-2 border-slate-700 text-cyan-400 hover:bg-slate-800"
-                  onClick={() => document.getElementById('photo-input').click()}
-                >
-                  Adicionar Fotos
-                </Button>
+
+                <div>
+                  <Label className="text-gray-300 font-medium">Bairro</Label>
+                  <Select
+                    value={editingMarker.bairro || ''}
+                    onValueChange={(value) => setEditingMarker({ ...editingMarker, bairro: value })}
+                  >
+                    <SelectTrigger className="bg-slate-800/50 border-slate-700 text-white focus:border-cyan-500 focus:ring-cyan-500/20">
+                      <SelectValue placeholder="Selecione um bairro" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-slate-800 border-slate-700 text-white z-[9999]">
+                      {bairros.map(bairro => (
+                        <SelectItem key={bairro} value={bairro}>{bairro}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label className="text-gray-300 font-medium">Descrição</Label>
+                  <Textarea
+                    value={editingMarker.descricao || ''}
+                    onChange={(e) => setEditingMarker({ ...editingMarker, descricao: e.target.value })}
+                    className="bg-slate-800/50 border-slate-700 text-white focus:border-cyan-500 focus:ring-cyan-500/20"
+                    rows={3}
+                    placeholder="Adicione uma descrição..."
+                  />
+                </div>
               </div>
 
-              <div className="flex gap-2 pt-2">
-                <Button onClick={handleSaveEdit} className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 shadow-lg">
-                  Salvar
-                </Button>
-                <Button onClick={handleDeleteMarker} variant="destructive" className="flex-1 bg-gradient-to-r from-red-500 to-orange-500 hover:from-red-600 hover:to-orange-600 shadow-lg">
+              <div className="flex gap-2 pt-4 border-t border-slate-700/50">
+                <Button onClick={handleDeleteMarker} variant="outline" className="flex-1 border-red-500/50 text-red-400 hover:bg-red-500/20 hover:text-red-300">
+                  <X className="w-4 h-4 mr-2"/>
                   Deletar
+                </Button>
+                <Button onClick={handleSaveEdit} className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 shadow-lg">
+                  <Save className="w-4 h-4 mr-2"/>
+                  Salvar Alterações
                 </Button>
               </div>
             </div>
