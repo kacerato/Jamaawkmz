@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import Map, { Marker, Popup, Source, Layer, NavigationControl } from 'react-map-gl'
-import { Upload, MapPin, Ruler, X, Download, Share2, Edit2, Menu, LogOut, Heart, MapPinned, Layers, Play, Pause, Square, FolderOpen, Save, Navigation, Clock, Cloud, CloudOff, Archive, Camera, Plus, Star } from 'lucide-react'
+import { Upload, MapPin, Ruler, X, Download, Share2, Edit2, Menu, LogOut, Heart, MapPinned, Layers, Play, Pause, Square, FolderOpen, Save, Navigation, Clock, Cloud, CloudOff, Archive, Camera, Plus, Star, LocateFixed } from 'lucide-react'
 import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.jsx'
 import { Input } from '@/components/ui/input.jsx'
@@ -1826,6 +1826,19 @@ function App() {
     setAdjustBoundsForProject(false);
   };
 
+  // Função para centralizar o mapa no usuário
+  const centerMapOnUser = () => {
+    if (currentPosition && mapRef.current) {
+      mapRef.current.flyTo({
+        center: [currentPosition.lng, currentPosition.lat],
+        zoom: 16,
+        essential: true,
+      });
+    } else {
+      alert('Localização atual ainda não disponível.');
+    }
+  };
+
   // ========== FUNÇÕES PARA REALIDADE AUMENTADA ==========
 
   // Função para ativar modo AR
@@ -2738,6 +2751,18 @@ function App() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Botão de Centralizar */}
+      <div className="absolute bottom-24 right-4 z-10">
+        <Button
+          size="icon"
+          className="bg-white/80 backdrop-blur-sm hover:bg-white text-slate-900 shadow-xl border border-slate-200/50 transition-all-smooth hover-lift rounded-full w-12 h-12"
+          onClick={centerMapOnUser}
+          title="Centralizar no Local Atual"
+        >
+          <LocateFixed className="w-6 h-6" />
+        </Button>
+      </div>
 
       {/* Resultado de distância flutuante */}
       {distanceResult && (
