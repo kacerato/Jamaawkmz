@@ -17,9 +17,9 @@ import { Preferences } from '@capacitor/preferences'
 import { Filesystem, Directory } from '@capacitor/filesystem'
 import axios from 'axios'
 import ARCamera from './components/ARCamera'
-import ResumoProjeto from './components/ResumoProjeto';
-import ControlesRastreamento from './components/ControlesRastreamento';
-import MarkerDetailsPopup from './components/MarkerDetailsPopup';
+import ResumoProjeto from './components/ResumoProjeto'
+import ControlesRastreamento from './components/ControlesRastreamento'
+import ModernPopup from './components/ModernPopup'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import './App.css'
 
@@ -157,7 +157,6 @@ function App() {
   const [filteredMarkers, setFilteredMarkers] = useState([])
   const [selectedBairro, setSelectedBairro] = useState('todos')
   const [editingMarker, setEditingMarker] = useState(null)
-  const [selectedMarkerForPopup, setSelectedMarkerForPopup] = useState(null);
   const [popupInfo, setPopupInfo] = useState(null);
   const [selectedForDistance, setSelectedForDistance] = useState([])
   const [distanceResult, setDistanceResult] = useState(null)
@@ -201,14 +200,11 @@ function App() {
   const [snappingPoints, setSnappingPoints] = useState([]);
   const [mapStyle, setMapStyle] = useState('streets');
   
-  // Estados para controle de zoom
+  // Novos estados para popup moderno e tratamento de erros
+  const [popupMarker, setPopupMarker] = useState(null);
   const [adjustBoundsForMarkers, setAdjustBoundsForMarkers] = useState(false);
   const [adjustBoundsForProject, setAdjustBoundsForProject] = useState(false);
-
-  // Estados para backup
   const [backupStatus, setBackupStatus] = useState('idle');
-
-  // Estados para Realidade Aumentada
   const [arMode, setArMode] = useState(false);
   const [arPermission, setArPermission] = useState(null);
 
@@ -216,22 +212,47 @@ function App() {
   const kalmanLatRef = useRef(new KalmanFilter(0.1, 0.1));
   const kalmanLngRef = useRef(new KalmanFilter(0.1, 0.1));
 
-  // Verificar autenticação ao iniciar
+  // Verificar autenticação ao iniciar - ATUALIZADO COM TRATAMENTO DE ERRO
   useEffect(() => {
     const checkAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      setUser(session?.user ?? null)
-      setAuthLoading(false)
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession()
+        
+        if (error) {
+          console.error('Erro ao verificar sessão:', error)
+          // Forçar logout se houver erro de token
+          if (error.message.includes('Invalid Refresh Token')) {
+            await supabase.auth.signOut()
+          }
+        }
+        
+        setUser(session?.user ?? null)
+      } catch (error) {
+        console.error('Erro inesperado na autenticação:', error)
+      } finally {
+        setAuthLoading(false)
+      }
     }
+    
     checkAuth()
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth state change:', event)
+      
+      if (event === 'SIGNED_OUT') {
+        // Limpar estado local ao sair
+        setUser(null)
+        setMarkers([])
+        setProjects([])
+      } else if (event === 'SIGNED_IN') {
+        setUser(session.user)
+      } else if (event === 'TOKEN_REFRESHED') {
+        setUser(session?.user ?? null)
+      }
     })
 
     return () => subscription.unsubscribe()
   }, [])
-
 
   // FUNÇÕES PARA SUPABASE - PROJETOS
   // Carregar projetos do Supabase
@@ -456,7 +477,6 @@ function App() {
     }
   }, [user])
 
-  // Efeito para rastrear posição do usuário
   // Efeito para rastrear posição do usuário
   useEffect(() => {
     let watchId = null
@@ -1254,16 +1274,10 @@ function App() {
     })
   }
 
-  // Função para ABRIR POPUP do marcador
-  const handleMarkerClick = useCallback((marker) => {
-    setSelectedMarkerForPopup(marker);
-  }, []);
-
-  // Função para editar marcador (abre o diálogo de edição)
+  // Função para editar marcador
   const handleEditMarker = useCallback((marker) => {
     setEditingMarker(marker);
     setShowEditDialog(true);
-    setSelectedMarkerForPopup(null); // Fecha o popup de detalhes
   }, []);
 
   // Função para salvar edição
@@ -1288,28 +1302,27 @@ function App() {
   }
 
   // Função para deletar marcador
-  const handleDeleteMarker = async (markerId) => {
-    if (!markerId) return;
+  const handleDeleteMarker = async () => {
+    if (!editingMarker) return
 
-    const markerToDelete = markers.find(m => m.id === markerId);
-    if (!markerToDelete) return;
-
-    if (confirm(`Deseja realmente deletar "${markerToDelete.name}"?`)) {
+    if (confirm(`Deseja realmente deletar "${editingMarker.name}"?`)) {
       if (isOnline) {
-        const success = await deleteMarkerFromSupabase(markerToDelete.id);
+        const success = await deleteMarkerFromSupabase(editingMarker.id)
         if (success) {
-          setMarkers(prev => prev.filter(m => m.id !== markerToDelete.id));
-          setSelectedMarkerForPopup(null); // Fechar popup após deletar
+          setMarkers(prev => prev.filter(m => m.id !== editingMarker.id))
+          setShowEditDialog(false)
+          setEditingMarker(null)
         } else {
-          alert('Erro ao deletar marcação');
+          alert('Erro ao deletar marcação')
         }
       } else {
-        setMarkers(prev => prev.filter(m => m.id !== markerToDelete.id));
-        setSyncPending(true);
-        setSelectedMarkerForPopup(null); // Fechar popup após deletar
+        setMarkers(prev => prev.filter(m => m.id !== editingMarker.id))
+        setSyncPending(true)
+        setShowEditDialog(false)
+        setEditingMarker(null)
       }
     }
-  };
+  }
 
   // Função para detectar nome da rua usando geocodificação reversa
   const detectStreetName = async (lat, lng) => {
@@ -1404,22 +1417,17 @@ function App() {
     startTracking();
   };
 
-  // Parar rastreamento - CORRIGIDO COM TRATAMENTO DE ERRO
+  // Parar rastreamento - CORRIGIDO COM TRY/CATCH
   const stopTracking = async () => {
-    const pointsToSave = [...manualPoints];
     try {
+      const pointsToSave = [...manualPoints];
       if (pointsToSave.length > 0) {
         console.log('💾 Salvamento automático ao parar rastreamento...');
         await saveProject(true, pointsToSave);
       }
     } catch (error) {
-      console.error('Falha ao salvar o projeto ao parar:', error);
-      if (error.message.includes('Invalid Refresh Token')) {
-        alert('Sua sessão expirou. Por favor, faça login novamente.');
-        handleLogout();
-      } else {
-        alert('Ocorreu um erro ao salvar seu progresso. Verifique sua conexão.');
-      }
+      console.error('Erro ao salvar projeto automaticamente:', error);
+      // Não interrompe o processo se houver erro no salvamento
     } finally {
       setTracking(false);
       setPaused(false);
@@ -1432,20 +1440,17 @@ function App() {
     }
   };
 
-  // Pausar rastreamento - CORRIGIDO COM TRATAMENTO DE ERRO
+  // Pausar rastreamento - CORRIGIDO COM TRY/CATCH
   const pauseTracking = async () => {
-    const pointsToSave = [...manualPoints];
     try {
+      const pointsToSave = [...manualPoints];
       if (pointsToSave.length > 0 && tracking && !paused) {
         console.log('⏸️ Salvamento automático ao pausar...');
         await saveProject(true, pointsToSave);
       }
     } catch (error) {
-      console.error('Falha ao salvar o projeto ao pausar:', error);
-      if (error.message.includes('Invalid Refresh Token')) {
-        alert('Sua sessão expirou. Por favor, faça login novamente.');
-        handleLogout();
-      }
+      console.error('Erro ao salvar projeto automaticamente:', error);
+      // Não interrompe o processo se houver erro no salvamento
     } finally {
       setPaused(!paused);
     }
@@ -1977,7 +1982,7 @@ function App() {
   }
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden bg-slate-900" style={{ zIndex: 1 }}>
+    <div className="relative h-screen w-screen overflow-hidden bg-slate-900">
       {/* Mapa em tela cheia */}
       <div className="absolute inset-0 z-0">
       <Map
@@ -2000,7 +2005,7 @@ function App() {
               latitude={marker.lat}
               onClick={(e) => {
                 e.originalEvent.stopPropagation();
-                handleMarkerClick(marker);
+                setPopupMarker(marker);
               }}
               color={marker.color || '#FF0000'}
             />
@@ -2883,7 +2888,7 @@ function App() {
               </div>
 
               <div className="flex gap-2 pt-4 border-t border-slate-700/50">
-                <Button onClick={() => handleDeleteMarker(editingMarker.id)} variant="outline" className="flex-1 border-red-500/50 text-red-400 hover:bg-red-500/20 hover:text-red-300">
+                <Button onClick={handleDeleteMarker} variant="outline" className="flex-1 border-red-500/50 text-red-400 hover:bg-red-500/20 hover:text-red-300">
                   <X className="w-4 h-4 mr-2"/>
                   Deletar
                 </Button>
@@ -3070,6 +3075,25 @@ function App() {
         />
       )}
 
+      {/* Popup Moderno para Marcadores */}
+      {popupMarker && (
+        <ModernPopup
+          marker={popupMarker}
+          onClose={() => setPopupMarker(null)}
+          onEdit={(marker) => {
+            setPopupMarker(null);
+            setEditingMarker(marker);
+            setShowEditDialog(true);
+          }}
+          onShare={handleShareLocation}
+          onFavorite={toggleFavorite}
+          onCalculateDistance={(marker) => {
+            setSelectedForDistance([marker]);
+            setPopupMarker(null);
+          }}
+          currentPosition={currentPosition}
+        />
+      )}
 
       {/* Componente de Realidade Aumentada */}
       {arMode && (
@@ -3108,31 +3132,6 @@ function App() {
         onChange={handleProjectImport}
         className="hidden"
       />
-
-      {/* Popup de Detalhes do Marcador */}
-      {selectedMarkerForPopup && (
-        <MarkerDetailsPopup
-          marker={selectedMarkerForPopup}
-          distance={
-            currentPosition
-              ? formatDistance(
-                  calculateDistance(
-                    currentPosition.lat,
-                    currentPosition.lng,
-                    selectedMarkerForPopup.lat,
-                    selectedMarkerForPopup.lng
-                  )
-                )
-              : 'Calculando...'
-          }
-          isFavorite={favorites.includes(selectedMarkerForPopup.id)}
-          onClose={() => setSelectedMarkerForPopup(null)}
-          onEdit={() => handleEditMarker(selectedMarkerForPopup)}
-          onDelete={() => handleDeleteMarker(selectedMarkerForPopup.id)}
-          onShare={() => handleShareLocation(selectedMarkerForPopup)}
-          onToggleFavorite={() => toggleFavorite(selectedMarkerForPopup.id)}
-        />
-      )}
     </div>
   )
 }
