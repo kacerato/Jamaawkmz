@@ -11,11 +11,13 @@ export default function Auth({ onAuthSuccess }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState(null)
+  const [showResend, setShowResend] = useState(false)
 
   const handleAuth = async (e) => {
     e.preventDefault()
     setLoading(true)
     setError(null)
+    setShowResend(false)
 
     try {
       if (isLogin) {
@@ -37,11 +39,36 @@ export default function Auth({ onAuthSuccess }) {
         setIsLogin(true)
       }
     } catch (error) {
-      setError(error.message)
+      if (error.message.includes('Email not confirmed')) {
+        setError('Seu e-mail ainda não foi confirmado. Por favor, verifique sua caixa de entrada.');
+        setShowResend(true);
+      } else if (error.message.includes('Invalid login credentials')) {
+        setError('E-mail ou senha inválidos. Por favor, tente novamente.');
+      } else {
+        setError(error.message);
+      }
     } finally {
       setLoading(false)
     }
   }
+
+  const handleResendConfirmation = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email: email,
+      });
+      if (error) throw error;
+      alert('Link de confirmação reenviado! Verifique seu e-mail.');
+      setShowResend(false);
+    } catch (error) {
+      setError(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-900 p-4">
@@ -102,12 +129,25 @@ export default function Auth({ onAuthSuccess }) {
                 onClick={() => {
                   setIsLogin(!isLogin)
                   setError(null)
+                  setShowResend(false)
                 }}
                 className="text-cyan-400 hover:text-cyan-300 text-sm"
               >
                 {isLogin ? 'Não tem conta? Criar uma' : 'Já tem conta? Entrar'}
               </button>
             </div>
+            {showResend && (
+              <div className="text-center mt-2">
+                <Button
+                  type="button"
+                  onClick={handleResendConfirmation}
+                  disabled={loading}
+                  className="w-full bg-orange-500 hover:bg-orange-600"
+                >
+                  {loading ? 'Enviando...' : 'Reenviar e-mail de confirmação'}
+                </Button>
+              </div>
+            )}
           </form>
         </CardContent>
       </Card>
