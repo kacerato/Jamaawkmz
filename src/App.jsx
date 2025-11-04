@@ -786,28 +786,8 @@ function App() {
       return false
     }
   }
-  
-  // Função para formatar distância de forma detalhada
-const formatDistance = (distanceInMeters) => {
-  if (distanceInMeters === undefined || distanceInMeters === null || isNaN(distanceInMeters)) {
-    return "0 m";
-  }
-  
-  const distance = Number(distanceInMeters);
-  
-  if (distance < 1) {
-    return `${(distance * 100).toFixed(0)} cm`;
-  } else if (distance < 1000) {
-    return `${distance.toFixed(0)} m`;
-  } else if (distance < 10000) {
-    return `${(distance / 1000).toFixed(2)} km`;
-  } else {
-    return `${(distance / 1000).toFixed(1)} km`;
-  }
-};
 
-  // Função para processar arquivo KML/KMZ
-  // Função para processar arquivo KML/KMZ como projeto - CORRIGIDA
+ // Função para processar arquivo KML/KMZ como projeto - CORRIGIDA
 const handleProjectImport = async (event) => {
   const file = event.target.files[0];
   if (!file) return;
@@ -1151,18 +1131,24 @@ const handleProjectImport = async (event) => {
     }
   };
 
-  // FUNÇÃO CORRIGIDA - COM VALIDAÇÃO COMPLETA
-  const formatDistance = (distanceInMeters) => {
-    // Validar se distanceInMeters é undefined, null ou NaN
-    if (distanceInMeters === undefined || distanceInMeters === null || isNaN(distanceInMeters)) {
-      return "0.00 m";
-    }
-    const distance = Number(distanceInMeters);
-    if (distance >= 1000) {
-      return `${(distance / 1000).toFixed(2)} km`;
-    }
-    return `${distance.toFixed(2)} m`;
-  };
+// Função para formatar distância de forma detalhada
+const formatDistance = (distanceInMeters) => {
+  if (distanceInMeters === undefined || distanceInMeters === null || isNaN(distanceInMeters)) {
+    return "0 m";
+  }
+  
+  const distance = Number(distanceInMeters);
+  
+  if (distance < 1) {
+    return `${(distance * 100).toFixed(0)} cm`;
+  } else if (distance < 1000) {
+    return `${distance.toFixed(0)} m`;
+  } else if (distance < 10000) {
+    return `${(distance / 1000).toFixed(2)} km`;
+  } else {
+    return `${(distance / 1000).toFixed(1)} km`;
+  }
+};
 
   // Função para calcular distância entre dois pontos
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
