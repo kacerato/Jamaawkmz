@@ -24,3 +24,8 @@ pnpm-debug.log*
 
 # Mobile artifacts
 *.aab
+*.apk
+
+# Signing
+/android/app/keystore.jks
+/android/app/keystore.properties
