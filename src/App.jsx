@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import Map, { Marker, Popup, Source, Layer, NavigationControl } from 'react-map-gl'
-import { Upload, MapPin, Ruler, X, Download, Share2, Edit2, Menu, LogOut, Heart, MapPinned, Layers, Play, Pause, Square, FolderOpen, Save, Navigation, Clock, Cloud, CloudOff, Archive, Camera, Plus, Star, LocateFixed } from 'lucide-react'
+import { Upload, MapPin, Ruler, X, Download, Share2, Edit2, Menu, LogOut, Heart, MapPinned, Layers, Play, Pause, Square, FolderOpen, Save, Navigation, Clock, Cloud, CloudOff, Archive, Camera, Plus, Star, LocateFixed, Info, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.jsx'
 import { Input } from '@/components/ui/input.jsx'
@@ -147,6 +147,14 @@ class RoadSnappingService {
     return snappedPoints;
   }
 }
+
+// Função de proteção global para toFixed
+const safeToFixed = (value, decimals = 2) => {
+  if (value === undefined || value === null || isNaN(value)) {
+    return "0".padStart(decimals + 2, '0');
+  }
+  return Number(value).toFixed(decimals);
+};
 
 function App() {
   const mapboxToken = 'pk.eyJ1Ijoia2FjZXJhdG8iLCJhIjoiY21oZG1nNnViMDRybjJub2VvZHV1aHh3aiJ9.l7tCaIPEYqcqDI8_aScm7Q';
@@ -1026,18 +1034,18 @@ function App() {
     }
   };
 
-// FUNÇÃO CORRIGIDA - COM VALIDAÇÃO COMPLETA
-const formatDistance = (distanceInMeters) => {
-  // Validar se distanceInMeters é undefined, null ou NaN
-  if (distanceInMeters === undefined || distanceInMeters === null || isNaN(distanceInMeters)) {
-    return "0.00 m";
-  }
-  const distance = Number(distanceInMeters);
-  if (distance >= 1000) {
-    return `${(distance / 1000).toFixed(2)} km`;
-  }
-  return `${distance.toFixed(2)} m`;
-};
+  // FUNÇÃO CORRIGIDA - COM VALIDAÇÃO COMPLETA
+  const formatDistance = (distanceInMeters) => {
+    // Validar se distanceInMeters é undefined, null ou NaN
+    if (distanceInMeters === undefined || distanceInMeters === null || isNaN(distanceInMeters)) {
+      return "0.00 m";
+    }
+    const distance = Number(distanceInMeters);
+    if (distance >= 1000) {
+      return `${(distance / 1000).toFixed(2)} km`;
+    }
+    return `${distance.toFixed(2)} m`;
+  };
 
   // Função para calcular distância entre dois pontos
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
@@ -1643,6 +1651,13 @@ const formatDistance = (distanceInMeters) => {
     if (currentProject && confirm(`Tem certeza que deseja remover todos os pontos do projeto "${currentProject.name}"?`)) {
       setManualPoints([]);
       setTotalDistance(0);
+      // Mantém o projeto atual, mas sem pontos
+      setCurrentProject({
+        ...currentProject,
+        points: [],
+        totalDistance: 0,
+        total_distance: 0
+      });
     }
   };
 
@@ -1668,7 +1683,7 @@ const formatDistance = (distanceInMeters) => {
       return;
     }
     
-    const calculatedTotalDistance = calculateTotalDistance(pointsToSave);
+    const calculatedTotalDistance = calculateTotalDistance(pointsToSave) || 0;
     
     const projectData = {
       name: projectNameToUse.trim(),
@@ -1769,7 +1784,7 @@ const formatDistance = (distanceInMeters) => {
     try {
       setManualPoints([...project.points]);
       
-      const projectDistance = project.totalDistance || project.total_distance || calculateTotalDistance(project.points);
+      const projectDistance = project.totalDistance || project.total_distance || calculateTotalDistance(project.points) || 0;
       setTotalDistance(projectDistance);
       
       // DEFINIR O PROJETO ATUAL - IMPORTANTE PARA PRÓXIMOS SALVAMENTOS
@@ -1847,7 +1862,7 @@ const formatDistance = (distanceInMeters) => {
 <kml xmlns="http://www.opengis.net/kml/2.2">
   <Document>
     <name>${escapeXml(project.name)}</name>
-    <description>Traçado criado no Jamaaw App - Distância total: ${(project.totalDistance / 1000).toFixed(2)} km - Modo: ${project.trackingMode || 'manual'}</description>
+    <description>Traçado criado no Jamaaw App - Distância total: ${safeToFixed((project.totalDistance || 0) / 1000, 2)} km - Modo: ${project.trackingMode || 'manual'}</description>
     <Style id="trailStyle">
       <LineStyle>
         <color>ff1e3a8a</color>
@@ -2168,7 +2183,7 @@ const formatDistance = (distanceInMeters) => {
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-white truncate">{project.name}</p>
                         <p className="text-xs text-gray-300">
-                          {((project.totalDistance || project.total_distance || 0) / 1000).toFixed(2)} km • {project.points.length} pts
+                          {safeToFixed(((project.totalDistance || project.total_distance) || 0) / 1000, 2)} km • {project.points.length} pts
                         </p>
                       </div>
                       <div className="flex gap-1 flex-shrink-0">
@@ -2463,6 +2478,20 @@ const formatDistance = (distanceInMeters) => {
 </Button>
       </div>
 
+      {/* Botão do Projeto Atual */}
+      {currentProject && !showProjectDetails && (
+        <div className="absolute top-20 left-4 z-10">
+          <Button
+            onClick={() => setShowProjectDetails(true)}
+            className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white font-medium py-2 px-4 rounded-lg shadow-lg flex items-center gap-2"
+          >
+            <FolderOpen className="w-4 h-4" />
+            <span className="max-w-[200px] truncate">{currentProject.name}</span>
+            <ChevronDown className="w-4 h-4" />
+          </Button>
+        </div>
+      )}
+
       {/* Popup da Régua Manual */}
       {!tracking && showRulerPopup && (
         <div className="absolute top-20 right-4 z-10">
@@ -2591,7 +2620,7 @@ const formatDistance = (distanceInMeters) => {
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-white truncate">{project.name}</p>
                           <p className="text-xs text-gray-400">
-                            {((project.totalDistance || project.total_distance || 0) / 1000).toFixed(2)} km • {project.points.length} pontos
+                            {safeToFixed(((project.totalDistance || project.total_distance) || 0) / 1000, 2)} km • {project.points.length} pontos
                           </p>
                         </div>
                         <Button
@@ -2608,6 +2637,154 @@ const formatDistance = (distanceInMeters) => {
                       </div>
                     ))}
                   </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Popup de Detalhes do Projeto - Flutuante e Estilizado */}
+      {showProjectDetails && currentProject && (
+        <div className="absolute bottom-24 right-4 z-50 animate-scale-in">
+          <Card className="bg-gradient-to-br from-slate-800/95 to-slate-700/95 backdrop-blur-sm border-slate-600/50 shadow-2xl text-white w-80">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-lg font-bold text-white flex items-center gap-2">
+                  <FolderOpen className="w-5 h-5 text-cyan-400" />
+                  Detalhes do Projeto
+                </CardTitle>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setShowProjectDetails(false)}
+                  className="h-6 w-6 p-0 text-gray-400 hover:text-white"
+                >
+                  <X className="w-3 h-3" />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Informações do Projeto */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between p-3 bg-slate-700/30 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <FolderOpen className="w-4 h-4 text-cyan-400" />
+                    <span className="text-gray-300">Nome:</span>
+                  </div>
+                  <span className="text-white font-medium truncate max-w-[180px]">
+                    {currentProject.name}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between p-3 bg-slate-700/30 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <Ruler className="w-4 h-4 text-green-400" />
+                    <span className="text-gray-300">Distância:</span>
+                  </div>
+                  <span className="text-green-400 font-bold">
+                    {formatDistance(currentProject.totalDistance || currentProject.total_distance)}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between p-3 bg-slate-700/30 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <MapPin className="w-4 h-4 text-blue-400" />
+                    <span className="text-gray-300">Pontos:</span>
+                  </div>
+                  <span className="text-blue-400 font-bold">
+                    {currentProject.points?.length || 0}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between p-3 bg-slate-700/30 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <Navigation className="w-4 h-4 text-purple-400" />
+                    <span className="text-gray-300">Modo:</span>
+                  </div>
+                  <span className="text-purple-400 font-bold">
+                    {currentProject.trackingMode === 'manual' ? 'Manual' : 'Automático'}
+                  </span>
+                </div>
+
+                {currentProject.bairro && currentProject.bairro !== 'Vários' && (
+                  <div className="flex items-center justify-between p-3 bg-slate-700/30 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <MapPin className="w-4 h-4 text-yellow-400" />
+                      <span className="text-gray-300">Bairro:</span>
+                    </div>
+                    <span className="text-yellow-400 font-bold">
+                      {currentProject.bairro}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Estatísticas Adicionais */}
+              <div className="grid grid-cols-2 gap-2 p-3 bg-cyan-500/10 rounded-lg border border-cyan-500/20">
+                <div className="text-center">
+                  <div className="text-cyan-400 font-bold text-sm">
+                    {safeToFixed((currentProject.totalDistance || currentProject.total_distance || 0) / 1000, 2)}
+                  </div>
+                  <div className="text-cyan-300 text-xs">km total</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-cyan-400 font-bold text-sm">
+                    {currentProject.points?.length || 0}
+                  </div>
+                  <div className="text-cyan-300 text-xs">pontos</div>
+                </div>
+              </div>
+
+              {/* Botão de Ação Principal */}
+              <Button
+                onClick={() => {
+                  if (confirm(`Tem certeza que deseja limpar todos os pontos do projeto "${currentProject.name}"?`)) {
+                    handleRemovePoints();
+                    setShowProjectDetails(false);
+                  }
+                }}
+                className="w-full bg-gradient-to-r from-red-500 to-orange-600 hover:from-red-600 hover:to-orange-700 text-white font-medium py-2.5"
+              >
+                <X className="w-4 h-4 mr-2" />
+                Limpar Todos os Pontos
+              </Button>
+
+              {/* Ações Secundárias */}
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    exportProjectAsKML(currentProject);
+                    setShowProjectDetails(false);
+                  }}
+                  className="flex-1 border-green-500/50 text-green-400 hover:bg-green-500/10"
+                >
+                  <Download className="w-4 h-4 mr-1" />
+                  Exportar
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowProjectDetails(false);
+                    setShowProjectDialog(true);
+                  }}
+                  className="flex-1 border-blue-500/50 text-blue-400 hover:bg-blue-500/10"
+                >
+                  <Edit2 className="w-4 h-4 mr-1" />
+                  Editar
+                </Button>
+              </div>
+
+              {/* Timestamp */}
+              {currentProject.created_at && (
+                <div className="pt-2 border-t border-slate-600/50">
+                  <p className="text-xs text-gray-400 text-center">
+                    Criado em {new Date(currentProject.created_at).toLocaleDateString('pt-BR')}
+                    {currentProject.updated_at && (
+                      <span> • Atualizado em {new Date(currentProject.updated_at).toLocaleDateString('pt-BR')}</span>
+                    )}
+                  </p>
                 </div>
               )}
             </CardContent>
@@ -2646,7 +2823,7 @@ const formatDistance = (distanceInMeters) => {
                         <span className="text-cyan-400 font-medium">{project.points.length}</span> pontos
                       </div>
                       <div>
-                        <span className="text-cyan-400 font-medium">{((project.totalDistance || project.total_distance || 0) / 1000).toFixed(2)}</span> km
+                        <span className="text-cyan-400 font-medium">{safeToFixed(((project.totalDistance || project.total_distance) || 0) / 1000, 2)}</span> km
                       </div>
                       <div>
                         <span className="text-cyan-400 font-medium">{project.trackingMode || project.tracking_mode || 'manual'}</span>
@@ -2741,39 +2918,6 @@ const formatDistance = (distanceInMeters) => {
               Novo Projeto
             </Button>
           </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Diálogo de Detalhes do Projeto */}
-      <Dialog open={showProjectDetails} onOpenChange={setShowProjectDetails}>
-        <DialogContent className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white border-slate-700/50 shadow-2xl fixed bottom-4 left-4 right-4 w-auto sm:max-w-sm sm:left-auto sm:right-4">
-          <DialogHeader>
-            <DialogTitle className="text-cyan-400 text-xl font-bold flex items-center gap-2">
-              <FolderOpen className="w-5 h-5" />
-              Detalhes do Projeto
-            </DialogTitle>
-          </DialogHeader>
-          {currentProject && (
-            <div className="space-y-4">
-              <div>
-                <Label className="text-gray-300 font-medium">Nome</Label>
-                <p className="text-white text-lg">{currentProject.name}</p>
-              </div>
-              <div>
-                <Label className="text-gray-300 font-medium">Distância Total</Label>
-                <p className="text-white text-lg">{formatDistance(currentProject.totalDistance)}</p>
-              </div>
-              <Button
-                onClick={() => {
-                  handleRemovePoints();
-                  setShowProjectDetails(false);
-                }}
-                className="w-full bg-gradient-to-r from-red-500 to-orange-500 hover:from-red-600 hover:to-orange-600"
-              >
-                Limpar Pontos
-              </Button>
-            </div>
-          )}
         </DialogContent>
       </Dialog>
 
@@ -3033,7 +3177,7 @@ const formatDistance = (distanceInMeters) => {
             
             <ResumoProjeto
               manualPoints={manualPoints}
-              totalDistance={totalDistance}
+              totalDistance={totalDistance || 0}
               selectedBairro={selectedBairro}
               trackingMode={trackingMode}
             />
@@ -3069,8 +3213,9 @@ const formatDistance = (distanceInMeters) => {
           addManualPoint={addManualPoint}
           stopTracking={stopTracking}
           setShowProjectDialog={setShowProjectDialog}
+          setShowProjectDetails={setShowProjectDetails}
           manualPoints={manualPoints}
-          totalDistance={totalDistance}
+          totalDistance={totalDistance || 0}
           trackingMode={trackingMode}
           currentPosition={currentPosition}
           currentProject={currentProject}

@@ -1,11 +1,11 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
-import { Play, Pause, Square, MapPin, Save, FolderOpen, Navigation, Clock } from 'lucide-react';
+import { Play, Pause, Square, MapPin, Save, FolderOpen, Navigation, Clock, Info } from 'lucide-react';
 
 // Função de proteção global
 const safeToFixed = (value, decimals = 2) => {
   if (value === undefined || value === null || isNaN(value)) {
-    return "0".padStart(decimals + 2, '0'); // Retorna "0.00" etc
+    return "0".padStart(decimals + 2, '0');
   }
   return Number(value).toFixed(decimals);
 };
@@ -24,6 +24,7 @@ const ControlesRastreamento = ({
   addManualPoint,
   stopTracking,
   setShowProjectDialog,
+  setShowProjectDetails,
   manualPoints,
   totalDistance,
   trackingMode,
@@ -42,7 +43,7 @@ const ControlesRastreamento = ({
 
   return (
     <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50 animate-slide-in-bottom">
-      <div className="bg-gradient-to-r from-slate-800 to-slate-700 backdrop-blur-lg border border-slate-600/50 rounded-2xl shadow-2xl p-4 min-w-[320px] max-w-[90vw]">
+      <div className="bg-gradient-to-r from-slate-800 to-slate-700 backdrop-blur-lg border border-slate-600/50 rounded-2xl shadow-2xl p-4 min-w-[320px] max-w-[90vw] tracking-controls-container">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             <div className="relative">
@@ -90,10 +91,10 @@ const ControlesRastreamento = ({
           ></div>
         </div>
 
-        <div className="flex gap-2 mb-3">
+        <div className="flex gap-2 mb-3 tracking-controls-grid">
           <Button
             onClick={pauseTracking}
-            className={`flex-1 text-xs h-10 font-medium ${paused
+            className={`tracking-button ${paused
                 ? 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white'
                 : 'bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-600 hover:to-amber-700 text-white'
               }`}
@@ -115,7 +116,7 @@ const ControlesRastreamento = ({
             <Button
               onClick={addManualPoint}
               disabled={paused || !currentPosition}
-              className="flex-1 text-xs h-10 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-medium"
+              className="tracking-button bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-medium"
             >
               <MapPin className="w-4 h-4 mr-1" />
               <span>Add Ponto</span>
@@ -125,16 +126,26 @@ const ControlesRastreamento = ({
           {safeManualPoints.length > 0 && (
             <Button
               onClick={() => setShowProjectDialog(true)}
-              className="flex-1 text-xs h-10 bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white font-medium"
+              className="tracking-button bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white font-medium"
             >
               <Save className="w-4 h-4 mr-1" />
               <span>Salvar</span>
             </Button>
           )}
 
+          {currentProject && (
+            <Button
+              onClick={() => setShowProjectDetails(true)}
+              className="tracking-button bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white font-medium"
+            >
+              <Info className="w-4 h-4 mr-1" />
+              <span>Detalhes</span>
+            </Button>
+          )}
+
           <Button
             onClick={stopTracking}
-            className="flex-1 text-xs h-10 bg-gradient-to-r from-red-500 to-orange-600 hover:from-red-600 hover:to-orange-700 text-white font-medium"
+            className="tracking-button bg-gradient-to-r from-red-500 to-orange-600 hover:from-red-600 hover:to-orange-700 text-white font-medium"
           >
             <Square className="w-4 h-4 mr-1" />
             <span>Parar</span>
@@ -209,6 +220,55 @@ const ControlesRastreamento = ({
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Informações de Status Adicionais */}
+        <div className="mt-3 pt-3 border-t border-slate-600/50">
+          <div className="grid grid-cols-3 gap-2 text-xs">
+            <div className="text-center">
+              <div className="text-gray-400">Modo</div>
+              <div className={`font-bold ${safeTrackingMode === 'manual' ? 'text-blue-400' : 'text-green-400'}`}>
+                {safeTrackingMode === 'manual' ? 'Manual' : 'Automático'}
+              </div>
+            </div>
+            <div className="text-center">
+              <div className="text-gray-400">Pontos</div>
+              <div className="text-white font-bold">
+                {safeManualPoints.length}
+              </div>
+            </div>
+            <div className="text-center">
+              <div className="text-gray-400">Status</div>
+              <div className={`font-bold ${paused ? 'text-yellow-400' : 'text-green-400'}`}>
+                {paused ? 'Pausado' : 'Ativo'}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Dicas Contextuais */}
+        {safeTrackingMode === 'automatic' && !paused && (
+          <div className="mt-2 p-2 bg-blue-500/10 rounded-lg border border-blue-500/20">
+            <p className="text-blue-400 text-xs text-center">
+              🎯 Modo automático: Pontos são adicionados automaticamente a cada 5 segundos
+            </p>
+          </div>
+        )}
+
+        {safeTrackingMode === 'manual' && !paused && (
+          <div className="mt-2 p-2 bg-purple-500/10 rounded-lg border border-purple-500/20">
+            <p className="text-purple-400 text-xs text-center">
+              👆 Modo manual: Clique em "Add Ponto" para marcar localizações
+            </p>
+          </div>
+        )}
+
+        {paused && (
+          <div className="mt-2 p-2 bg-yellow-500/10 rounded-lg border border-yellow-500/20">
+            <p className="text-yellow-400 text-xs text-center">
+              ⏸️ Rastreamento pausado - Pontos não estão sendo coletados
+            </p>
           </div>
         )}
       </div>
