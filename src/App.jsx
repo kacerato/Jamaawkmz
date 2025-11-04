@@ -786,36 +786,153 @@ function App() {
       return false
     }
   }
+  
+  // Função para formatar distância de forma detalhada
+const formatDistance = (distanceInMeters) => {
+  if (distanceInMeters === undefined || distanceInMeters === null || isNaN(distanceInMeters)) {
+    return "0 m";
+  }
+  
+  const distance = Number(distanceInMeters);
+  
+  if (distance < 1) {
+    return `${(distance * 100).toFixed(0)} cm`;
+  } else if (distance < 1000) {
+    return `${distance.toFixed(0)} m`;
+  } else if (distance < 10000) {
+    return `${(distance / 1000).toFixed(2)} km`;
+  } else {
+    return `${(distance / 1000).toFixed(1)} km`;
+  }
+};
 
   // Função para processar arquivo KML/KMZ
-  const handleProjectImport = async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    try {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        try {
-          const project = JSON.parse(e.target.result);
-          if (isValidProject(project)) {
-            loadProject(project);
-            alert(`Projeto "${project.name}" importado com sucesso!`);
-          } else {
-            alert('Arquivo de projeto inválido ou corrompido.');
-          }
-        } catch (error) {
-          console.error('Erro ao processar arquivo do projeto:', error);
-          alert('Erro ao ler o arquivo do projeto. Certifique-se de que é um JSON válido.');
-        }
-      };
-      reader.readAsText(file);
-    } catch (error) {
-      console.error('Erro ao importar projeto:', error);
-      alert('Não foi possível importar o projeto.');
-    } finally {
-      event.target.value = '';
+  // Função para processar arquivo KML/KMZ como projeto - CORRIGIDA
+const handleProjectImport = async (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+  
+  try {
+    setUploading(true);
+    
+    // Verificar extensão do arquivo
+    const fileName = file.name.toLowerCase();
+    if (!fileName.endsWith('.kml') && !fileName.endsWith('.kmz')) {
+      alert('Por favor, selecione um arquivo KML ou KMZ válido.');
+      return;
     }
-  };
+    
+    let kmlText;
+    
+    if (fileName.endsWith('.kmz')) {
+      const zip = new JSZip();
+      const contents = await zip.loadAsync(file);
+      const kmlFile = Object.keys(contents.files).find(name => name.toLowerCase().endsWith('.kml'));
+      if (!kmlFile) {
+        throw new Error('Arquivo KML não encontrado no KMZ');
+      }
+      kmlText = await contents.files[kmlFile].async('text');
+    } else {
+      kmlText = await file.text();
+    }
+    
+    // Parse do KML
+    const parser = new DOMParser();
+    const xmlDoc = parser.parseFromString(kmlText, 'text/xml');
+    
+    // Verificar erros de parse
+    const parseError = xmlDoc.getElementsByTagName('parsererror');
+    if (parseError.length > 0) {
+      throw new Error('Arquivo KML inválido ou malformado');
+    }
+    
+    // Extrair nome do projeto
+    const nameElement = xmlDoc.getElementsByTagName('name')[0];
+    const projectName = nameElement?.textContent || `Projeto ${new Date().toLocaleDateString('pt-BR')}`;
+    
+    // Extrair pontos do KML
+    const points = [];
+    
+    // Tentar extrair de LineString (traçado)
+    const lineStrings = xmlDoc.getElementsByTagName('LineString');
+    if (lineStrings.length > 0) {
+      for (let i = 0; i < lineStrings.length; i++) {
+        const coordinates = lineStrings[i].getElementsByTagName('coordinates')[0]?.textContent;
+        if (coordinates) {
+          const coordList = coordinates.trim().split(/\s+/);
+          coordList.forEach(coord => {
+            const [lng, lat] = coord.split(',').map(Number);
+            if (!isNaN(lat) && !isNaN(lng)) {
+              points.push({
+                lat,
+                lng,
+                id: Date.now() + Math.random(),
+                timestamp: Date.now()
+              });
+            }
+          });
+        }
+      }
+    }
+    
+    // Se não encontrou LineString, tentar extrair de Placemarks (pontos individuais)
+    if (points.length === 0) {
+      const placemarks = xmlDoc.getElementsByTagName('Placemark');
+      for (let i = 0; i < placemarks.length; i++) {
+        const placemark = placemarks[i];
+        const coordinates = placemark.getElementsByTagName('coordinates')[0]?.textContent;
+        
+        if (coordinates) {
+          const [lng, lat] = coordinates.split(',').map(Number);
+          if (!isNaN(lat) && !isNaN(lng)) {
+            points.push({
+              lat,
+              lng,
+              id: Date.now() + i,
+              timestamp: Date.now()
+            });
+          }
+        }
+      }
+    }
+    
+    if (points.length === 0) {
+      throw new Error('Nenhum ponto válido encontrado no arquivo KML');
+    }
+    
+    // Calcular distância total
+    const totalDistance = calculateTotalDistance(points);
+    
+    // Criar objeto projeto
+    const project = {
+      id: `imported_${Date.now()}`,
+      name: projectName,
+      points: points,
+      totalDistance: totalDistance,
+      total_distance: totalDistance,
+      bairro: 'Importado',
+      tracking_mode: 'manual',
+      trackingMode: 'manual',
+      created_at: new Date().toISOString(),
+      description: `Projeto importado de ${file.name}`
+    };
+    
+    // Validar e carregar projeto
+    if (isValidProject(project)) {
+      loadProject(project);
+      alert(`Projeto "${projectName}" importado com sucesso! ${points.length} pontos carregados.`);
+    } else {
+      throw new Error('Projeto inválido após importação');
+    }
+    
+  } catch (error) {
+    console.error('Erro ao importar projeto KML:', error);
+    alert(`Erro ao importar projeto: ${error.message}`);
+  } finally {
+    setUploading(false);
+    event.target.value = '';
+  }
+};
 
   const handleFileImport = async (event) => {
     const file = event.target.files[0]
@@ -2637,7 +2754,7 @@ function App() {
         </div>
       )}
 
-    {/* Popup de Detalhes do Projeto - Versão Compacta */}
+    {/* Popup de Detalhes do Projeto - Versão Corrigida */}
 {showProjectDetails && currentProject && (
   <div className="absolute bottom-20 right-4 z-50 animate-scale-in">
     <Card className="bg-gradient-to-br from-slate-800/95 to-slate-700/95 backdrop-blur-sm border-slate-600/50 shadow-2xl text-white w-64">
@@ -2660,20 +2777,33 @@ function App() {
       <CardContent className="space-y-3">
         {/* Nome do projeto */}
         <div className="text-center">
-          <p className="text-white font-medium truncate text-sm">{currentProject.name}</p>
+          <p className="text-white font-medium truncate text-sm mb-1">{currentProject.name}</p>
+          <p className="text-cyan-400 text-xs">
+            {currentProject.trackingMode === 'manual' ? 'Modo Manual' : 'Modo Automático'}
+          </p>
         </div>
 
-        {/* Informações principais */}
+        {/* Informações principais - METRAGEM DETALHADA */}
         <div className="grid grid-cols-2 gap-2 text-xs">
           <div className="text-center p-2 bg-slate-700/30 rounded">
-            <div className="text-cyan-400 font-bold">{safeToFixed((currentProject.totalDistance || currentProject.total_distance || 0) / 1000, 2)}</div>
-            <div className="text-gray-400">km</div>
+            <div className="text-cyan-400 font-bold text-sm">
+              {formatDistance(currentProject.totalDistance || currentProject.total_distance || 0)}
+            </div>
+            <div className="text-gray-400">Distância</div>
           </div>
           <div className="text-center p-2 bg-slate-700/30 rounded">
             <div className="text-cyan-400 font-bold">{currentProject.points?.length || 0}</div>
-            <div className="text-gray-400">pontos</div>
+            <div className="text-gray-400">Pontos</div>
           </div>
         </div>
+
+        {/* Bairro se disponível */}
+        {currentProject.bairro && currentProject.bairro !== 'Vários' && (
+          <div className="text-center p-2 bg-slate-700/30 rounded">
+            <div className="text-cyan-400 text-xs font-medium">Bairro</div>
+            <div className="text-white text-sm">{currentProject.bairro}</div>
+          </div>
+        )}
 
         {/* Botões de ação */}
         <div className="flex gap-2">
@@ -3169,14 +3299,14 @@ function App() {
         />
       )}
 
-      {/* Input oculto para upload de arquivo */}
-      <input
-        id="file-input"
-        type="file"
-        accept=".kml,.kmz"
-        onChange={handleFileImport}
-        className="hidden"
-      />
+     { /* Input oculto para importação de projeto - CORRIGIDO */ }
+<input
+  id="project-input"
+  type="file"
+  accept=".kml,.kmz"
+  onChange={handleProjectImport}
+  className="hidden"
+/>
 
       {/* Input oculto para upload de fotos */}
       <input
