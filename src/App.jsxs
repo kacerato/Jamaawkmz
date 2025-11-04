@@ -1026,18 +1026,12 @@ function App() {
     }
   };
 
-// FUNÇÃO CORRIGIDA - COM VALIDAÇÃO COMPLETA
-const formatDistance = (distanceInMeters) => {
-  // Validar se distanceInMeters é undefined, null ou NaN
-  if (distanceInMeters === undefined || distanceInMeters === null || isNaN(distanceInMeters)) {
-    return "0.00 m";
-  }
-  const distance = Number(distanceInMeters);
-  if (distance >= 1000) {
-    return `${(distance / 1000).toFixed(2)} km`;
-  }
-  return `${distance.toFixed(2)} m`;
-};
+  const formatDistance = (distanceInMeters) => {
+    if (distanceInMeters >= 1000) {
+      return `${(distanceInMeters / 1000).toFixed(2)} km`;
+    }
+    return `${distanceInMeters.toFixed(2)} m`;
+  };
 
   // Função para calcular distância entre dois pontos
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
