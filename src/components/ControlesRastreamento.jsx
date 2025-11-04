@@ -3,20 +3,22 @@ import { Button } from '@/components/ui/button';
 import { Play, Pause, Square, MapPin, Save, Navigation } from 'lucide-react';
 
 const ControlesRastreamento = ({
-  tracking,
-  paused,
-  pauseTracking,
-  addManualPoint,
-  stopTracking,
-  setShowProjectDialog,
-  manualPoints,
-  totalDistance,
-  trackingMode,
-  currentPosition,
-  snappingEnabled,
-  gpsAccuracy,
-  speed,
-}) => {
+    tracking,
+    paused,
+    pauseTracking,
+    addManualPoint,
+    stopTracking,
+    setShowProjectDialog,
+    manualPoints,
+    totalDistance,
+    trackingMode,
+    currentPosition,
+    snappingEnabled,
+    gpsAccuracy,
+    speed,
+    showProjectDialog, // ADICIONE ESTA LINHA
+  }) => {
+    // ... resto do código ...
   const safeManualPoints = manualPoints || [];
   const safeTotalDistance = totalDistance || 0;
   const safeTrackingMode = trackingMode || 'manual';
@@ -69,15 +71,15 @@ const ControlesRastreamento = ({
             </Button>
           )}
 
-          {safeManualPoints.length > 0 && (
-            <Button
-              onClick={() => setShowProjectDialog(true)}
-              size="sm"
-              className="h-9 bg-purple-500 hover:bg-purple-600 text-white"
-            >
-              <Save className="w-4 h-4" />
-            </Button>
-          )}
+        {safeManualPoints.length > 0 && !showProjectDialog && (
+  <Button
+    onClick={() => setShowProjectDialog(true)}
+    size="sm"
+    className="h-9 bg-purple-500 hover:bg-purple-600 text-white"
+  >
+    <Save className="w-4 h-4" />
+  </Button>
+)}
 
           <Button
             onClick={stopTracking}

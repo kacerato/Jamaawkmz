@@ -1544,10 +1544,13 @@ const startNewProject = () => {
 
   // Parar rastreamento - CORRIGIDO COM TRY/CATCH
 // Parar rastreamento - CORRIGIDO PARA LIMPAR PROJETO
+// Parar rastreamento - CORRIGIDA PARA EVITAR SALVAMENTO DUPLO
 const stopTracking = async () => {
   try {
     const pointsToSave = [...manualPoints];
-    if (pointsToSave.length > 0) {
+    
+    // SÓ SALVA AUTOMATICAMENTE SE NÃO HOUVER SALVAMENTO MANUAL RECENTE
+    if (pointsToSave.length > 0 && !showProjectDialog) {
       console.log('💾 Salvamento automático ao parar rastreamento...');
       await saveProject(true, pointsToSave);
     }
@@ -1562,11 +1565,6 @@ const stopTracking = async () => {
     setPositionHistory([]);
     setGpsAccuracy(null);
     setSpeed(0);
-    // SÓ LIMPA O PROJETO SE NÃO FOR UM SALVAMENTO AUTOMÁTICO
-    if (!manualPoints.length) {
-      setCurrentProject(null);
-      setProjectName('');
-    }
   }
 };
 
@@ -1777,42 +1775,42 @@ const handleRemovePoints = () => {
   }
 };
 
-  // FUNÇÃO SALVAR PROJETO - ATUALIZADA PARA SALVAR NO MESMO PROJETO
-  const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
-    // Se for salvamento automático e não há pontos, não salva
-    if (autoSave && pointsToSave.length === 0) {
-      return;
+ // FUNÇÃO SALVAR PROJETO - ATUALIZADA PARA FECHAR POPUP E PARAR MARCAÇÃO
+const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
+  // Se for salvamento automático e não há pontos, não salva
+  if (autoSave && pointsToSave.length === 0) {
+    return;
+  }
+  
+  // Se já existe um projeto atual, usa o mesmo nome
+  let projectNameToUse = projectName;
+  if (currentProject && !projectName.trim()) {
+    projectNameToUse = currentProject.name;
+  } else if (autoSave && !projectName.trim() && !currentProject) {
+    projectNameToUse = `Rastreamento ${new Date().toLocaleString('pt-BR')}`;
+  }
+  
+  if (!projectNameToUse.trim() && pointsToSave.length === 0) {
+    if (!autoSave) {
+      alert('Digite um nome para o projeto e certifique-se de ter pontos no traçado.');
     }
-
-    // Se já existe um projeto atual, usa o mesmo nome
-    let projectNameToUse = projectName;
-    if (currentProject && !projectName.trim()) {
-      projectNameToUse = currentProject.name;
-    } else if (autoSave && !projectName.trim() && !currentProject) {
-      projectNameToUse = `Rastreamento ${new Date().toLocaleString('pt-BR')}`;
-    }
-
-    if (!projectNameToUse.trim() && pointsToSave.length === 0) {
-      if (!autoSave) {
-        alert('Digite um nome para o projeto e certifique-se de ter pontos no traçado.');
-      }
-      return;
-    }
+    return;
+  }
+  
+  const calculatedTotalDistance = calculateTotalDistance(pointsToSave) || 0;
+  
+  const projectData = {
+    name: projectNameToUse.trim(),
+    points: pointsToSave,
+    total_distance: calculatedTotalDistance,
+    bairro: selectedBairro !== 'todos' ? selectedBairro : 'Vários',
+    tracking_mode: trackingMode,
+    updated_at: new Date().toISOString()
+  };
+  
+  try {
+    let savedProject;
     
-    const calculatedTotalDistance = calculateTotalDistance(pointsToSave) || 0;
-    
-    const projectData = {
-      name: projectNameToUse.trim(),
-      points: pointsToSave,
-      total_distance: calculatedTotalDistance,
-      bairro: selectedBairro !== 'todos' ? selectedBairro : 'Vários',
-      tracking_mode: trackingMode,
-      updated_at: new Date().toISOString()
-    };
-
-    try {
-      let savedProject;
-      
     // SE JÁ EXISTE UM PROJETO CARREGADO, ATUALIZA O MESMO PROJETO
     if (currentProject) {
       console.log('🔄 Atualizando projeto existente:', currentProject.name);
@@ -1835,9 +1833,9 @@ const handleRemovePoints = () => {
           ...projectData
         };
       }
-
+      
       // Atualizar a lista de projetos
-      const updatedProjects = projects.map(p => 
+      const updatedProjects = projects.map(p =>
         p.id === currentProject.id ? savedProject : p
       );
       setProjects(updatedProjects);
@@ -1863,19 +1861,28 @@ const handleRemovePoints = () => {
           user_id: user?.id || 'offline'
         };
       }
-
+      
       // Adicionar à lista de projetos
       const updatedProjects = [...projects, savedProject];
       setProjects(updatedProjects);
       localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
     }
-
+    
     // SEMPRE ATUALIZAR O PROJETO ATUAL
     setCurrentProject(savedProject);
     
     if (!autoSave) {
+      // FECHAR POPUP E PARAR MARCAÇÃO APÓS SALVAR
       setProjectName('');
       setShowProjectDialog(false);
+      
+      // PARAR O RASTREAMENTO
+      setTracking(false);
+      setPaused(false);
+      setShowTrackingControls(false);
+      setManualPoints([]);
+      setTotalDistance(0);
+      
       alert(currentProject ? 'Projeto atualizado com sucesso!' : 'Projeto salvo com sucesso!');
     } else {
       console.log('✅ Projeto salvo automaticamente:', savedProject.name);
@@ -3230,37 +3237,41 @@ const loadProject = (project) => {
                 Cancelar
               </Button>
               <Button 
-                onClick={saveProject}
-                disabled={!projectName.trim()}
-                className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600"
-              >
-                {editingProject ? 'Atualizar' : 'Salvar'} Projeto
-              </Button>
+  onClick={() => {
+    saveProject();
+    // O fechamento e parada agora são feitos dentro da função saveProject
+  }}
+  disabled={!projectName.trim()}
+  className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600"
+>
+  {editingProject ? 'Atualizar' : 'Salvar'} Projeto
+</Button>
             </div>
           </div>
         </DialogContent> 
       </Dialog>
 
-      {tracking && showTrackingControls && (
-        <ControlesRastreamento
-          tracking={tracking}
-          paused={paused}
-          pauseTracking={pauseTracking}
-          addManualPoint={addManualPoint}
-          stopTracking={stopTracking}
-          setShowProjectDialog={setShowProjectDialog}
-          setShowProjectDetails={setShowProjectDetails}
-          manualPoints={manualPoints}
-          totalDistance={totalDistance || 0}
-          trackingMode={trackingMode}
-          currentPosition={currentPosition}
-          currentProject={currentProject}
-          snappingEnabled={snappingEnabled}
-          gpsAccuracy={gpsAccuracy}
-          speed={speed}
-          handleRemovePoints={handleRemovePoints}
-        />
-      )}
+   {tracking && showTrackingControls && (
+  <ControlesRastreamento
+    tracking={tracking}
+    paused={paused}
+    pauseTracking={pauseTracking}
+    addManualPoint={addManualPoint}
+    stopTracking={stopTracking}
+    setShowProjectDialog={setShowProjectDialog}
+    setShowProjectDetails={setShowProjectDetails}
+    manualPoints={manualPoints}
+    totalDistance={totalDistance}
+    trackingMode={trackingMode}
+    currentPosition={currentPosition}
+    currentProject={currentProject}
+    snappingEnabled={snappingEnabled}
+    gpsAccuracy={gpsAccuracy}
+    speed={speed}
+    handleRemovePoints={handleRemovePoints}
+    showProjectDialog={showProjectDialog} // ADICIONE ESTA LINHA
+  />
+)}
 
       {/* Popup Moderno para Marcadores */}
       {popupMarker && (
