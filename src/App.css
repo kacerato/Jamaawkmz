@@ -1577,3 +1577,48 @@ canvas {
     font-size: 7px;
   }
 }
+
+/* Estilos para controles compactos em mobile */
+@media (max-width: 640px) {
+  .tracking-controls-container {
+    min-width: 280px !important;
+    max-width: 95vw !important;
+    padding: 0.75rem !important;
+  }
+  
+  .compact-popup {
+    width: 260px !important;
+    right: 1rem !important;
+    bottom: 5rem !important;
+  }
+}
+
+/* Melhorar toques em mobile */
+@media (max-width: 768px) {
+  .tracking-button {
+    min-height: 36px !important;
+    height: 36px !important;
+    padding: 0.5rem !important;
+  }
+  
+  button, .leaflet-control-zoom a {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* Animações suaves para popups */
+.animate-scale-in {
+  animation: scaleIn 0.2s ease-out;
+}
+
+@keyframes scaleIn {
+  from {
+    transform: scale(0.9);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}

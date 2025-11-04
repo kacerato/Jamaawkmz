@@ -2637,150 +2637,73 @@ function App() {
         </div>
       )}
 
-      {/* Popup de Detalhes do Projeto - Flutuante e Estilizado */}
-      {showProjectDetails && currentProject && (
-        <div className="absolute bottom-24 right-4 z-50 animate-scale-in">
-          <Card className="bg-gradient-to-br from-slate-800/95 to-slate-700/95 backdrop-blur-sm border-slate-600/50 shadow-2xl text-white w-80">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-lg font-bold text-white flex items-center gap-2">
-                  <FolderOpen className="w-5 h-5 text-cyan-400" />
-                  Detalhes do Projeto
-                </CardTitle>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setShowProjectDetails(false)}
-                  className="h-6 w-6 p-0 text-gray-400 hover:text-white"
-                >
-                  <X className="w-3 h-3" />
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Informações do Projeto */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between p-3 bg-slate-700/30 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <FolderOpen className="w-4 h-4 text-cyan-400" />
-                    <span className="text-gray-300">Nome:</span>
-                  </div>
-                  <span className="text-white font-medium truncate max-w-[180px]">
-                    {currentProject.name}
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between p-3 bg-slate-700/30 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <Ruler className="w-4 h-4 text-green-400" />
-                    <span className="text-gray-300">Distância:</span>
-                  </div>
-                  <span className="text-green-400 font-bold">
-                    {formatDistance(currentProject.totalDistance || currentProject.total_distance)}
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between p-3 bg-slate-700/30 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <MapPin className="w-4 h-4 text-blue-400" />
-                    <span className="text-gray-300">Pontos:</span>
-                  </div>
-                  <span className="text-blue-400 font-bold">
-                    {currentProject.points?.length || 0}
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between p-3 bg-slate-700/30 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <Navigation className="w-4 h-4 text-purple-400" />
-                    <span className="text-gray-300">Modo:</span>
-                  </div>
-                  <span className="text-purple-400 font-bold">
-                    {currentProject.trackingMode === 'manual' ? 'Manual' : 'Automático'}
-                  </span>
-                </div>
-
-                {currentProject.bairro && currentProject.bairro !== 'Vários' && (
-                  <div className="flex items-center justify-between p-3 bg-slate-700/30 rounded-lg">
-                    <div className="flex items-center gap-2">
-                      <MapPin className="w-4 h-4 text-yellow-400" />
-                      <span className="text-gray-300">Bairro:</span>
-                    </div>
-                    <span className="text-yellow-400 font-bold">
-                      {currentProject.bairro}
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              {/* Estatísticas Adicionais */}
-              <div className="grid grid-cols-2 gap-2 p-3 bg-cyan-500/10 rounded-lg border border-cyan-500/20">
-                <div className="text-center">
-                  <div className="text-cyan-400 font-bold text-sm">
-                    {safeToFixed((currentProject.totalDistance || currentProject.total_distance || 0) / 1000, 2)}
-                  </div>
-                  <div className="text-cyan-300 text-xs">km total</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-cyan-400 font-bold text-sm">
-                    {currentProject.points?.length || 0}
-                  </div>
-                  <div className="text-cyan-300 text-xs">pontos</div>
-                </div>
-              </div>
-
-              {/* Botão de Ação Principal */}
-              <Button
-                onClick={() => {
-                  handleRemovePoints();
-                }}
-                className="w-full bg-gradient-to-r from-red-500 to-orange-600 hover:from-red-600 hover:to-orange-700 text-white font-medium py-2.5"
-              >
-                <X className="w-4 h-4 mr-2" />
-                Limpar Todos os Pontos
-              </Button>
-
-              {/* Ações Secundárias */}
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    exportProjectAsKML(currentProject);
-                    setShowProjectDetails(false);
-                  }}
-                  className="flex-1 border-green-500/50 text-green-400 hover:bg-green-500/10"
-                >
-                  <Download className="w-4 h-4 mr-1" />
-                  Exportar
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setShowProjectDetails(false);
-                    setShowProjectDialog(true);
-                  }}
-                  className="flex-1 border-blue-500/50 text-blue-400 hover:bg-blue-500/10"
-                >
-                  <Edit2 className="w-4 h-4 mr-1" />
-                  Editar
-                </Button>
-              </div>
-
-              {/* Timestamp */}
-              {currentProject.created_at && (
-                <div className="pt-2 border-t border-slate-600/50">
-                  <p className="text-xs text-gray-400 text-center">
-                    Criado em {new Date(currentProject.created_at).toLocaleDateString('pt-BR')}
-                    {currentProject.updated_at && (
-                      <span> • Atualizado em {new Date(currentProject.updated_at).toLocaleDateString('pt-BR')}</span>
-                    )}
-                  </p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+    {/* Popup de Detalhes do Projeto - Versão Compacta */}
+{showProjectDetails && currentProject && (
+  <div className="absolute bottom-20 right-4 z-50 animate-scale-in">
+    <Card className="bg-gradient-to-br from-slate-800/95 to-slate-700/95 backdrop-blur-sm border-slate-600/50 shadow-2xl text-white w-64">
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm font-bold text-white flex items-center gap-1">
+            <FolderOpen className="w-4 h-4 text-cyan-400" />
+            Detalhes
+          </CardTitle>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setShowProjectDetails(false)}
+            className="h-5 w-5 p-0 text-gray-400 hover:text-white"
+          >
+            <X className="w-3 h-3" />
+          </Button>
         </div>
-      )}
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {/* Nome do projeto */}
+        <div className="text-center">
+          <p className="text-white font-medium truncate text-sm">{currentProject.name}</p>
+        </div>
+
+        {/* Informações principais */}
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <div className="text-center p-2 bg-slate-700/30 rounded">
+            <div className="text-cyan-400 font-bold">{safeToFixed((currentProject.totalDistance || currentProject.total_distance || 0) / 1000, 2)}</div>
+            <div className="text-gray-400">km</div>
+          </div>
+          <div className="text-center p-2 bg-slate-700/30 rounded">
+            <div className="text-cyan-400 font-bold">{currentProject.points?.length || 0}</div>
+            <div className="text-gray-400">pontos</div>
+          </div>
+        </div>
+
+        {/* Botões de ação */}
+        <div className="flex gap-2">
+          <Button
+            onClick={() => {
+              handleRemovePoints();
+            }}
+            size="sm"
+            className="flex-1 bg-red-500 hover:bg-red-600 text-white text-xs h-7"
+          >
+            <X className="w-3 h-3 mr-1" />
+            Limpar
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => {
+              exportProjectAsKML(currentProject);
+              setShowProjectDetails(false);
+            }}
+            size="sm"
+            className="flex-1 border-green-500/50 text-green-400 hover:bg-green-500/10 text-xs h-7"
+          >
+            <Download className="w-3 h-3 mr-1" />
+            Exportar
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  </div>
+)}
 
       {/* Diálogo de Lista de Projetos */}
       <Dialog open={showProjectsList} onOpenChange={setShowProjectsList}>
