@@ -1524,38 +1524,51 @@ const formatDistance = (distanceInMeters) => {
     kalmanLngRef.current = new KalmanFilter(0.1, 0.1);
   };
 
-  // NOVA FUNÇÃO: Iniciar novo projeto (limpa o projeto atual)
-  const startNewProject = () => {
-    setCurrentProject(null);
-    setProjectName('');
-    setManualPoints([]);
-    setTotalDistance(0);
-    setShowProjectDetails(false);
-    startTracking();
-  };
+  // NOVA FUNÇÃO: Iniciar novo projeto (limpa o projeto atual) - CORRIGIDA
+const startNewProject = () => {
+  if (currentProject && manualPoints.length > 0) {
+    if (!confirm(`Deseja iniciar um novo projeto? O projeto atual "${currentProject.name}" será descartado.`)) {
+      return;
+    }
+  }
+  
+  setCurrentProject(null);
+  setProjectName('');
+  setManualPoints([]);
+  setTotalDistance(0);
+  setShowProjectDetails(false);
+  setShowRulerPopup(false);
+  startTracking();
+  console.log('🆕 Novo projeto iniciado');
+};
 
   // Parar rastreamento - CORRIGIDO COM TRY/CATCH
-  const stopTracking = async () => {
-    try {
-      const pointsToSave = [...manualPoints];
-      if (pointsToSave.length > 0) {
-        console.log('💾 Salvamento automático ao parar rastreamento...');
-        await saveProject(true, pointsToSave);
-      }
-    } catch (error) {
-      console.error('Erro ao salvar projeto automaticamente:', error);
-      // Não interrompe o processo se houver erro no salvamento
-    } finally {
-      setTracking(false);
-      setPaused(false);
-      setShowTrackingControls(false);
-      setManualPoints([]);
-      setTotalDistance(0);
-      setPositionHistory([]);
-      setGpsAccuracy(null);
-      setSpeed(0);
+// Parar rastreamento - CORRIGIDO PARA LIMPAR PROJETO
+const stopTracking = async () => {
+  try {
+    const pointsToSave = [...manualPoints];
+    if (pointsToSave.length > 0) {
+      console.log('💾 Salvamento automático ao parar rastreamento...');
+      await saveProject(true, pointsToSave);
     }
-  };
+  } catch (error) {
+    console.error('Erro ao salvar projeto automaticamente:', error);
+  } finally {
+    setTracking(false);
+    setPaused(false);
+    setShowTrackingControls(false);
+    setManualPoints([]);
+    setTotalDistance(0);
+    setPositionHistory([]);
+    setGpsAccuracy(null);
+    setSpeed(0);
+    // SÓ LIMPA O PROJETO SE NÃO FOR UM SALVAMENTO AUTOMÁTICO
+    if (!manualPoints.length) {
+      setCurrentProject(null);
+      setProjectName('');
+    }
+  }
+};
 
   // Pausar rastreamento - CORRIGIDO COM TRY/CATCH
   const pauseTracking = async () => {
@@ -1749,22 +1762,20 @@ const formatDistance = (distanceInMeters) => {
     setLastAutoPointTime(0)
   }
 
-  // Função para remover pontos de um projeto carregado
-  const handleRemovePoints = () => {
-    if (currentProject && confirm(`Tem certeza que deseja remover todos os pontos do projeto "${currentProject.name}"?`)) {
-      setManualPoints([]);
-      setTotalDistance(0);
-      // Mantém o projeto atual, mas sem pontos
-      setCurrentProject({
-        ...currentProject,
-        points: [],
-        totalDistance: 0,
-        total_distance: 0
-      });
-      // Fecha o popup de detalhes
-      setShowProjectDetails(false);
-    }
-  };
+// Função para remover pontos de um projeto carregado - CORRIGIDA
+const handleRemovePoints = () => {
+  if (currentProject && confirm(`Tem certeza que deseja remover todos os pontos do projeto "${currentProject.name}"?`)) {
+    setManualPoints([]);
+    setTotalDistance(0);
+    // Remove o projeto atual completamente
+    setCurrentProject(null);
+    // Fecha o popup de detalhes
+    setShowProjectDetails(false);
+    // Limpa o nome do projeto
+    setProjectName('');
+    console.log('✅ Projeto removido após limpeza de pontos');
+  }
+};
 
   // FUNÇÃO SALVAR PROJETO - ATUALIZADA PARA SALVAR NO MESMO PROJETO
   const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
@@ -1878,48 +1889,53 @@ const formatDistance = (distanceInMeters) => {
   }
 };
 
-  // Carregar projeto - ATUALIZADA PARA DEFINIR PROJETO ATUAL
-  const loadProject = (project) => {
-    if (!project || !project.points) {
-      console.error('Projeto inválido:', project);
-      alert('Erro: Projeto inválido ou corrompido.');
-      return;
-    }
-
-    try {
-      setManualPoints([...project.points]);
-      
-      const projectDistance = project.totalDistance || project.total_distance || calculateTotalDistance(project.points) || 0;
-      setTotalDistance(projectDistance);
-      
-      // DEFINIR O PROJETO ATUAL - IMPORTANTE PARA PRÓXIMOS SALVAMENTOS
-      setCurrentProject({
-        ...project,
-        totalDistance: projectDistance
-      });
-      
-      // Definir o nome do projeto para edição
-      setProjectName(project.name);
-      
-      setTrackingMode(project.trackingMode || project.tracking_mode || 'manual');
-      setShowProjectsList(false);
-      setTracking(false);
-      setPaused(false);
-      setLastAutoPointTime(0);
-      
-      setAdjustBoundsForProject(true);
-      
-      setSidebarOpen(false);
-      setShowRulerPopup(false);
-      setShowProjectDetails(true);
-      
-      console.log(`📁 Projeto "${project.name}" carregado com sucesso! Próximos salvamentos atualizarão este projeto.`);
-      
-    } catch (error) {
-      console.error('Erro ao carregar projeto:', error);
-      alert('Erro ao carregar projeto. Tente novamente.');
-    }
-  };
+  // Carregar projeto - ATUALIZADA PARA LIMPAR ESTADO ANTERIOR
+const loadProject = (project) => {
+  if (!project || !project.points) {
+    console.error('Projeto inválido:', project);
+    alert('Erro: Projeto inválido ou corrompido.');
+    return;
+  }
+  
+  try {
+    // Limpa qualquer projeto/rastreamento atual antes de carregar
+    setTracking(false);
+    setPaused(false);
+    setManualPoints([]);
+    setTotalDistance(0);
+    
+    // Agora carrega o novo projeto
+    setManualPoints([...project.points]);
+    
+    const projectDistance = project.totalDistance || project.total_distance || calculateTotalDistance(project.points) || 0;
+    setTotalDistance(projectDistance);
+    
+    // DEFINIR O PROJETO ATUAL
+    setCurrentProject({
+      ...project,
+      totalDistance: projectDistance
+    });
+    
+    // Definir o nome do projeto para edição
+    setProjectName(project.name);
+    
+    setTrackingMode(project.trackingMode || project.tracking_mode || 'manual');
+    setShowProjectsList(false);
+    setLastAutoPointTime(0);
+    
+    setAdjustBoundsForProject(true);
+    
+    setSidebarOpen(false);
+    setShowRulerPopup(false);
+    setShowProjectDetails(true);
+    
+    console.log(`📁 Projeto "${project.name}" carregado com sucesso!`);
+    
+  } catch (error) {
+    console.error('Erro ao carregar projeto:', error);
+    alert('Erro ao carregar projeto. Tente novamente.');
+  }
+};
 
   // Deletar projeto - SUPABASE PRIMÁRIO
   const deleteProject = async (projectId) => {
@@ -2547,36 +2563,27 @@ const formatDistance = (distanceInMeters) => {
           </SheetContent>
         </Sheet>
 
-        {/* Logo e título */}
-        <div className="flex-1 flex items-center gap-3 bg-gradient-to-r from-slate-800 to-slate-700 backdrop-blur-sm rounded-lg px-4 py-2.5 shadow-xl border border-slate-600/50">
-          <div className="w-8 h-8 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-lg flex items-center justify-center shadow-lg">
-            <MapPinned className="w-5 h-5 text-white" />
-          </div>
-          <div className="flex-1">
-            <span className="font-bold text-white text-sm sm:text-base">Jamaaw App</span>
-            {currentProject && (
-              <span className="text-xs text-cyan-400 ml-2 bg-cyan-500/20 px-2 py-0.5 rounded-full">
-                {currentProject.name}
-              </span>
-            )}
-            {!isOnline && (
-              <span className="text-xs text-orange-400 ml-2 bg-orange-500/20 px-2 py-0.5 rounded-full">Offline</span>
-            )}
-            {tracking && (
-              <span className="text-xs text-green-400 ml-2 bg-green-500/20 px-2 py-0.5 rounded-full">Rastreando</span>
-            )}
-            {backupStatus === 'backing_up' && (
-              <span className="text-xs text-purple-400 ml-2 bg-purple-500/20 px-2 py-0.5 rounded-full animate-pulse">
-                Backup...
-              </span>
-            )}
-            {arMode && (
-              <span className="text-xs text-pink-400 ml-2 bg-pink-500/20 px-2 py-0.5 rounded-full animate-pulse">
-                Modo AR
-              </span>
-            )}
-          </div>
-        </div>
+      { /* Logo e título */ }
+<div className="flex-1 flex items-center gap-3 bg-gradient-to-r from-slate-800 to-slate-700 backdrop-blur-sm rounded-lg px-4 py-2.5 shadow-xl border border-slate-600/50">
+  <div className="w-8 h-8 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-lg flex items-center justify-center shadow-lg">
+    <MapPinned className="w-5 h-5 text-white" />
+  </div>
+  <div className="flex-1">
+    <span className="font-bold text-white text-sm sm:text-base">Jamaaw App</span>
+    {/* APENAS MOSTRA NOME DO PROJETO SE currentProject EXISTIR E TIVER PONTOS */}
+    {currentProject && manualPoints.length > 0 && (
+      <span className="text-xs text-cyan-400 ml-2 bg-cyan-500/20 px-2 py-0.5 rounded-full">
+        {currentProject.name}
+      </span>
+    )}
+    {!isOnline && (
+      <span className="text-xs text-orange-400 ml-2 bg-orange-500/20 px-2 py-0.5 rounded-full">Offline</span>
+    )}
+    {tracking && (
+      <span className="text-xs text-green-400 ml-2 bg-green-500/20 px-2 py-0.5 rounded-full">Rastreando</span>
+    )}
+  </div>
+</div>
 
         <Button
   size="icon"
@@ -2674,33 +2681,33 @@ const formatDistance = (distanceInMeters) => {
                 </div>
               </div>
 
-              {/* Botão Iniciar - ATUALIZADO */}
-              <Button
-                onClick={currentProject ? () => {
-                  if (confirm(`Deseja continuar no projeto "${currentProject.name}"?`)) {
-                    setTracking(true);
-                    setPaused(false);
-                    setShowTrackingControls(true);
-                    setShowRulerPopup(false);
-                  }
-                } : startTracking}
-                className="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-medium py-3 text-base"
-              >
-                <Play className="w-4 h-4 mr-2" />
-                {currentProject ? `Continuar em "${currentProject.name}"` : 'Iniciar Sessão de Rastreamento'}
-              </Button>
+            {/* Botão Iniciar/Continuar - CORRIGIDO */}
+<Button
+  onClick={currentProject ? () => {
+    if (confirm(`Deseja continuar no projeto "${currentProject.name}"?`)) {
+      setTracking(true);
+      setPaused(false);
+      setShowTrackingControls(true);
+      setShowRulerPopup(false);
+    }
+  } : startTracking}
+  className="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-medium py-3 text-base"
+>
+  <Play className="w-4 h-4 mr-2" />
+  {currentProject ? `Continuar em "${currentProject.name}"` : 'Iniciar Sessão de Rastreamento'}
+</Button>
 
-              {/* Botão para novo projeto se já existe um carregado */}
-              {currentProject && (
-                <Button
-                  onClick={startNewProject}
-                  variant="outline"
-                  className="w-full mt-2 border-cyan-500 text-cyan-400 hover:bg-cyan-500/10"
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Iniciar Novo Projeto
-                </Button>
-              )}
+{/* Botão para novo projeto se já existe um carregado - APENAS SE currentProject EXISTIR */}
+{currentProject && (
+  <Button
+    onClick={startNewProject}
+    variant="outline"
+    className="w-full mt-2 border-cyan-500 text-cyan-400 hover:bg-cyan-500/10"
+  >
+    <Plus className="w-4 h-4 mr-2" />
+    Iniciar Novo Projeto
+  </Button>
+)}
 
               {/* Projetos Recentes */}
               {projects.length > 0 && (
