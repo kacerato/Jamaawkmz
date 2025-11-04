@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import Map, { Marker, Popup, Source, Layer, NavigationControl } from 'react-map-gl'
-import { Upload, MapPin, Ruler, X, Download, Share2, Edit2, Menu, LogOut, Heart, MapPinned, Layers, Play, Pause, Square, FolderOpen, Save, Navigation, Clock, Cloud, CloudOff, Archive, Camera, Plus, Star, LocateFixed, Info, ChevronDown } from 'lucide-react'
+import { Upload, MapPin, Ruler, X, Download, Share2, Edit2, Menu, LogOut, Heart, MapPinned, Layers, Play, Pause, Square, FolderOpen, Save, Navigation, Clock, Cloud, CloudOff, Archive, Camera, Plus, Star, LocateFixed, Info } from 'lucide-react'
 import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.jsx'
 import { Input } from '@/components/ui/input.jsx'
@@ -1658,6 +1658,8 @@ function App() {
         totalDistance: 0,
         total_distance: 0
       });
+      // Fecha o popup de detalhes
+      setShowProjectDetails(false);
     }
   };
 
@@ -2107,7 +2109,7 @@ function App() {
                   <MapPinned className="w-6 h-6 text-white" />
                 </div>
                 <div>
-                  <p className="text-lg font-bold">{currentProject ? currentProject.name : 'Jamaaw App'}</p>
+                  <p className="text-lg font-bold">Jamaaw App</p>
                   <p className="text-xs text-cyan-400 font-normal">Gerenciador de Marcações</p>
                 </div>
               </SheetTitle>
@@ -2448,7 +2450,12 @@ function App() {
             <MapPinned className="w-5 h-5 text-white" />
           </div>
           <div className="flex-1">
-            <span className="font-bold text-white text-sm sm:text-base">{currentProject ? currentProject.name : 'Jamaaw App'}</span>
+            <span className="font-bold text-white text-sm sm:text-base">Jamaaw App</span>
+            {currentProject && (
+              <span className="text-xs text-cyan-400 ml-2 bg-cyan-500/20 px-2 py-0.5 rounded-full">
+                {currentProject.name}
+              </span>
+            )}
             {!isOnline && (
               <span className="text-xs text-orange-400 ml-2 bg-orange-500/20 px-2 py-0.5 rounded-full">Offline</span>
             )}
@@ -2477,20 +2484,6 @@ function App() {
   <Star className="w-5 h-5" />
 </Button>
       </div>
-
-      {/* Botão do Projeto Atual */}
-      {currentProject && !showProjectDetails && (
-        <div className="absolute top-20 left-4 z-10">
-          <Button
-            onClick={() => setShowProjectDetails(true)}
-            className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white font-medium py-2 px-4 rounded-lg shadow-lg flex items-center gap-2"
-          >
-            <FolderOpen className="w-4 h-4" />
-            <span className="max-w-[200px] truncate">{currentProject.name}</span>
-            <ChevronDown className="w-4 h-4" />
-          </Button>
-        </div>
-      )}
 
       {/* Popup da Régua Manual */}
       {!tracking && showRulerPopup && (
@@ -2739,10 +2732,7 @@ function App() {
               {/* Botão de Ação Principal */}
               <Button
                 onClick={() => {
-                  if (confirm(`Tem certeza que deseja limpar todos os pontos do projeto "${currentProject.name}"?`)) {
-                    handleRemovePoints();
-                    setShowProjectDetails(false);
-                  }
+                  handleRemovePoints();
                 }}
                 className="w-full bg-gradient-to-r from-red-500 to-orange-600 hover:from-red-600 hover:to-orange-700 text-white font-medium py-2.5"
               >
