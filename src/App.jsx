@@ -223,6 +223,15 @@ function App() {
   const [snappingPoints, setSnappingPoints] = useState([]);
   const [mapStyle, setMapStyle] = useState('streets');
   
+  // Estados para controle do progresso de importação
+const [importProgress, setImportProgress] = useState(0);
+const [showImportProgress, setShowImportProgress] = useState(false);
+const [importCurrentStep, setImportCurrentStep] = useState(1);
+const [importTotalSteps, setImportTotalSteps] = useState(5);
+const [importCurrentAction, setImportCurrentAction] = useState('');
+const [importSuccess, setImportSuccess] = useState(false);
+const [importError, setImportError] = useState(null);
+  
   // Novos estados para popup moderno e tratamento de erros
   const [popupMarker, setPopupMarker] = useState(null);
   const [adjustBoundsForMarkers, setAdjustBoundsForMarkers] = useState(false);
@@ -276,6 +285,13 @@ function App() {
 
     return () => subscription.unsubscribe()
   }, [])
+  
+  // Função para atualizar progresso da importação
+const updateImportProgress = (progress, step, action) => {
+  setImportProgress(progress);
+  setImportCurrentStep(step);
+  setImportCurrentAction(action);
+};
 
   // FUNÇÕES PARA SUPABASE - PROJETOS
   // Carregar projetos do Supabase
@@ -802,10 +818,19 @@ function App() {
     }
   }
 
- // Função para processar arquivo KML/KMZ como projeto - CORRIGIDA
+// Função para processar arquivo KML/KMZ como projeto - VERSÃO OTIMIZADA COM PROGRESSO
 const handleProjectImport = async (event) => {
   const file = event.target.files[0];
   if (!file) return;
+  
+  // Resetar estados de importação
+  setImportProgress(0);
+  setImportCurrentStep(1);
+  setImportTotalSteps(5);
+  setImportCurrentAction('Iniciando importação...');
+  setImportSuccess(false);
+  setImportError(null);
+  setShowImportProgress(true);
   
   try {
     setUploading(true);
@@ -813,13 +838,17 @@ const handleProjectImport = async (event) => {
     // Verificar extensão do arquivo
     const fileName = file.name.toLowerCase();
     if (!fileName.endsWith('.kml') && !fileName.endsWith('.kmz')) {
-      alert('Por favor, selecione um arquivo KML ou KMZ válido.');
-      return;
+      throw new Error('Por favor, selecione um arquivo KML ou KMZ válido.');
     }
+    
+    updateImportProgress(10, 1, 'Lendo arquivo...');
     
     let kmlText;
     
+    // Processar KMZ
     if (fileName.endsWith('.kmz')) {
+      updateImportProgress(20, 2, 'Extraindo KML do arquivo KMZ...');
+      
       const zip = new JSZip();
       const contents = await zip.loadAsync(file);
       const kmlFile = Object.keys(contents.files).find(name => name.toLowerCase().endsWith('.kml'));
@@ -828,8 +857,12 @@ const handleProjectImport = async (event) => {
       }
       kmlText = await contents.files[kmlFile].async('text');
     } else {
+      // Processar KML diretamente
+      updateImportProgress(30, 2, 'Lendo arquivo KML...');
       kmlText = await file.text();
     }
+    
+    updateImportProgress(50, 3, 'Analisando estrutura do KML...');
     
     // Parse do KML
     const parser = new DOMParser();
@@ -845,10 +878,20 @@ const handleProjectImport = async (event) => {
     const nameElement = xmlDoc.getElementsByTagName('name')[0];
     let projectName = nameElement?.textContent || `Projeto Importado ${new Date().toLocaleDateString('pt-BR')}`;
     
+    updateImportProgress(60, 4, 'Verificando nome do projeto...');
+    
     // VERIFICAR SE JÁ EXISTE PROJETO COM MESMO NOME
     const existingProject = projects.find(p => p.name === projectName);
+    let shouldOverwrite = false;
+    
     if (existingProject) {
-      const shouldOverwrite = confirm(`Já existe um projeto com o nome "${projectName}". Deseja sobrescrever? Clique em "OK" para sobrescrever ou "Cancelar" para usar um nome diferente.`);
+      // Em vez de alert, vamos usar o estado para mostrar no popup
+      setImportCurrentAction('Projeto com nome duplicado encontrado...');
+      
+      // Usar setTimeout para garantir que o UI atualize antes do confirm
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      shouldOverwrite = window.confirm(`Já existe um projeto com o nome "${projectName}". Deseja sobrescrever? Clique em "OK" para sobrescrever ou "Cancelar" para usar um nome diferente.`);
       
       if (!shouldOverwrite) {
         const suggestedName = getUniqueProjectName(projectName, projects);
@@ -856,41 +899,59 @@ const handleProjectImport = async (event) => {
         if (newName && newName.trim()) {
           projectName = newName.trim();
         } else {
-          alert('Operação cancelada.');
-          return;
+          throw new Error('Operação cancelada pelo usuário.');
         }
       }
     }
     
-    // Extrair pontos do KML
+    updateImportProgress(70, 4, 'Extraindo pontos geográficos...');
+    
+    // Extrair pontos do KML - PROCESSAMENTO OTIMIZADO
     const points = [];
     
-    // Tentar extrair de LineString (traçado)
+    // Primeiro tentar LineStrings (mais eficiente para traçados)
     const lineStrings = xmlDoc.getElementsByTagName('LineString');
     if (lineStrings.length > 0) {
       for (let i = 0; i < lineStrings.length; i++) {
         const coordinates = lineStrings[i].getElementsByTagName('coordinates')[0]?.textContent;
         if (coordinates) {
           const coordList = coordinates.trim().split(/\s+/);
-          coordList.forEach(coord => {
-            const [lng, lat] = coord.split(',').map(Number);
-            if (!isNaN(lat) && !isNaN(lng)) {
-              points.push({
-                lat,
-                lng,
-                id: Date.now() + Math.random(),
-                timestamp: Date.now()
-              });
+          
+          // Processar em lotes para não travar a UI
+          const batchSize = 100;
+          for (let j = 0; j < coordList.length; j += batchSize) {
+            const batch = coordList.slice(j, j + batchSize);
+            batch.forEach(coord => {
+              const [lng, lat] = coord.split(',').map(Number);
+              if (!isNaN(lat) && !isNaN(lng)) {
+                points.push({
+                  lat,
+                  lng,
+                  id: Date.now() + Math.random() + j,
+                  timestamp: Date.now()
+                });
+              }
+            });
+            
+            // Atualizar progresso a cada lote
+            const progress = 70 + (i / lineStrings.length) * 20;
+            updateImportProgress(progress, 4, `Processando traçado ${i + 1}/${lineStrings.length}...`);
+            
+            // Dar uma pausa para a UI atualizar
+            if (batch.length > 0) {
+              await new Promise(resolve => setTimeout(resolve, 10));
             }
-          });
+          }
         }
       }
     }
     
-    // Se não encontrou LineString, tentar extrair de Placemarks (pontos individuais)
+    // Se não encontrou LineString, tentar Placemarks
     if (points.length === 0) {
       const placemarks = xmlDoc.getElementsByTagName('Placemark');
-      for (let i = 0; i < placemarks.length; i++) {
+      const totalPlacemarks = placemarks.length;
+      
+      for (let i = 0; i < totalPlacemarks; i++) {
         const placemark = placemarks[i];
         const coordinates = placemark.getElementsByTagName('coordinates')[0]?.textContent;
         
@@ -905,12 +966,23 @@ const handleProjectImport = async (event) => {
             });
           }
         }
+        
+        // Atualizar progresso
+        const progress = 70 + (i / totalPlacemarks) * 20;
+        updateImportProgress(progress, 4, `Processando marcadores ${i + 1}/${totalPlacemarks}...`);
+        
+        // Pausa para UI em lotes de 50
+        if (i % 50 === 0) {
+          await new Promise(resolve => setTimeout(resolve, 10));
+        }
       }
     }
     
     if (points.length === 0) {
       throw new Error('Nenhum ponto válido encontrado no arquivo KML');
     }
+    
+    updateImportProgress(90, 5, 'Finalizando importação...');
     
     // Calcular distância total
     const totalDistance = calculateTotalDistance(points);
@@ -929,14 +1001,14 @@ const handleProjectImport = async (event) => {
       description: `Projeto importado de ${file.name}`
     };
     
-    // Validar e carregar projeto
+    // Validar projeto
     if (isValidProject(project)) {
       // SALVAR O PROJETO NA LISTA
       let updatedProjects;
       
       if (existingProject && shouldOverwrite) {
         // Substituir projeto existente
-        updatedProjects = projects.map(p => 
+        updatedProjects = projects.map(p =>
           p.id === existingProject.id ? project : p
         );
       } else {
@@ -947,16 +1019,25 @@ const handleProjectImport = async (event) => {
       setProjects(updatedProjects);
       localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
       
-      // Carregar o projeto
-      loadProject(project);
-      alert(`Projeto "${projectName}" importado com sucesso! ${points.length} pontos carregados.`);
+      updateImportProgress(100, 5, 'Importação concluída!');
+      setImportSuccess(true);
+      
+      // Carregar o projeto automaticamente após 1.5 segundos
+      setTimeout(() => {
+        loadProject(project);
+        setTimeout(() => {
+          setShowImportProgress(false);
+        }, 2000);
+      }, 1500);
+      
     } else {
       throw new Error('Projeto inválido após importação');
     }
     
   } catch (error) {
     console.error('Erro ao importar projeto KML:', error);
-    alert(`Erro ao importar projeto: ${error.message}`);
+    setImportError(error.message);
+    setImportProgress(100);
   } finally {
     setUploading(false);
     // Reset do input
@@ -966,108 +1047,141 @@ const handleProjectImport = async (event) => {
   }
 };
 
-  const handleFileImport = async (event) => {
-    const file = event.target.files[0]
-    if (!file) return
-
-    setUploading(true)
-    try {
-      let kmlText
-
-      if (file.name.endsWith('.kmz')) {
-        const zip = new JSZip()
-        const contents = await zip.loadAsync(file)
-        const kmlFile = Object.keys(contents.files).find(name => name.endsWith('.kml'))
-        if (!kmlFile) {
-          throw new Error('Arquivo KML não encontrado no KMZ')
-        }
-        kmlText = await contents.files[kmlFile].async('text')
-      } else {
-        kmlText = await file.text()
+ const handleFileImport = async (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+  
+  // Configurar progresso
+  setImportProgress(0);
+  setImportCurrentStep(1);
+  setImportTotalSteps(4);
+  setImportCurrentAction('Iniciando importação de marcações...');
+  setImportSuccess(false);
+  setImportError(null);
+  setShowImportProgress(true);
+  
+  setUploading(true);
+  try {
+    updateImportProgress(20, 1, 'Lendo arquivo...');
+    
+    let kmlText;
+    
+    if (file.name.endsWith('.kmz')) {
+      updateImportProgress(40, 2, 'Extraindo KML do KMZ...');
+      const zip = new JSZip();
+      const contents = await zip.loadAsync(file);
+      const kmlFile = Object.keys(contents.files).find(name => name.endsWith('.kml'));
+      if (!kmlFile) {
+        throw new Error('Arquivo KML não encontrado no KMZ');
       }
-
-      if (isOnline && user) {
-        try {
-          const { error } = await supabase
-            .from('marcacoes')
-            .delete()
-            .eq('user_id', user.id)
-          
-          if (error && error.code !== '42P01') {
-            console.error('Erro ao limpar marcações antigas:', error)
-          }
-        } catch (error) {
-          console.error('Erro ao limpar marcações antigas:', error)
-        }
-      }
-
-      setMarkers([])
-
-      const parser = new DOMParser()
-      const xmlDoc = parser.parseFromString(kmlText, 'text/xml')
-      const placemarks = xmlDoc.getElementsByTagName('Placemark')
-
-      const newMarkers = []
-      for (let i = 0; i < placemarks.length; i++) {
-        const placemark = placemarks[i]
-        const name = placemark.getElementsByTagName('name')[0]?.textContent || `Marcação ${i + 1}`
-        const coordinates = placemark.getElementsByTagName('coordinates')[0]?.textContent.trim()
+      kmlText = await contents.files[kmlFile].async('text');
+    } else {
+      updateImportProgress(40, 2, 'Lendo arquivo KML...');
+      kmlText = await file.text();
+    }
+    
+    // Limpar marcações antigas se online
+    if (isOnline && user) {
+      updateImportProgress(60, 3, 'Limpando marcações antigas...');
+      try {
+        const { error } = await supabase
+          .from('marcacoes')
+          .delete()
+          .eq('user_id', user.id);
         
-        if (coordinates) {
-          const [lng, lat] = coordinates.split(',').map(Number)
-          
-          const description = placemark.getElementsByTagName('description')[0]?.textContent || ''
-          
-          const marker = {
-            name,
-            lat,
-            lng,
-            descricao: description,
-            bairro: '',
-            rua: '',
-            fotos: []
-          }
-
-          if (isOnline) {
-            const savedMarker = await saveMarkerToSupabase(marker)
-            if (savedMarker) {
-              newMarkers.push(savedMarker)
-            } else {
-              newMarkers.push({ ...marker, id: Date.now() + i })
-            }
-          } else {
-            newMarkers.push({ ...marker, id: Date.now() + i })
-            setSyncPending(true)
-          }
+        if (error && error.code !== '42P01') {
+          console.error('Erro ao limpar marcações antigas:', error);
         }
-      }
-
-      setMarkers(newMarkers)
-      setAdjustBoundsForMarkers(true)
-      
-      if (user) {
-        try {
-          await Preferences.set({
-            key: `jamaaw_markers_${user.id}`,
-            value: JSON.stringify(newMarkers)
-          })
-        } catch (e) {
-          localStorage.setItem(`jamaaw_markers_${user.id}`, JSON.stringify(newMarkers))
-        }
-      }
-      
-      alert(`${newMarkers.length} marcações importadas com sucesso! As marcações antigas foram substituídas.`)
-    } catch (error) {
-      console.error('Erro ao importar arquivo:', error)
-      alert('Erro ao importar arquivo. Verifique o formato.')
-    } finally {
-      setUploading(false)
-      // Reset do input
-      if (event.target) {
-        event.target.value = '';
+      } catch (error) {
+        console.error('Erro ao limpar marcações antigas:', error);
       }
     }
+    
+    setMarkers([]);
+    
+    updateImportProgress(80, 4, 'Processando novas marcações...');
+    const parser = new DOMParser();
+    const xmlDoc = parser.parseFromString(kmlText, 'text/xml');
+    const placemarks = xmlDoc.getElementsByTagName('Placemark');
+    
+    const newMarkers = [];
+    const totalPlacemarks = placemarks.length;
+    
+    for (let i = 0; i < totalPlacemarks; i++) {
+      const placemark = placemarks[i];
+      const name = placemark.getElementsByTagName('name')[0]?.textContent || `Marcação ${i + 1}`;
+      const coordinates = placemark.getElementsByTagName('coordinates')[0]?.textContent.trim();
+      
+      if (coordinates) {
+        const [lng, lat] = coordinates.split(',').map(Number);
+        
+        const description = placemark.getElementsByTagName('description')[0]?.textContent || '';
+        
+        const marker = {
+          name,
+          lat,
+          lng,
+          descricao: description,
+          bairro: '',
+          rua: '',
+          fotos: []
+        }
+        
+        if (isOnline) {
+          const savedMarker = await saveMarkerToSupabase(marker);
+          if (savedMarker) {
+            newMarkers.push(savedMarker);
+          } else {
+            newMarkers.push({ ...marker, id: Date.now() + i });
+          }
+        } else {
+          newMarkers.push({ ...marker, id: Date.now() + i });
+          setSyncPending(true);
+        }
+      }
+      
+      // Atualizar progresso
+      const progress = 80 + (i / totalPlacemarks) * 15;
+      updateImportProgress(progress, 4, `Processando ${i + 1}/${totalPlacemarks} marcações...`);
+      
+      // Pausa para UI em lotes
+      if (i % 20 === 0) {
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+    }
+    
+    setMarkers(newMarkers);
+    setAdjustBoundsForMarkers(true);
+    
+    if (user) {
+      try {
+        await Preferences.set({
+          key: `jamaaw_markers_${user.id}`,
+          value: JSON.stringify(newMarkers)
+        });
+      } catch (e) {
+        localStorage.setItem(`jamaaw_markers_${user.id}`, JSON.stringify(newMarkers));
+      }
+    }
+    
+    updateImportProgress(100, 4, 'Importação concluída!');
+    setImportSuccess(true);
+    
+    setTimeout(() => {
+      setShowImportProgress(false);
+    }, 2000);
+    
+  } catch (error) {
+    console.error('Erro ao importar arquivo:', error);
+    setImportError('Erro ao importar arquivo. Verifique o formato.');
+    setImportProgress(100);
+  } finally {
+    setUploading(false);
+    if (event.target) {
+      event.target.value = '';
+    }
   }
+};
 
   // Função para limpar marcações importadas
   const handleClearImportedMarkers = async () => {
@@ -3387,6 +3501,21 @@ const loadProject = (project) => {
         onChange={handlePhotoUpload}
         className="hidden"
       />
+      
+      {/* Popup de Progresso de Importação */}
+<ImportProgressPopup
+  isOpen={showImportProgress}
+  progress={importProgress}
+  currentStep={importCurrentStep}
+  totalSteps={importTotalSteps}
+  currentAction={importCurrentAction}
+  success={importSuccess}
+  error={importError}
+  onClose={() => {
+    setShowImportProgress(false);
+    setImportError(null);
+  }}
+/>
     </div>
   )
 }
