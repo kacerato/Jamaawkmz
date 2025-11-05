@@ -1057,11 +1057,14 @@ input[type="checkbox"]:focus {
     max-width: 260px;
   }
   
-  .project-dialog-content {
-    margin: 1rem;
-    max-width: calc(100vw - 2rem);
-    width: calc(100vw - 2rem);
-  }
+.project-dialog-content {
+  margin: auto !important;
+  position: fixed !important;
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  max-height: 85vh !important;
+}
   
   .project-grid-item {
     flex-direction: column;
@@ -1637,4 +1640,44 @@ canvas {
     left: 0.5rem !important;
     margin: 0 auto !important;
   }
+}
+
+.points-counter {
+  animation: pulse-counter 2s ease-in-out infinite;
+}
+
+@keyframes pulse-counter {
+  0%, 100% {
+    transform: scale(1);
+    color: #ffffff;
+  }
+  50% {
+    transform: scale(1.1);
+    color: #22d3ee;
+  }
+}
+
+/* ========== ESTILOS PARA SELEÇÃO EM MASSA ========== */
+.marker-selected {
+  border: 2px solid #06B6D4 !important;
+  box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.3) !important;
+}
+
+.project-selected {
+  background: linear-gradient(135deg, rgba(6, 182, 212, 0.2) 0%, rgba(2, 132, 199, 0.2) 100%) !important;
+  border-color: #06B6D4 !important;
+}
+
+/* ========== BOTÃO DE ALINHAMENTO NO CONTROLE ========== */
+.snapping-toggle {
+  background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+  transition: all 0.3s ease;
+}
+
+.snapping-toggle.inactive {
+  background: linear-gradient(135deg, #6B7280 0%, #4B5563 100%);
+}
+
+.snapping-toggle:hover {
+  transform: scale(1.05);
 }

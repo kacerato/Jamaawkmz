@@ -241,6 +241,11 @@ function App() {
   const [importSuccess, setImportSuccess] = useState(false);
   const [importError, setImportError] = useState(null);
 
+  // Novos estados para seleção múltipla
+  const [selectedMarkers, setSelectedMarkers] = useState([]);
+  const [showBatchBairroDialog, setShowBatchBairroDialog] = useState(false);
+  const [selectedProjects, setSelectedProjects] = useState([]);
+
   // Filtros Kalman para suavização
   const kalmanLatRef = useRef(new KalmanFilter(0.1, 0.1));
   const kalmanLngRef = useRef(new KalmanFilter(0.1, 0.1));
@@ -1545,21 +1550,96 @@ const formatDistance = (distanceInMeters) => {
     }
   }
 
+  // ========== NOVAS FUNÇÕES PARA SELEÇÃO MÚLTIPLA ==========
+
   // Função para alternar seleção de marcador
   const toggleMarkerSelection = (marker) => {
-    setSelectedForDistance(prev => {
+    setSelectedMarkers(prev => {
       const exists = prev.find(m => m.id === marker.id)
       if (exists) {
         return prev.filter(m => m.id !== marker.id)
       } else {
-        if (prev.length >= 2) {
-          alert('Você já selecionou 2 marcadores. Desmarque um para selecionar outro.')
-          return prev
-        }
         return [...prev, marker]
       }
     })
   }
+
+  // Função para definir bairro em massa
+  const handleBatchBairroUpdate = async (bairro) => {
+    if (!bairro || selectedMarkers.length === 0) return;
+
+    try {
+      const updatedMarkers = markers.map(marker => 
+        selectedMarkers.some(selected => selected.id === marker.id) 
+          ? { ...marker, bairro }
+          : marker
+      );
+
+      setMarkers(updatedMarkers);
+      
+      // Salvar no Supabase se online
+      if (isOnline && user) {
+        for (const marker of selectedMarkers) {
+          await updateMarkerInSupabase({ ...marker, bairro });
+        }
+      }
+
+      setSelectedMarkers([]);
+      setShowBatchBairroDialog(false);
+      alert(`${selectedMarkers.length} marcadores atualizados para o bairro ${bairro}`);
+    } catch (error) {
+      console.error('Erro ao atualizar marcadores em massa:', error);
+      alert('Erro ao atualizar marcadores');
+    }
+  };
+
+  // Função para alternar seleção de projeto
+  const toggleProjectSelection = (project) => {
+    setSelectedProjects(prev => {
+      const exists = prev.find(p => p.id === project.id);
+      if (exists) {
+        return prev.filter(p => p.id !== project.id);
+      } else {
+        return [...prev, project];
+      }
+    });
+  };
+
+  // Função para carregar múltiplos projetos
+  const loadMultipleProjects = () => {
+    if (selectedProjects.length === 0) {
+      alert('Selecione pelo menos um projeto para carregar');
+      return;
+    }
+
+    // Calcular métricas totais
+    const totalPoints = selectedProjects.reduce((sum, project) => 
+      sum + (project.points?.length || 0), 0);
+    const totalDistance = selectedProjects.reduce((sum, project) => 
+      sum + (project.totalDistance || project.total_distance || 0), 0);
+
+    // Combinar pontos de todos os projetos selecionados
+    const combinedPoints = selectedProjects.flatMap(project => 
+      project.points || []);
+
+    const combinedProject = {
+      id: `combined_${Date.now()}`,
+      name: `Projeto Combinado (${selectedProjects.length})`,
+      points: combinedPoints,
+      totalDistance: totalDistance,
+      total_distance: totalDistance,
+      bairro: 'Combinado',
+      tracking_mode: 'manual',
+      created_at: new Date().toISOString(),
+      combinedProjects: selectedProjects.map(p => p.name)
+    };
+
+    loadProject(combinedProject);
+    setSelectedProjects([]);
+    setShowProjectsList(false);
+  };
+
+  // ========== FIM DAS NOVAS FUNÇÕES ==========
 
   // Função para editar marcador
   const handleEditMarker = useCallback((marker) => {
@@ -1752,6 +1832,11 @@ const stopTracking = async () => {
     } finally {
       setPaused(!paused);
     }
+  };
+
+  // Função para alternar alinhamento
+  const toggleSnapping = () => {
+    setSnappingEnabled(!snappingEnabled);
   };
 
   // Adicionar ponto manual com snapping
@@ -2326,7 +2411,7 @@ const loadProject = (project) => {
                 e.originalEvent.stopPropagation();
                 setPopupMarker(marker);
               }}
-              color={marker.color || '#FF0000'}
+              color={selectedMarkers.some(m => m.id === marker.id) ? '#06B6D4' : (marker.color || '#FF0000')}
             />
           ))}
 
@@ -2413,6 +2498,29 @@ const loadProject = (project) => {
             
             {/* Container principal com scroll */}
             <div className="flex-1 overflow-y-auto py-4 px-4 space-y-6">
+              {/* Seção de seleção múltipla */}
+              {selectedMarkers.length > 0 && (
+                <div className="bg-blue-500/20 border border-blue-500/30 rounded-lg p-3 mb-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-blue-400 text-sm font-medium">
+                        {selectedMarkers.length} marcadores selecionados
+                      </p>
+                      <p className="text-blue-300 text-xs">
+                        Clique em "Definir Bairro" para aplicar em massa
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={() => setShowBatchBairroDialog(true)}
+                      className="bg-blue-500 hover:bg-blue-600 text-white text-xs"
+                    >
+                      Definir Bairro
+                    </Button>
+                  </div>
+                </div>
+              )}
+
               {/* Seletor de Estilo do Mapa */}
               <div className="bg-slate-800/30 rounded-lg p-4 border border-slate-700/50">
                 <h3 className="text-sm font-semibold text-cyan-400 mb-3">Estilo do Mapa</h3>
@@ -3018,15 +3126,44 @@ const loadProject = (project) => {
             </DialogDescription>
           </DialogHeader>
           
+          {/* Seção de seleção múltipla de projetos */}
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <span className="text-cyan-400 text-sm">
+                {selectedProjects.length} projetos selecionados
+              </span>
+            </div>
+            <Button
+              onClick={loadMultipleProjects}
+              disabled={selectedProjects.length === 0}
+              className="bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white"
+            >
+              <FolderOpen className="w-4 h-4 mr-2" />
+              Carregar Selecionados ({selectedProjects.length})
+            </Button>
+          </div>
+          
           <div className="max-h-[60vh] overflow-y-auto custom-scrollbar">
             <div className="space-y-3">
               {projects.map(project => (
                 <div
                   key={project.id}
-                  className="flex items-center gap-4 p-4 bg-slate-800/50 rounded-lg border border-slate-700 hover:border-cyan-500/30 transition-all group project-grid-item"
+                  className={`flex items-center gap-4 p-4 bg-slate-800/50 rounded-lg border ${
+                    selectedProjects.some(p => p.id === project.id) 
+                      ? 'border-cyan-500 bg-cyan-500/20' 
+                      : 'border-slate-700 hover:border-cyan-500/30'
+                  } transition-all group project-grid-item`}
                 >
-                  <div className="w-12 h-12 bg-gradient-to-br from-cyan-500/20 to-blue-500/20 rounded-lg flex items-center justify-center">
-                    <FolderOpen className="w-6 h-6 text-cyan-400" />
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedProjects.some(p => p.id === project.id)}
+                      onChange={() => toggleProjectSelection(project)}
+                      className="w-4 h-4 text-cyan-500 bg-slate-700 border-slate-600 rounded focus:ring-cyan-500 focus:ring-2"
+                    />
+                    <div className="w-12 h-12 bg-gradient-to-br from-cyan-500/20 to-blue-500/20 rounded-lg flex items-center justify-center">
+                      <FolderOpen className="w-6 h-6 text-cyan-400" />
+                    </div>
                   </div>
                   
                   <div className="flex-1 min-w-0">
@@ -3115,7 +3252,10 @@ const loadProject = (project) => {
           
           <div className="flex gap-2 pt-4 border-t border-slate-700/50">
             <Button
-              onClick={() => setShowProjectsList(false)}
+              onClick={() => {
+                setShowProjectsList(false);
+                setSelectedProjects([]);
+              }}
               className="flex-1 bg-gradient-to-r from-gray-500 to-slate-600 hover:from-gray-600 hover:to-slate-700"
             >
               Fechar
@@ -3130,6 +3270,43 @@ const loadProject = (project) => {
               <Ruler className="w-4 h-4 mr-2" />
               Novo Projeto
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Diálogo para Definir Bairro em Massa */}
+      <Dialog open={showBatchBairroDialog} onOpenChange={setShowBatchBairroDialog}>
+        <DialogContent className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white border-slate-700/50 max-w-md mx-auto">
+          <DialogHeader>
+            <DialogTitle className="text-cyan-400 text-xl font-bold">
+              Definir Bairro para {selectedMarkers.length} Marcadores
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Select onValueChange={handleBatchBairroUpdate}>
+              <SelectTrigger className="bg-slate-800/50 border-slate-700 text-white">
+                <SelectValue placeholder="Selecione um bairro" />
+              </SelectTrigger>
+              <SelectContent className="bg-slate-800 border-slate-700 text-white z-[10000]">
+                {bairros.map(bairro => (
+                  <SelectItem key={bairro} value={bairro}>{bairro}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <div className="flex gap-2">
+              <Button
+                onClick={() => setShowBatchBairroDialog(false)}
+                className="flex-1 bg-gradient-to-r from-gray-500 to-slate-600 hover:from-gray-600 hover:to-slate-700"
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={() => handleBatchBairroUpdate(selectedBairro !== 'todos' ? selectedBairro : bairros[0])}
+                className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600"
+              >
+                Aplicar
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -3436,10 +3613,11 @@ const loadProject = (project) => {
     currentPosition={currentPosition}
     currentProject={currentProject}
     snappingEnabled={snappingEnabled}
+    onToggleSnapping={toggleSnapping}
     gpsAccuracy={gpsAccuracy}
     speed={speed}
     handleRemovePoints={handleRemovePoints}
-    showProjectDialog={showProjectDialog} // ADICIONE ESTA LINHA
+    showProjectDialog={showProjectDialog}
   />
 )}
 
