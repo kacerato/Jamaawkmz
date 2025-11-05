@@ -3113,166 +3113,166 @@ const loadProject = (project) => {
   </div>
 )}
 
-      {/* Diálogo de Lista de Projetos */}
-      <Dialog open={showProjectsList} onOpenChange={setShowProjectsList}>
-        <DialogContent className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white border-slate-700/50 w-[95vw] max-w-md mx-auto shadow-2xl max-h-[80vh] overflow-hidden project-dialog-content">
-          <DialogHeader>
-            <DialogTitle className="text-cyan-400 text-xl font-bold flex items-center gap-2">
-              <FolderOpen className="w-5 h-5" />
-              Meus Projetos ({projects.length})
-            </DialogTitle>
-            <DialogDescription className="text-gray-400 text-sm">
-              Gerencie e carregue seus projetos salvos
-            </DialogDescription>
-          </DialogHeader>
-          
-          {/* Seção de seleção múltipla de projetos */}
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <span className="text-cyan-400 text-sm">
-                {selectedProjects.length} projetos selecionados
-              </span>
+     { /* Diálogo de Lista de Projetos - CORRIGIDO PARA CENTRALIZAR */ }
+<Dialog open={showProjectsList} onOpenChange={setShowProjectsList}>
+  <DialogContent className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white border-slate-700/50 w-[95vw] max-w-md shadow-2xl max-h-[80vh] overflow-hidden fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[10000]">
+    <DialogHeader>
+      <DialogTitle className="text-cyan-400 text-xl font-bold flex items-center gap-2">
+        <FolderOpen className="w-5 h-5" />
+        Meus Projetos ({projects.length})
+      </DialogTitle>
+      <DialogDescription className="text-gray-400 text-sm">
+        Gerencie e carregue seus projetos salvos
+      </DialogDescription>
+    </DialogHeader>
+    
+    {/* Seção de seleção múltipla de projetos */}
+    <div className="flex items-center justify-between mb-4">
+      <div>
+        <span className="text-cyan-400 text-sm">
+          {selectedProjects.length} projetos selecionados
+        </span>
+      </div>
+      <Button
+        onClick={loadMultipleProjects}
+        disabled={selectedProjects.length === 0}
+        className="bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white"
+      >
+        <FolderOpen className="w-4 h-4 mr-2" />
+        Carregar Selecionados ({selectedProjects.length})
+      </Button>
+    </div>
+    
+    <div className="max-h-[60vh] overflow-y-auto custom-scrollbar">
+      <div className="space-y-3">
+        {projects.map(project => (
+          <div
+            key={project.id}
+            className={`flex items-center gap-4 p-4 bg-slate-800/50 rounded-lg border ${
+              selectedProjects.some(p => p.id === project.id) 
+                ? 'border-cyan-500 bg-cyan-500/20' 
+                : 'border-slate-700 hover:border-cyan-500/30'
+            } transition-all group project-grid-item`}
+          >
+            <div className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                checked={selectedProjects.some(p => p.id === project.id)}
+                onChange={() => toggleProjectSelection(project)}
+                className="w-4 h-4 text-cyan-500 bg-slate-700 border-slate-600 rounded focus:ring-cyan-500 focus:ring-2"
+              />
+              <div className="w-12 h-12 bg-gradient-to-br from-cyan-500/20 to-blue-500/20 rounded-lg flex items-center justify-center">
+                <FolderOpen className="w-6 h-6 text-cyan-400" />
+              </div>
             </div>
-            <Button
-              onClick={loadMultipleProjects}
-              disabled={selectedProjects.length === 0}
-              className="bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white"
-            >
-              <FolderOpen className="w-4 h-4 mr-2" />
-              Carregar Selecionados ({selectedProjects.length})
-            </Button>
-          </div>
-          
-          <div className="max-h-[60vh] overflow-y-auto custom-scrollbar">
-            <div className="space-y-3">
-              {projects.map(project => (
-                <div
-                  key={project.id}
-                  className={`flex items-center gap-4 p-4 bg-slate-800/50 rounded-lg border ${
-                    selectedProjects.some(p => p.id === project.id) 
-                      ? 'border-cyan-500 bg-cyan-500/20' 
-                      : 'border-slate-700 hover:border-cyan-500/30'
-                  } transition-all group project-grid-item`}
-                >
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="checkbox"
-                      checked={selectedProjects.some(p => p.id === project.id)}
-                      onChange={() => toggleProjectSelection(project)}
-                      className="w-4 h-4 text-cyan-500 bg-slate-700 border-slate-600 rounded focus:ring-cyan-500 focus:ring-2"
-                    />
-                    <div className="w-12 h-12 bg-gradient-to-br from-cyan-500/20 to-blue-500/20 rounded-lg flex items-center justify-center">
-                      <FolderOpen className="w-6 h-6 text-cyan-400" />
-                    </div>
-                  </div>
-                  
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-white text-lg mb-1">{project.name}</h3>
-                    <div className="grid grid-cols-3 gap-4 text-sm text-gray-400">
-                      <div>
-                        <span className="text-cyan-400 font-medium">{project.points.length}</span> pontos
-                      </div>
-                      <div>
-                        <span className="text-cyan-400 font-medium">{safeToFixed(((project.totalDistance || project.total_distance) || 0) / 1000, 2)}</span> km
-                      </div>
-                      <div>
-                        <span className="text-cyan-400 font-medium">{project.trackingMode || project.tracking_mode || 'manual'}</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
-                      <span>Criado: {new Date(project.created_at || project.createdAt).toLocaleDateString('pt-BR')}</span>
-                      {project.updated_at && (
-                        <span>Atualizado: {new Date(project.updated_at).toLocaleDateString('pt-BR')}</span>
-                      )}
-                    </div>
-                  </div>
-                  
-                  <div className="project-actions-grid">
-                    <Button
-                      size="sm"
-                      onClick={() => {
-                        loadProject(project);
-                        setShowProjectsList(false);
-                      }}
-                      className="compact-button bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white"
-                    >
-                      <Play className="w-3 h-3 mr-1" />
-                      Carregar
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        setEditingProject(project);
-                        setProjectName(project.name);
-                        setManualPoints(project.points);
-                        setTotalDistance(project.totalDistance || project.total_distance || 0);
-                        setTrackingMode(project.trackingMode || project.tracking_mode || 'manual');
-                        setShowProjectDialog(true);
-                        setShowProjectsList(false);
-                      }}
-                      className="compact-button border-slate-600 text-blue-400 hover:bg-blue-500/20"
-                    >
-                      <Edit2 className="w-3 h-3 mr-1" />
-                      Editar
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => exportProjectAsKML(project)}
-                      className="compact-button border-slate-600 text-green-400 hover:bg-green-500/20"
-                    >
-                      <Download className="w-3 h-3 mr-1" />
-                      Exportar
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => deleteProject(project.id)}
-                      className="compact-button border-slate-600 text-red-400 hover:bg-red-500/20"
-                    >
-                      <X className="w-3 h-3 mr-1" />
-                      Excluir
-                    </Button>
-                  </div>
+            
+            <div className="flex-1 min-w-0">
+              <h3 className="font-semibold text-white text-lg mb-1">{project.name}</h3>
+              <div className="grid grid-cols-3 gap-4 text-sm text-gray-400">
+                <div>
+                  <span className="text-cyan-400 font-medium">{project.points.length}</span> pontos
                 </div>
-              ))}
-              
-              {projects.length === 0 && (
-                <div className="text-center py-12">
-                  <FolderOpen className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-                  <h3 className="text-lg font-semibold text-gray-400 mb-2">Nenhum projeto encontrado</h3>
-                  <p className="text-gray-500 text-sm">
-                    Use a régua manual para criar seu primeiro projeto de medição
-                  </p>
+                <div>
+                  <span className="text-cyan-400 font-medium">{safeToFixed(((project.totalDistance || project.total_distance) || 0) / 1000, 2)}</span> km
                 </div>
-              )}
+                <div>
+                  <span className="text-cyan-400 font-medium">{project.trackingMode || project.tracking_mode || 'manual'}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
+                <span>Criado: {new Date(project.created_at || project.createdAt).toLocaleDateString('pt-BR')}</span>
+                {project.updated_at && (
+                  <span>Atualizado: {new Date(project.updated_at).toLocaleDateString('pt-BR')}</span>
+                )}
+              </div>
+            </div>
+            
+            <div className="project-actions-grid">
+              <Button
+                size="sm"
+                onClick={() => {
+                  loadProject(project);
+                  setShowProjectsList(false);
+                }}
+                className="compact-button bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white"
+              >
+                <Play className="w-3 h-3 mr-1" />
+                Carregar
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setEditingProject(project);
+                  setProjectName(project.name);
+                  setManualPoints(project.points);
+                  setTotalDistance(project.totalDistance || project.total_distance || 0);
+                  setTrackingMode(project.trackingMode || project.tracking_mode || 'manual');
+                  setShowProjectDialog(true);
+                  setShowProjectsList(false);
+                }}
+                className="compact-button border-slate-600 text-blue-400 hover:bg-blue-500/20"
+              >
+                <Edit2 className="w-3 h-3 mr-1" />
+                Editar
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => exportProjectAsKML(project)}
+                className="compact-button border-slate-600 text-green-400 hover:bg-green-500/20"
+              >
+                <Download className="w-3 h-3 mr-1" />
+                Exportar
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => deleteProject(project.id)}
+                className="compact-button border-slate-600 text-red-400 hover:bg-red-500/20"
+              >
+                <X className="w-3 h-3 mr-1" />
+                Excluir
+              </Button>
             </div>
           </div>
-          
-          <div className="flex gap-2 pt-4 border-t border-slate-700/50">
-            <Button
-              onClick={() => {
-                setShowProjectsList(false);
-                setSelectedProjects([]);
-              }}
-              className="flex-1 bg-gradient-to-r from-gray-500 to-slate-600 hover:from-gray-600 hover:to-slate-700"
-            >
-              Fechar
-            </Button>
-            <Button
-              onClick={() => {
-                setShowProjectsList(false);
-                setShowRulerPopup(true);
-              }}
-              className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600"
-            >
-              <Ruler className="w-4 h-4 mr-2" />
-              Novo Projeto
-            </Button>
+        ))}
+        
+        {projects.length === 0 && (
+          <div className="text-center py-12">
+            <FolderOpen className="w-16 h-16 text-gray-600 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-gray-400 mb-2">Nenhum projeto encontrado</h3>
+            <p className="text-gray-500 text-sm">
+              Use a régua manual para criar seu primeiro projeto de medição
+            </p>
           </div>
-        </DialogContent>
-      </Dialog>
+        )}
+      </div>
+    </div>
+    
+    <div className="flex gap-2 pt-4 border-t border-slate-700/50">
+      <Button
+        onClick={() => {
+          setShowProjectsList(false);
+          setSelectedProjects([]);
+        }}
+        className="flex-1 bg-gradient-to-r from-gray-500 to-slate-600 hover:from-gray-600 hover:to-slate-700"
+      >
+        Fechar
+      </Button>
+      <Button
+        onClick={() => {
+          setShowProjectsList(false);
+          setShowRulerPopup(true);
+        }}
+        className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600"
+      >
+        <Ruler className="w-4 h-4 mr-2" />
+        Novo Projeto
+      </Button>
+    </div>
+  </DialogContent>
+</Dialog>
 
       {/* Diálogo para Definir Bairro em Massa */}
       <Dialog open={showBatchBairroDialog} onOpenChange={setShowBatchBairroDialog}>
