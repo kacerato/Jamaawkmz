@@ -1057,15 +1057,6 @@ input[type="checkbox"]:focus {
     max-width: 260px;
   }
   
-.project-dialog-content {
-  margin: auto !important;
-  position: fixed !important;
-  top: 50% !important;
-  left: 50% !important;
-  transform: translate(-50%, -50%) !important;
-  max-height: 85vh !important;
-}
-  
   .project-grid-item {
     flex-direction: column;
     text-align: center;
@@ -1455,6 +1446,18 @@ input[type="checkbox"]:focus {
 }
 
 /* ========== CORREÇÃO PARA O DIALOG DE PROJETOS ========== */
+.project-dialog-content {
+  position: fixed !important;
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  width: 95vw !important;
+  max-width: 600px !important;
+  max-height: 85vh !important;
+  margin: 0 !important;
+  z-index: 10000 !important;
+}
+
 .project-dialog-content .bg-slate-800\\/50 {
   background-color: rgba(30, 41, 59, 0.95);
 }
@@ -1680,4 +1683,37 @@ canvas {
 
 .snapping-toggle:hover {
   transform: scale(1.05);
+}
+
+/* ========== CORREÇÃO PARA DIALOG CENTRALIZADO ========== */
+.project-dialog-content {
+  position: fixed !important;
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  width: 95vw !important;
+  max-width: 600px !important;
+  max-height: 85vh !important;
+  margin: 0 !important;
+  z-index: 10000 !important;
+}
+
+/* Garantir que o conteúdo do diálogo seja responsivo */
+@media (max-width: 640px) {
+  .project-dialog-content {
+    width: 98vw !important;
+    max-width: 98vw !important;
+    margin: 1vw !important;
+  }
+}
+
+/* Remover margens automáticas que podem interferir */
+.project-dialog-content .mx-auto {
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+/* Garantir que o diálogo fique acima de tudo */
+[data-radix-dialog-content] {
+  z-index: 10000 !important;
 }
