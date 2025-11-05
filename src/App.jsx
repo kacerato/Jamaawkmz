@@ -156,9 +156,24 @@ const safeToFixed = (value, decimals = 2) => {
   return Number(value).toFixed(decimals);
 };
 
+// Função para gerar nome único para projeto
+const getUniqueProjectName = (baseName, existingProjects) => {
+  let newName = baseName;
+  let counter = 1;
+  
+  while (existingProjects.some(project => project.name === newName)) {
+    newName = `${baseName} (${counter})`;
+    counter++;
+  }
+  
+  return newName;
+};
+
 function App() {
   const mapboxToken = 'pk.eyJ1Ijoia2FjZXJhdG8iLCJhIjoiY21oZG1nNnViMDRybjJub2VvZHV1aHh3aiJ9.l7tCaIPEYqcqDI8_aScm7Q';
   const mapRef = useRef();
+  const fileInputRef = useRef(null);
+  const projectInputRef = useRef(null);
   const [user, setUser] = useState(null)
   const [authLoading, setAuthLoading] = useState(true)
   const [markers, setMarkers] = useState([])
@@ -828,7 +843,24 @@ const handleProjectImport = async (event) => {
     
     // Extrair nome do projeto
     const nameElement = xmlDoc.getElementsByTagName('name')[0];
-    const projectName = nameElement?.textContent || `Projeto ${new Date().toLocaleDateString('pt-BR')}`;
+    let projectName = nameElement?.textContent || `Projeto Importado ${new Date().toLocaleDateString('pt-BR')}`;
+    
+    // VERIFICAR SE JÁ EXISTE PROJETO COM MESMO NOME
+    const existingProject = projects.find(p => p.name === projectName);
+    if (existingProject) {
+      const shouldOverwrite = confirm(`Já existe um projeto com o nome "${projectName}". Deseja sobrescrever? Clique em "OK" para sobrescrever ou "Cancelar" para usar um nome diferente.`);
+      
+      if (!shouldOverwrite) {
+        const suggestedName = getUniqueProjectName(projectName, projects);
+        const newName = prompt('Digite um novo nome para o projeto:', suggestedName);
+        if (newName && newName.trim()) {
+          projectName = newName.trim();
+        } else {
+          alert('Operação cancelada.');
+          return;
+        }
+      }
+    }
     
     // Extrair pontos do KML
     const points = [];
@@ -899,6 +931,23 @@ const handleProjectImport = async (event) => {
     
     // Validar e carregar projeto
     if (isValidProject(project)) {
+      // SALVAR O PROJETO NA LISTA
+      let updatedProjects;
+      
+      if (existingProject && shouldOverwrite) {
+        // Substituir projeto existente
+        updatedProjects = projects.map(p => 
+          p.id === existingProject.id ? project : p
+        );
+      } else {
+        // Adicionar novo projeto
+        updatedProjects = [...projects, project];
+      }
+      
+      setProjects(updatedProjects);
+      localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
+      
+      // Carregar o projeto
       loadProject(project);
       alert(`Projeto "${projectName}" importado com sucesso! ${points.length} pontos carregados.`);
     } else {
@@ -910,7 +959,10 @@ const handleProjectImport = async (event) => {
     alert(`Erro ao importar projeto: ${error.message}`);
   } finally {
     setUploading(false);
-    event.target.value = '';
+    // Reset do input
+    if (event.target) {
+      event.target.value = '';
+    }
   }
 };
 
@@ -1010,7 +1062,10 @@ const handleProjectImport = async (event) => {
       alert('Erro ao importar arquivo. Verifique o formato.')
     } finally {
       setUploading(false)
-      event.target.value = ''
+      // Reset do input
+      if (event.target) {
+        event.target.value = '';
+      }
     }
   }
 
@@ -2473,7 +2528,7 @@ const loadProject = (project) => {
               <div className="space-y-2">
                 <Button
                   className="w-full justify-start bg-slate-800/50 hover:bg-slate-800 border border-slate-700 text-white"
-                  onClick={() => document.getElementById('file-input').click()}
+                  onClick={() => fileInputRef.current?.click()}
                   disabled={uploading}
                 >
                   <Upload className="w-4 h-4 mr-3" />
@@ -2482,7 +2537,7 @@ const loadProject = (project) => {
 
                 <Button
                   className="w-full justify-start bg-slate-800/50 hover:bg-slate-800 border border-slate-700 text-white"
-                  onClick={() => document.getElementById('project-input').click()}
+                  onClick={() => projectInputRef.current?.click()}
                 >
                   <FolderOpen className="w-4 h-4 mr-3" />
                   Importar Projeto
@@ -3303,8 +3358,19 @@ const loadProject = (project) => {
         />
       )}
 
-     { /* Input oculto para importação de projeto - CORRIGIDO */ }
+     { /* Input oculto para importação de arquivos KML/KMZ - CORRIGIDO */ }
 <input
+  ref={fileInputRef}
+  id="file-input"
+  type="file"
+  accept=".kml,.kmz"
+  onChange={handleFileImport}
+  className="hidden"
+/>
+
+{/* Input oculto para importação de projetos - CORRIGIDO */}
+<input
+  ref={projectInputRef}
   id="project-input"
   type="file"
   accept=".kml,.kmz"
@@ -3319,15 +3385,6 @@ const loadProject = (project) => {
         accept="image/*"
         multiple
         onChange={handlePhotoUpload}
-        className="hidden"
-      />
-
-      {/* Input oculto para importação de projeto */}
-      <input
-        id="project-input"
-        type="file"
-        accept=".json"
-        onChange={handleProjectImport}
         className="hidden"
       />
     </div>
