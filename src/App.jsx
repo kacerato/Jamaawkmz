@@ -1,4 +1,6 @@
+import React from 'react';
 import { useState, useEffect, useRef, useCallback } from 'react'
+// ... resto do código permanece igual
 import Map, { Marker, Popup, Source, Layer, NavigationControl } from 'react-map-gl'
 import { Upload, MapPin, Ruler, X, Download, Share2, Edit2, Menu, LogOut, Heart, MapPinned, Layers, Play, Pause, Square, FolderOpen, Save, Navigation, Clock, Cloud, CloudOff, Archive, Camera, Plus, Star, LocateFixed, Info } from 'lucide-react'
 import { Button } from '@/components/ui/button.jsx'
