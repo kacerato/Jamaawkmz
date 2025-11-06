@@ -1,6 +1,5 @@
 import React from 'react';
 import { useState, useEffect, useRef, useCallback } from 'react'
-// ... resto do código permanece igual
 import Map, { Marker, Popup, Source, Layer, NavigationControl } from 'react-map-gl'
 import { Upload, MapPin, Ruler, X, Download, Share2, Edit2, Menu, LogOut, Heart, MapPinned, Layers, Play, Pause, Square, FolderOpen, Save, Navigation, Clock, Cloud, CloudOff, Archive, Camera, Plus, Star, LocateFixed, Info } from 'lucide-react'
 import { Button } from '@/components/ui/button.jsx'
@@ -58,6 +57,14 @@ const generateRandomColor = () => {
     '#99B898', '#FECEAB', '#FF847C', '#E84A5F', '#2A363B'
   ];
   return colors[Math.floor(Math.random() * colors.length)];
+};
+
+// Função para proteção global para toFixed
+const safeToFixed = (value, decimals = 2) => {
+  if (value === undefined || value === null || isNaN(value)) {
+    return "0".padStart(decimals + 2, '0');
+  }
+  return Number(value).toFixed(decimals);
 };
 
 // Filtro Kalman para suavização GPS
@@ -162,14 +169,6 @@ class RoadSnappingService {
   }
 }
 
-// Função de proteção global para toFixed
-const safeToFixed = (value, decimals = 2) => {
-  if (value === undefined || value === null || isNaN(value)) {
-    return "0".padStart(decimals + 2, '0');
-  }
-  return Number(value).toFixed(decimals);
-};
-
 // Função para gerar nome único para projeto
 const getUniqueProjectName = (baseName, existingProjects) => {
   let newName = baseName;
@@ -273,6 +272,30 @@ function App() {
     setImportProgress(progress);
     setImportCurrentStep(step);
     setImportCurrentAction(action);
+  };
+
+  // Função para continuar projeto existente
+  const continueProject = (project) => {
+    if (!project) return;
+    
+    console.log('🔄 Continuando projeto:', project.name);
+    
+    // Carrega os pontos do projeto para continuar
+    setManualPoints(project.points || []);
+    setTotalDistance(project.totalDistance || project.total_distance || 0);
+    setCurrentProject(project);
+    setProjectName(project.name);
+    setTrackingMode(project.trackingMode || project.tracking_mode || 'manual');
+    
+    // Inicia o rastreamento
+    setTracking(true);
+    setPaused(false);
+    setShowTrackingControls(true);
+    setShowRulerPopup(false);
+    setShowProjectsList(false);
+    
+    // Atualiza o último tempo de ponto automático
+    setLastAutoPointTime(Date.now());
   };
 
   // Verificar autenticação ao iniciar
@@ -1802,18 +1825,31 @@ function App() {
     console.log('🆕 Novo projeto iniciado');
   };
 
-  // Parar rastreamento
+  // Função stopTracking corrigida
   const stopTracking = async () => {
     try {
       const pointsToSave = [...manualPoints];
       
+      // Só salva automaticamente se houver pontos e não estiver no diálogo de projeto
       if (pointsToSave.length > 0 && !showProjectDialog) {
         console.log('💾 Salvamento automático ao parar rastreamento...');
-        await saveProject(true, pointsToSave);
+        
+        // Usa o nome do projeto atual ou gera um nome padrão
+        let projectNameToUse = projectName;
+        if (currentProject && !projectName.trim()) {
+          projectNameToUse = currentProject.name;
+        } else if (!projectName.trim()) {
+          projectNameToUse = `Rastreamento ${new Date().toLocaleString('pt-BR')}`;
+        }
+        
+        if (projectNameToUse.trim() && pointsToSave.length > 0) {
+          await saveProject(true, pointsToSave);
+        }
       }
     } catch (error) {
       console.error('Erro ao salvar projeto automaticamente:', error);
     } finally {
+      // SEMPRE limpa os estados, mesmo se houver erro no salvamento
       setTracking(false);
       setPaused(false);
       setShowTrackingControls(false);
@@ -1822,6 +1858,9 @@ function App() {
       setPositionHistory([]);
       setGpsAccuracy(null);
       setSpeed(0);
+      setLastAutoPointTime(0);
+      
+      console.log('✅ Rastreamento parado e estados resetados');
     }
   };
 
@@ -2035,6 +2074,15 @@ function App() {
 
   // FUNÇÃO SALVAR PROJETO
   const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
+    // Verificação de segurança
+    if (!pointsToSave || pointsToSave.length === 0) {
+      console.log('⚠️ Nenhum ponto para salvar');
+      if (!autoSave) {
+        alert('Não há pontos para salvar no projeto.');
+      }
+      return;
+    }
+    
     if (autoSave && pointsToSave.length === 0) {
       return;
     }
@@ -3062,11 +3110,8 @@ function App() {
               {/* Botão Iniciar/Continuar */}
               <Button
                 onClick={currentProject ? () => {
-                  if (confirm(`Deseja continuar no projeto "${currentProject.name}"?`)) {
-                    setTracking(true);
-                    setPaused(false);
-                    setShowTrackingControls(true);
-                    setShowRulerPopup(false);
+                  if (confirm(`Deseja continuar adicionando pontos ao projeto "${currentProject.name}"?`)) {
+                    continueProject(currentProject);
                   }
                 } : startTracking}
                 className="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-medium py-3 text-base"
