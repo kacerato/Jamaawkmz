@@ -6,7 +6,6 @@
 /build
 
 # Capacitor
-/android
 /ios
 /www
 
@@ -24,5 +23,8 @@ pnpm-debug.log*
 .env.production.local
 
 # Mobile artifacts
-*.apk
 *.aab
+
+# Signing
+/android/app/keystore.jks
+/android/app/keystore.properties

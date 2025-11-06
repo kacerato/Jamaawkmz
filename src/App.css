@@ -316,10 +316,6 @@
 
 /* ========== CORREÇÃO DA LOCALIZAÇÃO DO USUÁRIO ========== */
 .current-position-marker {
-  z-index: 1000 !important;
-}
-
-.current-position {
   background: #06B6D4 !important;
   border: 2px solid #ffffff !important;
   border-radius: 50% !important;
@@ -756,6 +752,18 @@
   opacity: 0.5;
 }
 
+.btn-remove-points {
+  background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%);
+  box-shadow: 0 4px 14px rgba(245, 158, 11, 0.4);
+  transition: all 0.3s ease;
+}
+
+.btn-remove-points:hover {
+  background: linear-gradient(135deg, #D97706 0%, #B45309 100%);
+  box-shadow: 0 6px 20px rgba(245, 158, 11, 0.6);
+  transform: translateY(-2px);
+}
+
 /* ========== BADGES ========== */
 .project-count-badge {
   background: rgba(6, 182, 212, 0.2);
@@ -1047,12 +1055,6 @@ input[type="checkbox"]:focus {
   .leaflet-popup-content {
     min-width: 180px;
     max-width: 260px;
-  }
-  
-  .project-dialog-content {
-    margin: 1rem;
-    max-width: calc(100vw - 2rem);
-    width: calc(100vw - 2rem);
   }
   
   .project-grid-item {
@@ -1444,6 +1446,18 @@ input[type="checkbox"]:focus {
 }
 
 /* ========== CORREÇÃO PARA O DIALOG DE PROJETOS ========== */
+.project-dialog-content {
+  position: fixed !important;
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  width: 95vw !important;
+  max-width: 600px !important;
+  max-height: 85vh !important;
+  margin: 0 !important;
+  z-index: 10000 !important;
+}
+
 .project-dialog-content .bg-slate-800\\/50 {
   background-color: rgba(30, 41, 59, 0.95);
 }
@@ -1568,4 +1582,187 @@ canvas {
     height: 16px;
     font-size: 7px;
   }
+}
+
+/* Estilos para controles compactos em mobile */
+@media (max-width: 640px) {
+  .tracking-controls-container {
+    min-width: 280px !important;
+    max-width: 95vw !important;
+    padding: 0.75rem !important;
+  }
+
+  .compact-popup {
+    width: 260px !important;
+    right: 1rem !important;
+    bottom: 5rem !important;
+  }
+}
+
+/* Melhorar toques em mobile */
+@media (max-width: 768px) {
+  .tracking-button {
+    min-height: 36px !important;
+    height: 36px !important;
+    padding: 0.5rem !important;
+  }
+
+  button, .leaflet-control-zoom a {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* Animações suaves para popups */
+.animate-scale-in {
+  animation: scaleIn 0.2s ease-out;
+}
+
+@keyframes scaleIn {
+  from {
+    transform: scale(0.9);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Estilos para texto de distância detalhada */
+.distance-text {
+  font-family: 'Courier New', monospace;
+  font-weight: bold;
+}
+
+/* Melhorar responsividade dos popups */
+@media (max-width: 640px) {
+  .compact-popup {
+    width: 280px !important;
+    right: 0.5rem !important;
+    left: 0.5rem !important;
+    margin: 0 auto !important;
+  }
+}
+
+.points-counter {
+  animation: pulse-counter 2s ease-in-out infinite;
+}
+
+@keyframes pulse-counter {
+  0%, 100% {
+    transform: scale(1);
+    color: #ffffff;
+  }
+  50% {
+    transform: scale(1.1);
+    color: #22d3ee;
+  }
+}
+
+/* ========== ESTILOS PARA SELEÇÃO EM MASSA ========== */
+.marker-selected {
+  border: 2px solid #06B6D4 !important;
+  box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.3) !important;
+}
+
+.project-selected {
+  background: linear-gradient(135deg, rgba(6, 182, 212, 0.2) 0%, rgba(2, 132, 199, 0.2) 100%) !important;
+  border-color: #06B6D4 !important;
+}
+
+/* ========== BOTÃO DE ALINHAMENTO NO CONTROLE ========== */
+.snapping-toggle {
+  background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+  transition: all 0.3s ease;
+}
+
+.snapping-toggle.inactive {
+  background: linear-gradient(135deg, #6B7280 0%, #4B5563 100%);
+}
+
+.snapping-toggle:hover {
+  transform: scale(1.05);
+}
+
+/* ========== CORREÇÃO PARA DIALOG CENTRALIZADO ========== */
+.project-dialog-content {
+  position: fixed !important;
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  width: 95vw !important;
+  max-width: 600px !important;
+  max-height: 85vh !important;
+  margin: 0 !important;
+  z-index: 10000 !important;
+}
+
+/* Garantir que o conteúdo do diálogo seja responsivo */
+@media (max-width: 640px) {
+  .project-dialog-content {
+    width: 98vw !important;
+    max-width: 98vw !important;
+    margin: 1vw !important;
+  }
+}
+
+/* Remover margens automáticas que podem interferir */
+.project-dialog-content .mx-auto {
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+/* Garantir que o diálogo fique acima de tudo */
+[data-radix-dialog-content] {
+  z-index: 10000 !important;
+}
+
+/* Adicione ao App.css */
+.ruler-point-marker {
+  background: linear-gradient(135deg, #4b5563 0%, #374151 100%);
+  border: 2px solid #ffffff;
+  border-radius: 2px 2px 8px 8px;
+  width: 20px;
+  height: 28px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  color: white;
+  font-size: 9px;
+  font-weight: bold;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  animation: pulse-point 2s infinite;
+  position: relative;
+  transform: translateY(-5px);
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.ruler-point-marker:hover {
+  transform: translateY(-5px) scale(1.1);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
+  z-index: 1000;
+}
+
+.ruler-point-marker::before {
+  content: "";
+  position: absolute;
+  top: -6px;
+  width: 8px;
+  height: 8px;
+  background: #f59e0b;
+  border-radius: 50%;
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.8);
+  animation: lightFlicker 2s infinite;
+}
+
+.ruler-point-marker::after {
+  content: "";
+  position: absolute;
+  top: 6px;
+  width: 14px;
+  height: 2px;
+  background: #6b7280;
+  border-radius: 1px;
 }
