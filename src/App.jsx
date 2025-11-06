@@ -47,6 +47,17 @@ const mapStyles = {
   outdoors: { name: 'Ar Livre', url: 'mapbox://styles/mapbox/outdoors-v11' },
 };
 
+// Função para gerar cores aleatórias
+const generateRandomColor = () => {
+  const colors = [
+    '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', 
+    '#DDA0DD', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9',
+    '#F8B195', '#F67280', '#C06C84', '#6C5B7B', '#355C7D',
+    '#99B898', '#FECEAB', '#FF847C', '#E84A5F', '#2A363B'
+  ];
+  return colors[Math.floor(Math.random() * colors.length)];
+};
+
 // Filtro Kalman para suavização GPS
 class KalmanFilter {
   constructor(R = 1, Q = 1, A = 1, B = 0, C = 1) {
@@ -224,6 +235,11 @@ function App() {
   const [snappingPoints, setSnappingPoints] = useState([]);
   const [mapStyle, setMapStyle] = useState('streets');
   
+  // Novos estados para múltiplos projetos carregados
+  const [loadedProjects, setLoadedProjects] = useState([]);
+  const [showLoadedProjects, setShowLoadedProjects] = useState(false);
+  const [pointPopupInfo, setPointPopupInfo] = useState(null);
+
   // Novos estados para popup moderno e tratamento de erros
   const [popupMarker, setPopupMarker] = useState(null);
   const [adjustBoundsForMarkers, setAdjustBoundsForMarkers] = useState(false);
@@ -257,7 +273,7 @@ function App() {
     setImportCurrentAction(action);
   };
 
-  // Verificar autenticação ao iniciar - ATUALIZADO COM TRATAMENTO DE ERRO
+  // Verificar autenticação ao iniciar
   useEffect(() => {
     const checkAuth = async () => {
       try {
@@ -265,7 +281,6 @@ function App() {
         
         if (error) {
           console.error('Erro ao verificar sessão:', error)
-          // Forçar logout se houver erro de token
           if (error.message.includes('Invalid Refresh Token')) {
             await supabase.auth.signOut()
           }
@@ -285,10 +300,10 @@ function App() {
       console.log('Auth state change:', event)
       
       if (event === 'SIGNED_OUT') {
-        // Limpar estado local ao sair
         setUser(null)
         setMarkers([])
         setProjects([])
+        setLoadedProjects([])
       } else if (event === 'SIGNED_IN') {
         setUser(session.user)
       } else if (event === 'TOKEN_REFRESHED') {
@@ -300,7 +315,6 @@ function App() {
   }, [])
 
   // FUNÇÕES PARA SUPABASE - PROJETOS
-  // Carregar projetos do Supabase
   const loadProjectsFromSupabase = async () => {
     if (!user) return [];
     
@@ -327,7 +341,6 @@ function App() {
     }
   };
 
-  // Criar tabela de projetos se não existir
   const createProjectsTable = async () => {
     try {
       const { error } = await supabase.rpc('create_projects_table_if_not_exists');
@@ -337,7 +350,6 @@ function App() {
     }
   };
 
-  // Salvar projeto no Supabase
   const saveProjectToSupabase = async (project) => {
     if (!user) return null;
     
@@ -380,7 +392,6 @@ function App() {
     }
   };
 
-  // Deletar projeto do Supabase
   const deleteProjectFromSupabase = async (projectId) => {
     if (!user) return false;
     
@@ -399,7 +410,6 @@ function App() {
     }
   };
 
-  // Sincronizar projetos offline com Supabase
   const syncOfflineProjects = async () => {
     if (!user || !isOnline) return;
 
@@ -449,7 +459,6 @@ function App() {
       try {
         let loadedProjects = [];
 
-        // PRIMEIRO: Tentar carregar do Supabase (fonte verdadeira)
         if (user) {
           if (isOnline) {
             try {
@@ -464,12 +473,10 @@ function App() {
               loadedProjects = data || [];
               console.log('Projetos carregados do Supabase:', loadedProjects.length);
               
-              // ATUALIZAR CACHE LOCAL com dados do Supabase
               localStorage.setItem('jamaaw_projects', JSON.stringify(loadedProjects));
               
             } catch (supabaseError) {
               console.error('Erro ao carregar do Supabase:', supabaseError);
-              // Fallback para localStorage
               const savedProjects = localStorage.getItem('jamaaw_projects');
               if (savedProjects) {
                 loadedProjects = JSON.parse(savedProjects).filter(isValidProject);
@@ -477,7 +484,6 @@ function App() {
               }
             }
           } else {
-            // Offline - usar apenas cache local
             const savedProjects = localStorage.getItem('jamaaw_projects');
             if (savedProjects) {
               loadedProjects = JSON.parse(savedProjects).filter(isValidProject);
@@ -605,7 +611,7 @@ function App() {
       saveBairros(updatedBairros)
       setNewBairro('')
       setShowAddBairro(false)
-	  setShowBairroManager(false)
+      setShowBairroManager(false)
     }
   }
 
@@ -824,240 +830,213 @@ function App() {
     }
   }
 
- // Função para processar arquivo KML/KMZ como projeto - VERSÃO OTIMIZADA COM PROGRESSO
-const handleProjectImport = async (event) => {
-  const file = event.target.files[0];
-  if (!file) return;
-  
-  // Resetar estados de importação
-  setImportProgress(0);
-  setImportCurrentStep(1);
-  setImportTotalSteps(5);
-  setImportCurrentAction('Iniciando importação...');
-  setImportSuccess(false);
-  setImportError(null);
-  setShowImportProgress(true);
-  
-  try {
-    setUploading(true);
+  // Função para processar arquivo KML/KMZ como projeto
+  const handleProjectImport = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
     
-    // Verificar extensão do arquivo
-    const fileName = file.name.toLowerCase();
-    if (!fileName.endsWith('.kml') && !fileName.endsWith('.kmz')) {
-      throw new Error('Por favor, selecione um arquivo KML ou KMZ válido.');
-    }
+    setImportProgress(0);
+    setImportCurrentStep(1);
+    setImportTotalSteps(5);
+    setImportCurrentAction('Iniciando importação...');
+    setImportSuccess(false);
+    setImportError(null);
+    setShowImportProgress(true);
     
-    updateImportProgress(10, 1, 'Lendo arquivo...');
-    
-    let kmlText;
-    
-    // Processar KMZ
-    if (fileName.endsWith('.kmz')) {
-      updateImportProgress(20, 2, 'Extraindo KML do arquivo KMZ...');
+    try {
+      setUploading(true);
       
-      const zip = new JSZip();
-      const contents = await zip.loadAsync(file);
-      const kmlFile = Object.keys(contents.files).find(name => name.toLowerCase().endsWith('.kml'));
-      if (!kmlFile) {
-        throw new Error('Arquivo KML não encontrado no KMZ');
+      const fileName = file.name.toLowerCase();
+      if (!fileName.endsWith('.kml') && !fileName.endsWith('.kmz')) {
+        throw new Error('Por favor, selecione um arquivo KML ou KMZ válido.');
       }
-      kmlText = await contents.files[kmlFile].async('text');
-    } else {
-      // Processar KML diretamente
-      updateImportProgress(30, 2, 'Lendo arquivo KML...');
-      kmlText = await file.text();
-    }
-    
-    updateImportProgress(50, 3, 'Analisando estrutura do KML...');
-    
-    // Parse do KML
-    const parser = new DOMParser();
-    const xmlDoc = parser.parseFromString(kmlText, 'text/xml');
-    
-    // Verificar erros de parse
-    const parseError = xmlDoc.getElementsByTagName('parsererror');
-    if (parseError.length > 0) {
-      throw new Error('Arquivo KML inválido ou malformado');
-    }
-    
-    // Extrair nome do projeto
-    const nameElement = xmlDoc.getElementsByTagName('name')[0];
-    let projectName = nameElement?.textContent || `Projeto Importado ${new Date().toLocaleDateString('pt-BR')}`;
-    
-    updateImportProgress(60, 4, 'Verificando nome do projeto...');
-    
-    // VERIFICAR SE JÁ EXISTE PROJETO COM MESMO NOME
-    const existingProject = projects.find(p => p.name === projectName);
-    let shouldOverwrite = false;
-    
-    if (existingProject) {
-      // Em vez de alert, vamos usar o estado para mostrar no popup
-      setImportCurrentAction('Projeto com nome duplicado encontrado...');
       
-      // Usar setTimeout para garantir que o UI atualize antes do confirm
-      await new Promise(resolve => setTimeout(resolve, 100));
+      updateImportProgress(10, 1, 'Lendo arquivo...');
       
-      shouldOverwrite = window.confirm(`Já existe um projeto com o nome "${projectName}". Deseja sobrescrever? Clique em "OK" para sobrescrever ou "Cancelar" para usar um nome diferente.`);
+      let kmlText;
       
-      if (!shouldOverwrite) {
-        const suggestedName = getUniqueProjectName(projectName, projects);
-        const newName = prompt('Digite um novo nome para o projeto:', suggestedName);
-        if (newName && newName.trim()) {
-          projectName = newName.trim();
-        } else {
-          throw new Error('Operação cancelada pelo usuário.');
+      if (fileName.endsWith('.kmz')) {
+        updateImportProgress(20, 2, 'Extraindo KML do arquivo KMZ...');
+        
+        const zip = new JSZip();
+        const contents = await zip.loadAsync(file);
+        const kmlFile = Object.keys(contents.files).find(name => name.toLowerCase().endsWith('.kml'));
+        if (!kmlFile) {
+          throw new Error('Arquivo KML não encontrado no KMZ');
+        }
+        kmlText = await contents.files[kmlFile].async('text');
+      } else {
+        updateImportProgress(30, 2, 'Lendo arquivo KML...');
+        kmlText = await file.text();
+      }
+      
+      updateImportProgress(50, 3, 'Analisando estrutura do KML...');
+      
+      const parser = new DOMParser();
+      const xmlDoc = parser.parseFromString(kmlText, 'text/xml');
+      
+      const parseError = xmlDoc.getElementsByTagName('parsererror');
+      if (parseError.length > 0) {
+        throw new Error('Arquivo KML inválido ou malformado');
+      }
+      
+      const nameElement = xmlDoc.getElementsByTagName('name')[0];
+      let projectName = nameElement?.textContent || `Projeto Importado ${new Date().toLocaleDateString('pt-BR')}`;
+      
+      updateImportProgress(60, 4, 'Verificando nome do projeto...');
+      
+      const existingProject = projects.find(p => p.name === projectName);
+      let shouldOverwrite = false;
+      
+      if (existingProject) {
+        setImportCurrentAction('Projeto com nome duplicado encontrado...');
+        
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        shouldOverwrite = window.confirm(`Já existe um projeto com o nome "${projectName}". Deseja sobrescrever? Clique em "OK" para sobrescrever ou "Cancelar" para usar um nome diferente.`);
+        
+        if (!shouldOverwrite) {
+          const suggestedName = getUniqueProjectName(projectName, projects);
+          const newName = prompt('Digite um novo nome para o projeto:', suggestedName);
+          if (newName && newName.trim()) {
+            projectName = newName.trim();
+          } else {
+            throw new Error('Operação cancelada pelo usuário.');
+          }
         }
       }
-    }
-    
-    updateImportProgress(70, 4, 'Extraindo pontos geográficos...');
-    
-    // Extrair pontos do KML - PROCESSAMENTO OTIMIZADO
-    const points = [];
-    
-    // Primeiro tentar LineStrings (mais eficiente para traçados)
-    const lineStrings = xmlDoc.getElementsByTagName('LineString');
-    if (lineStrings.length > 0) {
-      for (let i = 0; i < lineStrings.length; i++) {
-        const coordinates = lineStrings[i].getElementsByTagName('coordinates')[0]?.textContent;
-        if (coordinates) {
-          const coordList = coordinates.trim().split(/\s+/);
-          
-          // Processar em lotes para não travar a UI
-          const batchSize = 100;
-          for (let j = 0; j < coordList.length; j += batchSize) {
-            const batch = coordList.slice(j, j + batchSize);
-            batch.forEach(coord => {
-              const [lng, lat] = coord.split(',').map(Number);
-              if (!isNaN(lat) && !isNaN(lng)) {
-                points.push({
-                  lat,
-                  lng,
-                  id: Date.now() + Math.random() + j,
-                  timestamp: Date.now()
-                });
+      
+      updateImportProgress(70, 4, 'Extraindo pontos geográficos...');
+      
+      const points = [];
+      
+      const lineStrings = xmlDoc.getElementsByTagName('LineString');
+      if (lineStrings.length > 0) {
+        for (let i = 0; i < lineStrings.length; i++) {
+          const coordinates = lineStrings[i].getElementsByTagName('coordinates')[0]?.textContent;
+          if (coordinates) {
+            const coordList = coordinates.trim().split(/\s+/);
+            
+            const batchSize = 100;
+            for (let j = 0; j < coordList.length; j += batchSize) {
+              const batch = coordList.slice(j, j + batchSize);
+              batch.forEach(coord => {
+                const [lng, lat] = coord.split(',').map(Number);
+                if (!isNaN(lat) && !isNaN(lng)) {
+                  points.push({
+                    lat,
+                    lng,
+                    id: Date.now() + Math.random() + j,
+                    timestamp: Date.now()
+                  });
+                }
+              });
+              
+              const progress = 70 + (i / lineStrings.length) * 20;
+              updateImportProgress(progress, 4, `Processando traçado ${i + 1}/${lineStrings.length}...`);
+              
+              if (batch.length > 0) {
+                await new Promise(resolve => setTimeout(resolve, 10));
               }
-            });
-            
-            // Atualizar progresso a cada lote
-            const progress = 70 + (i / lineStrings.length) * 20;
-            updateImportProgress(progress, 4, `Processando traçado ${i + 1}/${lineStrings.length}...`);
-            
-            // Dar uma pausa para a UI atualizar
-            if (batch.length > 0) {
-              await new Promise(resolve => setTimeout(resolve, 10));
             }
           }
         }
       }
-    }
-    
-    // Se não encontrou LineString, tentar Placemarks
-    if (points.length === 0) {
-      const placemarks = xmlDoc.getElementsByTagName('Placemark');
-      const totalPlacemarks = placemarks.length;
       
-      for (let i = 0; i < totalPlacemarks; i++) {
-        const placemark = placemarks[i];
-        const coordinates = placemark.getElementsByTagName('coordinates')[0]?.textContent;
+      if (points.length === 0) {
+        const placemarks = xmlDoc.getElementsByTagName('Placemark');
+        const totalPlacemarks = placemarks.length;
         
-        if (coordinates) {
-          const [lng, lat] = coordinates.split(',').map(Number);
-          if (!isNaN(lat) && !isNaN(lng)) {
-            points.push({
-              lat,
-              lng,
-              id: Date.now() + i,
-              timestamp: Date.now()
-            });
+        for (let i = 0; i < totalPlacemarks; i++) {
+          const placemark = placemarks[i];
+          const coordinates = placemark.getElementsByTagName('coordinates')[0]?.textContent;
+          
+          if (coordinates) {
+            const [lng, lat] = coordinates.split(',').map(Number);
+            if (!isNaN(lat) && !isNaN(lng)) {
+              points.push({
+                lat,
+                lng,
+                id: Date.now() + i,
+                timestamp: Date.now()
+              });
+            }
+          }
+          
+          const progress = 70 + (i / totalPlacemarks) * 20;
+          updateImportProgress(progress, 4, `Processando marcadores ${i + 1}/${totalPlacemarks}...`);
+          
+          if (i % 50 === 0) {
+            await new Promise(resolve => setTimeout(resolve, 10));
           }
         }
+      }
+      
+      if (points.length === 0) {
+        throw new Error('Nenhum ponto válido encontrado no arquivo KML');
+      }
+      
+      updateImportProgress(90, 5, 'Finalizando importação...');
+      
+      const totalDistance = calculateTotalDistance(points);
+      
+      const project = {
+        id: `imported_${Date.now()}`,
+        name: projectName,
+        points: points,
+        totalDistance: totalDistance,
+        total_distance: totalDistance,
+        bairro: 'Importado',
+        tracking_mode: 'manual',
+        trackingMode: 'manual',
+        created_at: new Date().toISOString(),
+        description: `Projeto importado de ${file.name}`
+      };
+      
+      if (isValidProject(project)) {
+        let updatedProjects;
         
-        // Atualizar progresso
-        const progress = 70 + (i / totalPlacemarks) * 20;
-        updateImportProgress(progress, 4, `Processando marcadores ${i + 1}/${totalPlacemarks}...`);
-        
-        // Pausa para UI em lotes de 50
-        if (i % 50 === 0) {
-          await new Promise(resolve => setTimeout(resolve, 10));
+        if (existingProject && shouldOverwrite) {
+          updatedProjects = projects.map(p => 
+            p.id === existingProject.id ? project : p
+          );
+        } else {
+          updatedProjects = [...projects, project];
         }
-      }
-    }
-    
-    if (points.length === 0) {
-      throw new Error('Nenhum ponto válido encontrado no arquivo KML');
-    }
-    
-    updateImportProgress(90, 5, 'Finalizando importação...');
-    
-    // Calcular distância total
-    const totalDistance = calculateTotalDistance(points);
-    
-    // Criar objeto projeto
-    const project = {
-      id: `imported_${Date.now()}`,
-      name: projectName,
-      points: points,
-      totalDistance: totalDistance,
-      total_distance: totalDistance,
-      bairro: 'Importado',
-      tracking_mode: 'manual',
-      trackingMode: 'manual',
-      created_at: new Date().toISOString(),
-      description: `Projeto importado de ${file.name}`
-    };
-    
-    // Validar projeto
-    if (isValidProject(project)) {
-      // SALVAR O PROJETO NA LISTA
-      let updatedProjects;
-      
-      if (existingProject && shouldOverwrite) {
-        // Substituir projeto existente
-        updatedProjects = projects.map(p => 
-          p.id === existingProject.id ? project : p
-        );
-      } else {
-        // Adicionar novo projeto
-        updatedProjects = [...projects, project];
-      }
-      
-      setProjects(updatedProjects);
-      localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
-      
-      updateImportProgress(100, 5, 'Importação concluída!');
-      setImportSuccess(true);
-      
-      // Carregar o projeto automaticamente após 1.5 segundos
-      setTimeout(() => {
-        loadProject(project);
+        
+        setProjects(updatedProjects);
+        localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
+        
+        updateImportProgress(100, 5, 'Importação concluída!');
+        setImportSuccess(true);
+        
         setTimeout(() => {
-          setShowImportProgress(false);
-        }, 2000);
-      }, 1500);
+          loadProject(project);
+          setTimeout(() => {
+            setShowImportProgress(false);
+          }, 2000);
+        }, 1500);
+        
+      } else {
+        throw new Error('Projeto inválido após importação');
+      }
       
-    } else {
-      throw new Error('Projeto inválido após importação');
+    } catch (error) {
+      console.error('Erro ao importar projeto KML:', error);
+      setImportError(error.message);
+      setImportProgress(100);
+    } finally {
+      setUploading(false);
+      if (event.target) {
+        event.target.value = '';
+      }
     }
-    
-  } catch (error) {
-    console.error('Erro ao importar projeto KML:', error);
-    setImportError(error.message);
-    setImportProgress(100);
-  } finally {
-    setUploading(false);
-    // Reset do input
-    if (event.target) {
-      event.target.value = '';
-    }
-  }
-};
+  };
 
   const handleFileImport = async (event) => {
     const file = event.target.files[0];
     if (!file) return;
 
-    // Configurar progresso
     setImportProgress(0);
     setImportCurrentStep(1);
     setImportTotalSteps(4);
@@ -1086,7 +1065,6 @@ const handleProjectImport = async (event) => {
         kmlText = await file.text();
       }
 
-      // Limpar marcações antigas se online
       if (isOnline && user) {
         updateImportProgress(60, 3, 'Limpando marcações antigas...');
         try {
@@ -1146,11 +1124,9 @@ const handleProjectImport = async (event) => {
           }
         }
 
-        // Atualizar progresso
         const progress = 80 + (i / totalPlacemarks) * 15;
         updateImportProgress(progress, 4, `Processando ${i + 1}/${totalPlacemarks} marcações...`);
 
-        // Pausa para UI em lotes
         if (i % 20 === 0) {
           await new Promise(resolve => setTimeout(resolve, 10));
         }
@@ -1306,24 +1282,24 @@ const handleProjectImport = async (event) => {
     }
   };
 
-// Função para formatar distância de forma detalhada
-const formatDistance = (distanceInMeters) => {
-  if (distanceInMeters === undefined || distanceInMeters === null || isNaN(distanceInMeters)) {
-    return "0 m";
-  }
-  
-  const distance = Number(distanceInMeters);
-  
-  if (distance < 1) {
-    return `${(distance * 100).toFixed(0)} cm`;
-  } else if (distance < 1000) {
-    return `${distance.toFixed(0)} m`;
-  } else if (distance < 10000) {
-    return `${(distance / 1000).toFixed(2)} km`;
-  } else {
-    return `${(distance / 1000).toFixed(1)} km`;
-  }
-};
+  // Função para formatar distância de forma detalhada
+  const formatDistance = (distanceInMeters) => {
+    if (distanceInMeters === undefined || distanceInMeters === null || isNaN(distanceInMeters)) {
+      return "0 m";
+    }
+    
+    const distance = Number(distanceInMeters);
+    
+    if (distance < 1) {
+      return `${(distance * 100).toFixed(0)} cm`;
+    } else if (distance < 1000) {
+      return `${distance.toFixed(0)} m`;
+    } else if (distance < 10000) {
+      return `${(distance / 1000).toFixed(2)} km`;
+    } else {
+      return `${(distance / 1000).toFixed(1)} km`;
+    }
+  };
 
   // Função para calcular distância entre dois pontos
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
@@ -1577,7 +1553,6 @@ const formatDistance = (distanceInMeters) => {
 
       setMarkers(updatedMarkers);
       
-      // Salvar no Supabase se online
       if (isOnline && user) {
         for (const marker of selectedMarkers) {
           await updateMarkerInSupabase({ ...marker, bairro });
@@ -1605,6 +1580,40 @@ const formatDistance = (distanceInMeters) => {
     });
   };
 
+  // ========== FUNÇÕES PARA MÚLTIPLOS PROJETOS CARREGADOS ==========
+
+  // Função para carregar projeto individual
+  const loadProject = (project) => {
+    if (!project || !project.points) {
+      console.error('Projeto inválido:', project);
+      alert('Erro: Projeto inválido ou corrompido.');
+      return;
+    }
+
+    // Gerar cor única para o projeto se não tiver
+    const projectWithColor = {
+      ...project,
+      color: project.color || generateRandomColor(),
+      points: project.points.map(point => ({
+        ...point,
+        projectId: project.id,
+        projectName: project.name
+      }))
+    };
+
+    setLoadedProjects(prev => {
+      // Remove se já existir (toggle)
+      const exists = prev.find(p => p.id === project.id);
+      if (exists) {
+        return prev.filter(p => p.id !== project.id);
+      } else {
+        return [...prev, projectWithColor];
+      }
+    });
+
+    setShowProjectsList(false);
+  };
+
   // Função para carregar múltiplos projetos
   const loadMultipleProjects = () => {
     if (selectedProjects.length === 0) {
@@ -1612,31 +1621,30 @@ const formatDistance = (distanceInMeters) => {
       return;
     }
 
-    // Calcular métricas totais
-    const totalPoints = selectedProjects.reduce((sum, project) => 
-      sum + (project.points?.length || 0), 0);
-    const totalDistance = selectedProjects.reduce((sum, project) => 
-      sum + (project.totalDistance || project.total_distance || 0), 0);
+    const projectsWithColors = selectedProjects.map(project => ({
+      ...project,
+      color: project.color || generateRandomColor(),
+      points: project.points.map(point => ({
+        ...point,
+        projectId: project.id,
+        projectName: project.name
+      }))
+    }));
 
-    // Combinar pontos de todos os projetos selecionados
-    const combinedPoints = selectedProjects.flatMap(project => 
-      project.points || []);
+    setLoadedProjects(prev => {
+      const newProjects = projectsWithColors.filter(
+        newProject => !prev.some(existing => existing.id === newProject.id)
+      );
+      return [...prev, ...newProjects];
+    });
 
-    const combinedProject = {
-      id: `combined_${Date.now()}`,
-      name: `Projeto Combinado (${selectedProjects.length})`,
-      points: combinedPoints,
-      totalDistance: totalDistance,
-      total_distance: totalDistance,
-      bairro: 'Combinado',
-      tracking_mode: 'manual',
-      created_at: new Date().toISOString(),
-      combinedProjects: selectedProjects.map(p => p.name)
-    };
-
-    loadProject(combinedProject);
     setSelectedProjects([]);
     setShowProjectsList(false);
+  };
+
+  // Função para remover projeto carregado
+  const removeLoadedProject = (projectId) => {
+    setLoadedProjects(prev => prev.filter(p => p.id !== projectId));
   };
 
   // ========== FIM DAS NOVAS FUNÇÕES ==========
@@ -1774,51 +1782,48 @@ const formatDistance = (distanceInMeters) => {
     kalmanLngRef.current = new KalmanFilter(0.1, 0.1);
   };
 
-  // NOVA FUNÇÃO: Iniciar novo projeto (limpa o projeto atual) - CORRIGIDA
-const startNewProject = () => {
-  if (currentProject && manualPoints.length > 0) {
-    if (!confirm(`Deseja iniciar um novo projeto? O projeto atual "${currentProject.name}" será descartado.`)) {
-      return;
+  // Iniciar novo projeto (limpa o projeto atual)
+  const startNewProject = () => {
+    if (currentProject && manualPoints.length > 0) {
+      if (!confirm(`Deseja iniciar um novo projeto? O projeto atual "${currentProject.name}" será descartado.`)) {
+        return;
+      }
     }
-  }
-  
-  setCurrentProject(null);
-  setProjectName('');
-  setManualPoints([]);
-  setTotalDistance(0);
-  setShowProjectDetails(false);
-  setShowRulerPopup(false);
-  startTracking();
-  console.log('🆕 Novo projeto iniciado');
-};
-
-  // Parar rastreamento - CORRIGIDO COM TRY/CATCH
-// Parar rastreamento - CORRIGIDO PARA LIMPAR PROJETO
-// Parar rastreamento - CORRIGIDA PARA EVITAR SALVAMENTO DUPLO
-const stopTracking = async () => {
-  try {
-    const pointsToSave = [...manualPoints];
     
-    // SÓ SALVA AUTOMATICAMENTE SE NÃO HOUVER SALVAMENTO MANUAL RECENTE
-    if (pointsToSave.length > 0 && !showProjectDialog) {
-      console.log('💾 Salvamento automático ao parar rastreamento...');
-      await saveProject(true, pointsToSave);
-    }
-  } catch (error) {
-    console.error('Erro ao salvar projeto automaticamente:', error);
-  } finally {
-    setTracking(false);
-    setPaused(false);
-    setShowTrackingControls(false);
+    setCurrentProject(null);
+    setProjectName('');
     setManualPoints([]);
     setTotalDistance(0);
-    setPositionHistory([]);
-    setGpsAccuracy(null);
-    setSpeed(0);
-  }
-};
+    setShowProjectDetails(false);
+    setShowRulerPopup(false);
+    startTracking();
+    console.log('🆕 Novo projeto iniciado');
+  };
 
-  // Pausar rastreamento - CORRIGIDO COM TRY/CATCH
+  // Parar rastreamento
+  const stopTracking = async () => {
+    try {
+      const pointsToSave = [...manualPoints];
+      
+      if (pointsToSave.length > 0 && !showProjectDialog) {
+        console.log('💾 Salvamento automático ao parar rastreamento...');
+        await saveProject(true, pointsToSave);
+      }
+    } catch (error) {
+      console.error('Erro ao salvar projeto automaticamente:', error);
+    } finally {
+      setTracking(false);
+      setPaused(false);
+      setShowTrackingControls(false);
+      setManualPoints([]);
+      setTotalDistance(0);
+      setPositionHistory([]);
+      setGpsAccuracy(null);
+      setSpeed(0);
+    }
+  };
+
+  // Pausar rastreamento
   const pauseTracking = async () => {
     try {
       const pointsToSave = [...manualPoints];
@@ -1828,7 +1833,6 @@ const stopTracking = async () => {
       }
     } catch (error) {
       console.error('Erro ao salvar projeto automaticamente:', error);
-      // Não interrompe o processo se houver erro no salvamento
     } finally {
       setPaused(!paused);
     }
@@ -1914,7 +1918,7 @@ const stopTracking = async () => {
     return true;
   };
 
-  // Adicionar ponto automático - VERSÃO MELHORADA COM SNAPPING
+  // Adicionar ponto automático
   const addAutomaticPoint = async (position, accuracy) => {
     if (!tracking || paused || trackingMode !== 'automatic') return;
     
@@ -2015,189 +2019,124 @@ const stopTracking = async () => {
     setLastAutoPointTime(0)
   }
 
-// Função para remover pontos de um projeto carregado - CORRIGIDA
-const handleRemovePoints = () => {
-  if (currentProject && confirm(`Tem certeza que deseja remover todos os pontos do projeto "${currentProject.name}"?`)) {
-    setManualPoints([]);
-    setTotalDistance(0);
-    // Remove o projeto atual completamente
-    setCurrentProject(null);
-    // Fecha o popup de detalhes
-    setShowProjectDetails(false);
-    // Limpa o nome do projeto
-    setProjectName('');
-    console.log('✅ Projeto removido após limpeza de pontos');
-  }
-};
-
- // FUNÇÃO SALVAR PROJETO - ATUALIZADA PARA FECHAR POPUP E PARAR MARCAÇÃO
-const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
-  // Se for salvamento automático e não há pontos, não salva
-  if (autoSave && pointsToSave.length === 0) {
-    return;
-  }
-  
-  // Se já existe um projeto atual, usa o mesmo nome
-  let projectNameToUse = projectName;
-  if (currentProject && !projectName.trim()) {
-    projectNameToUse = currentProject.name;
-  } else if (autoSave && !projectName.trim() && !currentProject) {
-    projectNameToUse = `Rastreamento ${new Date().toLocaleString('pt-BR')}`;
-  }
-  
-  if (!projectNameToUse.trim() && pointsToSave.length === 0) {
-    if (!autoSave) {
-      alert('Digite um nome para o projeto e certifique-se de ter pontos no traçado.');
-    }
-    return;
-  }
-  
-  const calculatedTotalDistance = calculateTotalDistance(pointsToSave) || 0;
-  
-  const projectData = {
-    name: projectNameToUse.trim(),
-    points: pointsToSave,
-    total_distance: calculatedTotalDistance,
-    bairro: selectedBairro !== 'todos' ? selectedBairro : 'Vários',
-    tracking_mode: trackingMode,
-    updated_at: new Date().toISOString()
-  };
-  
-  try {
-    let savedProject;
-    
-    // SE JÁ EXISTE UM PROJETO CARREGADO, ATUALIZA O MESMO PROJETO
-    if (currentProject) {
-      console.log('🔄 Atualizando projeto existente:', currentProject.name);
-      
-      if (isOnline && user) {
-        // Atualizar no Supabase
-        const { data, error } = await supabase
-          .from('projetos')
-          .update(projectData)
-          .eq('id', currentProject.id)
-          .eq('user_id', user.id)
-          .select();
-        
-        if (error) throw error;
-        savedProject = data[0];
-      } else {
-        // Offline - atualizar localmente
-        savedProject = {
-          ...currentProject,
-          ...projectData
-        };
-      }
-      
-      // Atualizar a lista de projetos
-      const updatedProjects = projects.map(p =>
-        p.id === currentProject.id ? savedProject : p
-      );
-      setProjects(updatedProjects);
-      localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
-      
-    } else {
-      // CRIAR NOVO PROJETO (apenas se não for salvamento automático sem projeto atual)
-      if (isOnline && user) {
-        // Salvar no Supabase
-        const { data, error } = await supabase
-          .from('projetos')
-          .insert([{ ...projectData, user_id: user.id }])
-          .select();
-        
-        if (error) throw error;
-        savedProject = data[0];
-      } else {
-        // Offline - criar localmente com ID temporário
-        savedProject = {
-          ...projectData,
-          id: `offline_${Date.now()}`,
-          created_at: new Date().toISOString(),
-          user_id: user?.id || 'offline'
-        };
-      }
-      
-      // Adicionar à lista de projetos
-      const updatedProjects = [...projects, savedProject];
-      setProjects(updatedProjects);
-      localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
-    }
-    
-    // SEMPRE ATUALIZAR O PROJETO ATUAL
-    setCurrentProject(savedProject);
-    
-    if (!autoSave) {
-      // FECHAR POPUP E PARAR MARCAÇÃO APÓS SALVAR
-      setProjectName('');
-      setShowProjectDialog(false);
-      
-      // PARAR O RASTREAMENTO
-      setTracking(false);
-      setPaused(false);
-      setShowTrackingControls(false);
+  // Função para remover pontos de um projeto carregado
+  const handleRemovePoints = () => {
+    if (currentProject && confirm(`Tem certeza que deseja remover todos os pontos do projeto "${currentProject.name}"?`)) {
       setManualPoints([]);
       setTotalDistance(0);
-      
-      alert(currentProject ? 'Projeto atualizado com sucesso!' : 'Projeto salvo com sucesso!');
-    } else {
-      console.log('✅ Projeto salvo automaticamente:', savedProject.name);
+      setCurrentProject(null);
+      setShowProjectDetails(false);
+      setProjectName('');
+      console.log('✅ Projeto removido após limpeza de pontos');
     }
-    
-  } catch (error) {
-    console.error('Erro ao salvar projeto:', error);
-    if (!autoSave) {
-      alert('Erro ao salvar projeto. Tente novamente.');
-    }
-  }
-};
+  };
 
-  // Carregar projeto - ATUALIZADA PARA LIMPAR ESTADO ANTERIOR
-const loadProject = (project) => {
-  if (!project || !project.points) {
-    console.error('Projeto inválido:', project);
-    alert('Erro: Projeto inválido ou corrompido.');
-    return;
-  }
-  
-  try {
-    // Limpa qualquer projeto/rastreamento atual antes de carregar
-    setTracking(false);
-    setPaused(false);
-    setManualPoints([]);
-    setTotalDistance(0);
+  // FUNÇÃO SALVAR PROJETO
+  const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
+    if (autoSave && pointsToSave.length === 0) {
+      return;
+    }
     
-    // Agora carrega o novo projeto
-    setManualPoints([...project.points]);
+    let projectNameToUse = projectName;
+    if (currentProject && !projectName.trim()) {
+      projectNameToUse = currentProject.name;
+    } else if (autoSave && !projectName.trim() && !currentProject) {
+      projectNameToUse = `Rastreamento ${new Date().toLocaleString('pt-BR')}`;
+    }
     
-    const projectDistance = project.totalDistance || project.total_distance || calculateTotalDistance(project.points) || 0;
-    setTotalDistance(projectDistance);
+    if (!projectNameToUse.trim() && pointsToSave.length === 0) {
+      if (!autoSave) {
+        alert('Digite um nome para o projeto e certifique-se de ter pontos no traçado.');
+      }
+      return;
+    }
     
-    // DEFINIR O PROJETO ATUAL
-    setCurrentProject({
-      ...project,
-      totalDistance: projectDistance
-    });
+    const calculatedTotalDistance = calculateTotalDistance(pointsToSave) || 0;
     
-    // Definir o nome do projeto para edição
-    setProjectName(project.name);
+    const projectData = {
+      name: projectNameToUse.trim(),
+      points: pointsToSave,
+      total_distance: calculatedTotalDistance,
+      bairro: selectedBairro !== 'todos' ? selectedBairro : 'Vários',
+      tracking_mode: trackingMode,
+      updated_at: new Date().toISOString()
+    };
     
-    setTrackingMode(project.trackingMode || project.tracking_mode || 'manual');
-    setShowProjectsList(false);
-    setLastAutoPointTime(0);
-    
-    setAdjustBoundsForProject(true);
-    
-    setSidebarOpen(false);
-    setShowRulerPopup(false);
-    setShowProjectDetails(true);
-    
-    console.log(`📁 Projeto "${project.name}" carregado com sucesso!`);
-    
-  } catch (error) {
-    console.error('Erro ao carregar projeto:', error);
-    alert('Erro ao carregar projeto. Tente novamente.');
-  }
-};
+    try {
+      let savedProject;
+      
+      if (currentProject) {
+        console.log('🔄 Atualizando projeto existente:', currentProject.name);
+        
+        if (isOnline && user) {
+          const { data, error } = await supabase
+            .from('projetos')
+            .update(projectData)
+            .eq('id', currentProject.id)
+            .eq('user_id', user.id)
+            .select();
+          
+          if (error) throw error;
+          savedProject = data[0];
+        } else {
+          savedProject = {
+            ...currentProject,
+            ...projectData
+          };
+        }
+        
+        const updatedProjects = projects.map(p =>
+          p.id === currentProject.id ? savedProject : p
+        );
+        setProjects(updatedProjects);
+        localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
+        
+      } else {
+        if (isOnline && user) {
+          const { data, error } = await supabase
+            .from('projetos')
+            .insert([{ ...projectData, user_id: user.id }])
+            .select();
+          
+          if (error) throw error;
+          savedProject = data[0];
+        } else {
+          savedProject = {
+            ...projectData,
+            id: `offline_${Date.now()}`,
+            created_at: new Date().toISOString(),
+            user_id: user?.id || 'offline'
+          };
+        }
+        
+        const updatedProjects = [...projects, savedProject];
+        setProjects(updatedProjects);
+        localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
+      }
+      
+      setCurrentProject(savedProject);
+      
+      if (!autoSave) {
+        setProjectName('');
+        setShowProjectDialog(false);
+        setTracking(false);
+        setPaused(false);
+        setShowTrackingControls(false);
+        setManualPoints([]);
+        setTotalDistance(0);
+        
+        alert(currentProject ? 'Projeto atualizado com sucesso!' : 'Projeto salvo com sucesso!');
+      } else {
+        console.log('✅ Projeto salvo automaticamente:', savedProject.name);
+      }
+      
+    } catch (error) {
+      console.error('Erro ao salvar projeto:', error);
+      if (!autoSave) {
+        alert('Erro ao salvar projeto. Tente novamente.');
+      }
+    }
+  };
 
   // Deletar projeto - SUPABASE PRIMÁRIO
   const deleteProject = async (projectId) => {
@@ -2206,7 +2145,6 @@ const loadProject = (project) => {
     }
 
     try {
-      // Deletar do Supabase se online
       if (isOnline && user && !projectId.toString().startsWith('offline_')) {
         const { error } = await supabase
           .from('projetos')
@@ -2217,7 +2155,6 @@ const loadProject = (project) => {
         if (error) throw error;
       }
 
-      // Sempre deletar localmente
       const updatedProjects = projects.filter(p => p.id !== projectId);
       setProjects(updatedProjects);
       localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
@@ -2303,25 +2240,21 @@ const loadProject = (project) => {
 
   // Função para ativar modo AR
   const handleARMode = async () => {
-    // Verificar se a API de mídia está disponível
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       alert('Seu navegador não suporta acesso à câmera para realidade aumentada.');
       return;
     }
 
-    // Verificar se temos posição atual
     if (!currentPosition) {
       alert('Aguardando localização GPS... Tente novamente em alguns segundos.');
       return;
     }
 
     try {
-      // Solicitar permissão da câmera
       const stream = await navigator.mediaDevices.getUserMedia({ 
         video: { facingMode: 'environment' } 
       });
       
-      // Parar a stream imediatamente (vamos reiniciar no componente)
       stream.getTracks().forEach(track => track.stop());
       
       setArPermission('granted');
@@ -2366,8 +2299,8 @@ const loadProject = (project) => {
     setMarkers([])
     setFilteredMarkers([])
     setPopupInfo(null)
+    setLoadedProjects([])
   }
-
 
   // Renderizar tela de autenticação se não estiver logado
   if (authLoading) {
@@ -2389,7 +2322,7 @@ const loadProject = (project) => {
     <div className="relative h-screen w-screen overflow-hidden bg-slate-900">
       {/* Mapa em tela cheia */}
       <div className="absolute inset-0 z-0">
-      <Map
+        <Map
           ref={mapRef}
           initialViewState={{
             longitude: -35.7353,
@@ -2402,6 +2335,7 @@ const loadProject = (project) => {
         >
           <NavigationControl position="top-right" />
 
+          {/* Marcadores das marcações */}
           {filteredMarkers.map(marker => (
             <Marker
               key={marker.id}
@@ -2415,7 +2349,64 @@ const loadProject = (project) => {
             />
           ))}
 
+          {/* Projetos carregados com cores diferentes */}
+          {loadedProjects.map(project => (
+            <React.Fragment key={project.id}>
+              {/* Linha do projeto */}
+              <Source 
+                id={`route-${project.id}`} 
+                type="geojson" 
+                data={{
+                  type: 'Feature',
+                  geometry: {
+                    type: 'LineString',
+                    coordinates: project.points.map(p => [p.lng, p.lat])
+                  }
+                }}
+              >
+                <Layer
+                  id={`route-layer-${project.id}`}
+                  type="line"
+                  paint={{
+                    'line-color': project.color,
+                    'line-width': 4,
+                    'line-opacity': 0.8
+                  }}
+                />
+              </Source>
 
+              {/* Pontos do projeto */}
+              {project.points.map((point, index) => (
+                <Marker
+                  key={`${project.id}-${point.id}`}
+                  longitude={point.lng}
+                  latitude={point.lat}
+                  onClick={(e) => {
+                    e.originalEvent.stopPropagation();
+                    setPointPopupInfo({ 
+                      point, 
+                      projectName: project.name,
+                      pointNumber: index + 1,
+                      totalPoints: project.points.length,
+                      color: project.color
+                    });
+                  }}
+                >
+                  <div 
+                    className="ruler-point-marker"
+                    style={{ 
+                      backgroundColor: project.color,
+                      borderColor: '#ffffff'
+                    }}
+                  >
+                    {index + 1}
+                  </div>
+                </Marker>
+              ))}
+            </React.Fragment>
+          ))}
+
+          {/* Traçado manual atual */}
           {manualPoints.length > 0 && (
             <>
               {manualPoints.map((point, index) => (
@@ -2443,6 +2434,7 @@ const loadProject = (project) => {
             </>
           )}
 
+          {/* Rota calculada */}
           {routeCoordinates.length > 0 && (
             <Source id="calculated-route" type="geojson" data={{
               type: 'Feature',
@@ -2463,10 +2455,50 @@ const loadProject = (project) => {
             </Source>
           )}
 
+          {/* Posição atual do usuário */}
           {currentPosition && (
             <Marker longitude={currentPosition.lng} latitude={currentPosition.lat}>
               <div className="current-position-marker" />
             </Marker>
+          )}
+
+          {/* Popup para pontos dos projetos */}
+          {pointPopupInfo && (
+            <Popup
+              longitude={pointPopupInfo.point.lng}
+              latitude={pointPopupInfo.point.lat}
+              onClose={() => setPointPopupInfo(null)}
+              className="modern-popup"
+              closeButton={false}
+              anchor="top"
+            >
+              <div className="bg-slate-800/90 backdrop-blur-sm rounded-lg p-3 border border-slate-700/50 text-white min-w-[200px]">
+                <div className="flex items-center gap-2 mb-2">
+                  <div 
+                    className="w-3 h-3 rounded-full"
+                    style={{ backgroundColor: pointPopupInfo.color }}
+                  ></div>
+                  <h3 className="font-bold text-cyan-400 text-sm">{pointPopupInfo.projectName}</h3>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <p className="text-gray-300">
+                    Ponto <span className="text-white font-semibold">{pointPopupInfo.pointNumber}</span> de {pointPopupInfo.totalPoints}
+                  </p>
+                  <p className="text-gray-400">
+                    Lat: {pointPopupInfo.point.lat.toFixed(6)}
+                  </p>
+                  <p className="text-gray-400">
+                    Lng: {pointPopupInfo.point.lng.toFixed(6)}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setPointPopupInfo(null)}
+                  className="w-full mt-2 text-xs text-cyan-400 hover:text-cyan-300 text-center"
+                >
+                  Fechar
+                </button>
+              </div>
+            </Popup>
           )}
         </Map>
       </div>
@@ -2644,6 +2676,51 @@ const loadProject = (project) => {
                 </div>
               </div>
 
+              {/* Projetos Carregados */}
+              {loadedProjects.length > 0 && (
+                <div className="bg-slate-800/30 rounded-lg p-4 border border-slate-700/50">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-semibold text-cyan-400">Projetos no Mapa</h3>
+                    <span className="text-xs bg-cyan-500/20 text-cyan-400 px-2 py-1 rounded-full">
+                      {loadedProjects.length}
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {loadedProjects.slice(0, 3).map(project => (
+                      <div
+                        key={project.id}
+                        className="flex items-center gap-3 p-2 bg-slate-700/30 rounded-lg border border-slate-600/50"
+                      >
+                        <div 
+                          className="w-3 h-3 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: project.color }}
+                        ></div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-white truncate">{project.name}</p>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => removeLoadedProject(project.id)}
+                          className="h-5 w-5 p-0 text-red-400 hover:text-red-300 hover:bg-red-500/20"
+                        >
+                          <X className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    ))}
+                    {loadedProjects.length > 3 && (
+                      <Button
+                        variant="ghost"
+                        className="w-full text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10 text-xs py-1"
+                        onClick={() => setShowLoadedProjects(true)}
+                      >
+                        Ver todos ({loadedProjects.length})
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Configurações de Alinhamento */}
               <div className="bg-slate-800/30 rounded-lg p-4 border border-slate-700/50">
                 <div className="flex items-center justify-between mb-3">
@@ -2784,7 +2861,6 @@ const loadProject = (project) => {
                   Limpar Marcações Importadas
                 </Button>
 
-
                 {/* Botão de Realidade Aumentada */}
                 <Button
                   className="w-full justify-start bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-600 hover:to-rose-700 text-white border border-pink-500/30"
@@ -2848,36 +2924,51 @@ const loadProject = (project) => {
           </SheetContent>
         </Sheet>
 
-      { /* Logo e título */ }
-<div className="flex-1 flex items-center gap-3 bg-gradient-to-r from-slate-800 to-slate-700 backdrop-blur-sm rounded-lg px-4 py-2.5 shadow-xl border border-slate-600/50">
-  <div className="w-8 h-8 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-lg flex items-center justify-center shadow-lg">
-    <MapPinned className="w-5 h-5 text-white" />
-  </div>
-  <div className="flex-1">
-    <span className="font-bold text-white text-sm sm:text-base">Jamaaw App</span>
-    {/* APENAS MOSTRA NOME DO PROJETO SE currentProject EXISTIR E TIVER PONTOS */}
-    {currentProject && manualPoints.length > 0 && (
-      <span className="text-xs text-cyan-400 ml-2 bg-cyan-500/20 px-2 py-0.5 rounded-full">
-        {currentProject.name}
-      </span>
-    )}
-    {!isOnline && (
-      <span className="text-xs text-orange-400 ml-2 bg-orange-500/20 px-2 py-0.5 rounded-full">Offline</span>
-    )}
-    {tracking && (
-      <span className="text-xs text-green-400 ml-2 bg-green-500/20 px-2 py-0.5 rounded-full">Rastreando</span>
-    )}
-  </div>
-</div>
+        {/* Logo e título */}
+        <div className="flex-1 flex items-center gap-3 bg-gradient-to-r from-slate-800 to-slate-700 backdrop-blur-sm rounded-lg px-4 py-2.5 shadow-xl border border-slate-600/50">
+          <div className="w-8 h-8 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-lg flex items-center justify-center shadow-lg">
+            <MapPinned className="w-5 h-5 text-white" />
+          </div>
+          <div className="flex-1">
+            <span className="font-bold text-white text-sm sm:text-base">Jamaaw App</span>
+            {/* APENAS MOSTRA NOME DO PROJETO SE currentProject EXISTIR E TIVER PONTOS */}
+            {currentProject && manualPoints.length > 0 && (
+              <span className="text-xs text-cyan-400 ml-2 bg-cyan-500/20 px-2 py-0.5 rounded-full">
+                {currentProject.name}
+              </span>
+            )}
+            {loadedProjects.length > 0 && (
+              <span className="text-xs text-green-400 ml-2 bg-green-500/20 px-2 py-0.5 rounded-full">
+                {loadedProjects.length} projetos
+              </span>
+            )}
+            {!isOnline && (
+              <span className="text-xs text-orange-400 ml-2 bg-orange-500/20 px-2 py-0.5 rounded-full">Offline</span>
+            )}
+            {tracking && (
+              <span className="text-xs text-green-400 ml-2 bg-green-500/20 px-2 py-0.5 rounded-full">Rastreando</span>
+            )}
+          </div>
+        </div>
+
+        {/* Botão de Projetos Carregados */}
+        <Button
+          size="icon"
+          className="bg-gradient-to-br from-slate-800 to-slate-700 backdrop-blur-sm hover:from-slate-700 hover:to-slate-600 text-white shadow-xl border border-slate-600/50 transition-all-smooth hover-lift"
+          onClick={() => setShowLoadedProjects(true)}
+          disabled={loadedProjects.length === 0}
+        >
+          <Layers className="w-5 h-5" />
+        </Button>
 
         <Button
-  size="icon"
-  className="bg-gradient-to-br from-slate-800 to-slate-700 backdrop-blur-sm hover:from-slate-700 hover:to-slate-600 text-white shadow-xl border border-slate-600/50 transition-all-smooth hover-lift"
-  onClick={() => setShowRulerPopup(!showRulerPopup)}
-  data-testid="tools-button"
->
-  <Star className="w-5 h-5" />
-</Button>
+          size="icon"
+          className="bg-gradient-to-br from-slate-800 to-slate-700 backdrop-blur-sm hover:from-slate-700 hover:to-slate-600 text-white shadow-xl border border-slate-600/50 transition-all-smooth hover-lift"
+          onClick={() => setShowRulerPopup(!showRulerPopup)}
+          data-testid="tools-button"
+        >
+          <Star className="w-5 h-5" />
+        </Button>
       </div>
 
       {/* Popup da Régua Manual */}
@@ -2966,33 +3057,33 @@ const loadProject = (project) => {
                 </div>
               </div>
 
-            {/* Botão Iniciar/Continuar - CORRIGIDO */}
-<Button
-  onClick={currentProject ? () => {
-    if (confirm(`Deseja continuar no projeto "${currentProject.name}"?`)) {
-      setTracking(true);
-      setPaused(false);
-      setShowTrackingControls(true);
-      setShowRulerPopup(false);
-    }
-  } : startTracking}
-  className="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-medium py-3 text-base"
->
-  <Play className="w-4 h-4 mr-2" />
-  {currentProject ? `Continuar em "${currentProject.name}"` : 'Iniciar Sessão de Rastreamento'}
-</Button>
+              {/* Botão Iniciar/Continuar */}
+              <Button
+                onClick={currentProject ? () => {
+                  if (confirm(`Deseja continuar no projeto "${currentProject.name}"?`)) {
+                    setTracking(true);
+                    setPaused(false);
+                    setShowTrackingControls(true);
+                    setShowRulerPopup(false);
+                  }
+                } : startTracking}
+                className="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-medium py-3 text-base"
+              >
+                <Play className="w-4 h-4 mr-2" />
+                {currentProject ? `Continuar em "${currentProject.name}"` : 'Iniciar Sessão de Rastreamento'}
+              </Button>
 
-{/* Botão para novo projeto se já existe um carregado - APENAS SE currentProject EXISTIR */}
-{currentProject && (
-  <Button
-    onClick={startNewProject}
-    variant="outline"
-    className="w-full mt-2 border-cyan-500 text-cyan-400 hover:bg-cyan-500/10"
-  >
-    <Plus className="w-4 h-4 mr-2" />
-    Iniciar Novo Projeto
-  </Button>
-)}
+              {/* Botão para novo projeto se já existe um carregado */}
+              {currentProject && (
+                <Button
+                  onClick={startNewProject}
+                  variant="outline"
+                  className="w-full mt-2 border-cyan-500 text-cyan-400 hover:bg-cyan-500/10"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Iniciar Novo Projeto
+                </Button>
+              )}
 
               {/* Projetos Recentes */}
               {projects.length > 0 && (
@@ -3032,247 +3123,324 @@ const loadProject = (project) => {
         </div>
       )}
 
-    {/* Popup de Detalhes do Projeto - Versão Corrigida */}
-{showProjectDetails && currentProject && (
-  <div className="absolute bottom-20 right-4 z-50 animate-scale-in">
-    <Card className="bg-gradient-to-br from-slate-800/95 to-slate-700/95 backdrop-blur-sm border-slate-600/50 shadow-2xl text-white w-64">
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-sm font-bold text-white flex items-center gap-1">
-            <FolderOpen className="w-4 h-4 text-cyan-400" />
-            Detalhes
-          </CardTitle>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => setShowProjectDetails(false)}
-            className="h-5 w-5 p-0 text-gray-400 hover:text-white"
-          >
-            <X className="w-3 h-3" />
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {/* Nome do projeto */}
-        <div className="text-center">
-          <p className="text-white font-medium truncate text-sm mb-1">{currentProject.name}</p>
-          <p className="text-cyan-400 text-xs">
-            {currentProject.trackingMode === 'manual' ? 'Modo Manual' : 'Modo Automático'}
-          </p>
-        </div>
-
-        {/* Informações principais - METRAGEM DETALHADA */}
-        <div className="grid grid-cols-2 gap-2 text-xs">
-          <div className="text-center p-2 bg-slate-700/30 rounded">
-            <div className="text-cyan-400 font-bold text-sm">
-              {formatDistance(currentProject.totalDistance || currentProject.total_distance || 0)}
-            </div>
-            <div className="text-gray-400">Distância</div>
-          </div>
-          <div className="text-center p-2 bg-slate-700/30 rounded">
-            <div className="text-cyan-400 font-bold">{currentProject.points?.length || 0}</div>
-            <div className="text-gray-400">Pontos</div>
-          </div>
-        </div>
-
-        {/* Bairro se disponível */}
-        {currentProject.bairro && currentProject.bairro !== 'Vários' && (
-          <div className="text-center p-2 bg-slate-700/30 rounded">
-            <div className="text-cyan-400 text-xs font-medium">Bairro</div>
-            <div className="text-white text-sm">{currentProject.bairro}</div>
-          </div>
-        )}
-
-        {/* Botões de ação */}
-        <div className="flex gap-2">
-          <Button
-            onClick={() => {
-              handleRemovePoints();
-            }}
-            size="sm"
-            className="flex-1 bg-red-500 hover:bg-red-600 text-white text-xs h-7"
-          >
-            <X className="w-3 h-3 mr-1" />
-            Limpar
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => {
-              exportProjectAsKML(currentProject);
-              setShowProjectDetails(false);
-            }}
-            size="sm"
-            className="flex-1 border-green-500/50 text-green-400 hover:bg-green-500/10 text-xs h-7"
-          >
-            <Download className="w-3 h-3 mr-1" />
-            Exportar
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
-  </div>
-)}
-
-     { /* Diálogo de Lista de Projetos - CORRIGIDO PARA CENTRALIZAR */ }
-<Dialog open={showProjectsList} onOpenChange={setShowProjectsList}>
-  <DialogContent className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white border-slate-700/50 w-[95vw] max-w-md shadow-2xl max-h-[80vh] overflow-hidden fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[10000]">
-    <DialogHeader>
-      <DialogTitle className="text-cyan-400 text-xl font-bold flex items-center gap-2">
-        <FolderOpen className="w-5 h-5" />
-        Meus Projetos ({projects.length})
-      </DialogTitle>
-      <DialogDescription className="text-gray-400 text-sm">
-        Gerencie e carregue seus projetos salvos
-      </DialogDescription>
-    </DialogHeader>
-    
-    {/* Seção de seleção múltipla de projetos */}
-    <div className="flex items-center justify-between mb-4">
-      <div>
-        <span className="text-cyan-400 text-sm">
-          {selectedProjects.length} projetos selecionados
-        </span>
-      </div>
-      <Button
-        onClick={loadMultipleProjects}
-        disabled={selectedProjects.length === 0}
-        className="bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white"
-      >
-        <FolderOpen className="w-4 h-4 mr-2" />
-        Carregar Selecionados ({selectedProjects.length})
-      </Button>
-    </div>
-    
-    <div className="max-h-[60vh] overflow-y-auto custom-scrollbar">
-      <div className="space-y-3">
-        {projects.map(project => (
-          <div
-            key={project.id}
-            className={`flex items-center gap-4 p-4 bg-slate-800/50 rounded-lg border ${
-              selectedProjects.some(p => p.id === project.id) 
-                ? 'border-cyan-500 bg-cyan-500/20' 
-                : 'border-slate-700 hover:border-cyan-500/30'
-            } transition-all group project-grid-item`}
-          >
-            <div className="flex items-center gap-3">
-              <input
-                type="checkbox"
-                checked={selectedProjects.some(p => p.id === project.id)}
-                onChange={() => toggleProjectSelection(project)}
-                className="w-4 h-4 text-cyan-500 bg-slate-700 border-slate-600 rounded focus:ring-cyan-500 focus:ring-2"
-              />
-              <div className="w-12 h-12 bg-gradient-to-br from-cyan-500/20 to-blue-500/20 rounded-lg flex items-center justify-center">
-                <FolderOpen className="w-6 h-6 text-cyan-400" />
+      {/* Popup de Detalhes do Projeto */}
+      {showProjectDetails && currentProject && (
+        <div className="absolute bottom-20 right-4 z-50 animate-scale-in">
+          <Card className="bg-gradient-to-br from-slate-800/95 to-slate-700/95 backdrop-blur-sm border-slate-600/50 shadow-2xl text-white w-64">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-bold text-white flex items-center gap-1">
+                  <FolderOpen className="w-4 h-4 text-cyan-400" />
+                  Detalhes
+                </CardTitle>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setShowProjectDetails(false)}
+                  className="h-5 w-5 p-0 text-gray-400 hover:text-white"
+                >
+                  <X className="w-3 h-3" />
+                </Button>
               </div>
-            </div>
-            
-            <div className="flex-1 min-w-0">
-              <h3 className="font-semibold text-white text-lg mb-1">{project.name}</h3>
-              <div className="grid grid-cols-3 gap-4 text-sm text-gray-400">
-                <div>
-                  <span className="text-cyan-400 font-medium">{project.points.length}</span> pontos
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {/* Nome do projeto */}
+              <div className="text-center">
+                <p className="text-white font-medium truncate text-sm mb-1">{currentProject.name}</p>
+                <p className="text-cyan-400 text-xs">
+                  {currentProject.trackingMode === 'manual' ? 'Modo Manual' : 'Modo Automático'}
+                </p>
+              </div>
+
+              {/* Informações principais - METRAGEM DETALHADA */}
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="text-center p-2 bg-slate-700/30 rounded">
+                  <div className="text-cyan-400 font-bold text-sm">
+                    {formatDistance(currentProject.totalDistance || currentProject.total_distance || 0)}
+                  </div>
+                  <div className="text-gray-400">Distância</div>
                 </div>
-                <div>
-                  <span className="text-cyan-400 font-medium">{safeToFixed(((project.totalDistance || project.total_distance) || 0) / 1000, 2)}</span> km
-                </div>
-                <div>
-                  <span className="text-cyan-400 font-medium">{project.trackingMode || project.tracking_mode || 'manual'}</span>
+                <div className="text-center p-2 bg-slate-700/30 rounded">
+                  <div className="text-cyan-400 font-bold">{currentProject.points?.length || 0}</div>
+                  <div className="text-gray-400">Pontos</div>
                 </div>
               </div>
-              <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
-                <span>Criado: {new Date(project.created_at || project.createdAt).toLocaleDateString('pt-BR')}</span>
-                {project.updated_at && (
-                  <span>Atualizado: {new Date(project.updated_at).toLocaleDateString('pt-BR')}</span>
-                )}
+
+              {/* Bairro se disponível */}
+              {currentProject.bairro && currentProject.bairro !== 'Vários' && (
+                <div className="text-center p-2 bg-slate-700/30 rounded">
+                  <div className="text-cyan-400 text-xs font-medium">Bairro</div>
+                  <div className="text-white text-sm">{currentProject.bairro}</div>
+                </div>
+              )}
+
+              {/* Botões de ação */}
+              <div className="flex gap-2">
+                <Button
+                  onClick={() => {
+                    handleRemovePoints();
+                  }}
+                  size="sm"
+                  className="flex-1 bg-red-500 hover:bg-red-600 text-white text-xs h-7"
+                >
+                  <X className="w-3 h-3 mr-1" />
+                  Limpar
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    exportProjectAsKML(currentProject);
+                    setShowProjectDetails(false);
+                  }}
+                  size="sm"
+                  className="flex-1 border-green-500/50 text-green-400 hover:bg-green-500/10 text-xs h-7"
+                >
+                  <Download className="w-3 h-3 mr-1" />
+                  Exportar
+                </Button>
               </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Diálogo de Lista de Projetos */}
+      <Dialog open={showProjectsList} onOpenChange={setShowProjectsList}>
+        <DialogContent className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white border-slate-700/50 w-[95vw] max-w-md mx-auto shadow-2xl max-h-[80vh] overflow-hidden fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[10000]">
+          <DialogHeader>
+            <DialogTitle className="text-cyan-400 text-xl font-bold flex items-center gap-2">
+              <FolderOpen className="w-5 h-5" />
+              Meus Projetos ({projects.length})
+            </DialogTitle>
+            <DialogDescription className="text-gray-400 text-sm">
+              Gerencie e carregue seus projetos salvos
+            </DialogDescription>
+          </DialogHeader>
+          
+          {/* Seção de seleção múltipla de projetos */}
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <span className="text-cyan-400 text-sm">
+                {selectedProjects.length} projetos selecionados
+              </span>
             </div>
-            
-            <div className="project-actions-grid">
-              <Button
-                size="sm"
-                onClick={() => {
-                  loadProject(project);
-                  setShowProjectsList(false);
-                }}
-                className="compact-button bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white"
-              >
-                <Play className="w-3 h-3 mr-1" />
-                Carregar
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  setEditingProject(project);
-                  setProjectName(project.name);
-                  setManualPoints(project.points);
-                  setTotalDistance(project.totalDistance || project.total_distance || 0);
-                  setTrackingMode(project.trackingMode || project.tracking_mode || 'manual');
-                  setShowProjectDialog(true);
-                  setShowProjectsList(false);
-                }}
-                className="compact-button border-slate-600 text-blue-400 hover:bg-blue-500/20"
-              >
-                <Edit2 className="w-3 h-3 mr-1" />
-                Editar
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => exportProjectAsKML(project)}
-                className="compact-button border-slate-600 text-green-400 hover:bg-green-500/20"
-              >
-                <Download className="w-3 h-3 mr-1" />
-                Exportar
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => deleteProject(project.id)}
-                className="compact-button border-slate-600 text-red-400 hover:bg-red-500/20"
-              >
-                <X className="w-3 h-3 mr-1" />
-                Excluir
-              </Button>
+            <Button
+              onClick={loadMultipleProjects}
+              disabled={selectedProjects.length === 0}
+              className="bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white"
+            >
+              <FolderOpen className="w-4 h-4 mr-2" />
+              Carregar Selecionados ({selectedProjects.length})
+            </Button>
+          </div>
+          
+          <div className="max-h-[60vh] overflow-y-auto custom-scrollbar">
+            <div className="space-y-3">
+              {projects.map(project => (
+                <div
+                  key={project.id}
+                  className={`flex items-center gap-4 p-4 bg-slate-800/50 rounded-lg border ${
+                    selectedProjects.some(p => p.id === project.id) 
+                      ? 'border-cyan-500 bg-cyan-500/20' 
+                      : 'border-slate-700 hover:border-cyan-500/30'
+                  } transition-all group project-grid-item`}
+                >
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedProjects.some(p => p.id === project.id)}
+                      onChange={() => toggleProjectSelection(project)}
+                      className="w-4 h-4 text-cyan-500 bg-slate-700 border-slate-600 rounded focus:ring-cyan-500 focus:ring-2"
+                    />
+                    <div className="w-12 h-12 bg-gradient-to-br from-cyan-500/20 to-blue-500/20 rounded-lg flex items-center justify-center">
+                      <FolderOpen className="w-6 h-6 text-cyan-400" />
+                    </div>
+                  </div>
+                  
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-semibold text-white text-lg mb-1">{project.name}</h3>
+                    <div className="grid grid-cols-3 gap-4 text-sm text-gray-400">
+                      <div>
+                        <span className="text-cyan-400 font-medium">{project.points.length}</span> pontos
+                      </div>
+                      <div>
+                        <span className="text-cyan-400 font-medium">{safeToFixed(((project.totalDistance || project.total_distance) || 0) / 1000, 2)}</span> km
+                      </div>
+                      <div>
+                        <span className="text-cyan-400 font-medium">{project.trackingMode || project.tracking_mode || 'manual'}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
+                      <span>Criado: {new Date(project.created_at || project.createdAt).toLocaleDateString('pt-BR')}</span>
+                      {project.updated_at && (
+                        <span>Atualizado: {new Date(project.updated_at).toLocaleDateString('pt-BR')}</span>
+                      )}
+                    </div>
+                  </div>
+                  
+                  <div className="project-actions-grid">
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        loadProject(project);
+                        setShowProjectsList(false);
+                      }}
+                      className="compact-button bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white"
+                    >
+                      <Play className="w-3 h-3 mr-1" />
+                      Carregar
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setEditingProject(project);
+                        setProjectName(project.name);
+                        setManualPoints(project.points);
+                        setTotalDistance(project.totalDistance || project.total_distance || 0);
+                        setTrackingMode(project.trackingMode || project.tracking_mode || 'manual');
+                        setShowProjectDialog(true);
+                        setShowProjectsList(false);
+                      }}
+                      className="compact-button border-slate-600 text-blue-400 hover:bg-blue-500/20"
+                    >
+                      <Edit2 className="w-3 h-3 mr-1" />
+                      Editar
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => exportProjectAsKML(project)}
+                      className="compact-button border-slate-600 text-green-400 hover:bg-green-500/20"
+                    >
+                      <Download className="w-3 h-3 mr-1" />
+                      Exportar
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => deleteProject(project.id)}
+                      className="compact-button border-slate-600 text-red-400 hover:bg-red-500/20"
+                    >
+                      <X className="w-3 h-3 mr-1" />
+                      Excluir
+                    </Button>
+                  </div>
+                </div>
+              ))}
+              
+              {projects.length === 0 && (
+                <div className="text-center py-12">
+                  <FolderOpen className="w-16 h-16 text-gray-600 mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold text-gray-400 mb-2">Nenhum projeto encontrado</h3>
+                  <p className="text-gray-500 text-sm">
+                    Use a régua manual para criar seu primeiro projeto de medição
+                  </p>
+                </div>
+              )}
             </div>
           </div>
-        ))}
-        
-        {projects.length === 0 && (
-          <div className="text-center py-12">
-            <FolderOpen className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-gray-400 mb-2">Nenhum projeto encontrado</h3>
-            <p className="text-gray-500 text-sm">
-              Use a régua manual para criar seu primeiro projeto de medição
-            </p>
+          
+          <div className="flex gap-2 pt-4 border-t border-slate-700/50">
+            <Button
+              onClick={() => {
+                setShowProjectsList(false);
+                setSelectedProjects([]);
+              }}
+              className="flex-1 bg-gradient-to-r from-gray-500 to-slate-600 hover:from-gray-600 hover:to-slate-700"
+            >
+              Fechar
+            </Button>
+            <Button
+              onClick={() => {
+                setShowProjectsList(false);
+                setShowRulerPopup(true);
+              }}
+              className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600"
+            >
+              <Ruler className="w-4 h-4 mr-2" />
+              Novo Projeto
+            </Button>
           </div>
-        )}
-      </div>
-    </div>
-    
-    <div className="flex gap-2 pt-4 border-t border-slate-700/50">
-      <Button
-        onClick={() => {
-          setShowProjectsList(false);
-          setSelectedProjects([]);
-        }}
-        className="flex-1 bg-gradient-to-r from-gray-500 to-slate-600 hover:from-gray-600 hover:to-slate-700"
-      >
-        Fechar
-      </Button>
-      <Button
-        onClick={() => {
-          setShowProjectsList(false);
-          setShowRulerPopup(true);
-        }}
-        className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600"
-      >
-        <Ruler className="w-4 h-4 mr-2" />
-        Novo Projeto
-      </Button>
-    </div>
-  </DialogContent>
-</Dialog>
+        </DialogContent>
+      </Dialog>
+
+      {/* Diálogo de Projetos Carregados */}
+      <Dialog open={showLoadedProjects} onOpenChange={setShowLoadedProjects}>
+        <DialogContent className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white border-slate-700/50 w-[95vw] max-w-md mx-auto shadow-2xl max-h-[80vh] overflow-hidden fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[10000]">
+          <DialogHeader>
+            <DialogTitle className="text-cyan-400 text-xl font-bold flex items-center gap-2">
+              <Layers className="w-5 h-5" />
+              Projetos Carregados ({loadedProjects.length})
+            </DialogTitle>
+            <DialogDescription className="text-gray-400 text-sm">
+              Gerencie os projetos exibidos no mapa
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="max-h-[60vh] overflow-y-auto custom-scrollbar">
+            <div className="space-y-3">
+              {loadedProjects.map(project => (
+                <div
+                  key={project.id}
+                  className="flex items-center gap-4 p-4 bg-slate-800/50 rounded-lg border border-slate-700 hover:border-cyan-500/30 transition-all group"
+                >
+                  <div 
+                    className="w-4 h-4 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: project.color }}
+                  ></div>
+                  
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-semibold text-white text-sm mb-1">{project.name}</h3>
+                    <div className="flex items-center gap-4 text-xs text-gray-400">
+                      <span>{project.points.length} pontos</span>
+                      <span>{safeToFixed(((project.totalDistance || project.total_distance) || 0) / 1000, 2)} km</span>
+                    </div>
+                  </div>
+                  
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => removeLoadedProject(project.id)}
+                    className="border-red-500/50 text-red-400 hover:bg-red-500/20"
+                  >
+                    <X className="w-3 h-3" />
+                  </Button>
+                </div>
+              ))}
+              
+              {loadedProjects.length === 0 && (
+                <div className="text-center py-12">
+                  <Layers className="w-16 h-16 text-gray-600 mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold text-gray-400 mb-2">Nenhum projeto carregado</h3>
+                  <p className="text-gray-500 text-sm">
+                    Carregue projetos para vê-los no mapa
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+          
+          <div className="flex gap-2 pt-4 border-t border-slate-700/50">
+            <Button
+              onClick={() => setShowLoadedProjects(false)}
+              className="flex-1 bg-gradient-to-r from-gray-500 to-slate-600 hover:from-gray-600 hover:to-slate-700"
+            >
+              Fechar
+            </Button>
+            <Button
+              onClick={() => {
+                setShowLoadedProjects(false);
+                setShowProjectsList(true);
+              }}
+              className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600"
+            >
+              <FolderOpen className="w-4 h-4 mr-2" />
+              Adicionar Projetos
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Diálogo para Definir Bairro em Massa */}
       <Dialog open={showBatchBairroDialog} onOpenChange={setShowBatchBairroDialog}>
@@ -3584,42 +3752,42 @@ const loadProject = (project) => {
                 Cancelar
               </Button>
               <Button 
-  onClick={() => {
-    saveProject();
-    // O fechamento e parada agora são feitos dentro da função saveProject
-  }}
-  disabled={!projectName.trim()}
-  className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600"
->
-  {editingProject ? 'Atualizar' : 'Salvar'} Projeto
-</Button>
+                onClick={() => {
+                  saveProject();
+                }}
+                disabled={!projectName.trim()}
+                className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600"
+              >
+                {editingProject ? 'Atualizar' : 'Salvar'} Projeto
+              </Button>
             </div>
           </div>
         </DialogContent> 
       </Dialog>
 
-   {tracking && showTrackingControls && (
-  <ControlesRastreamento
-    tracking={tracking}
-    paused={paused}
-    pauseTracking={pauseTracking}
-    addManualPoint={addManualPoint}
-    stopTracking={stopTracking}
-    setShowProjectDialog={setShowProjectDialog}
-    setShowProjectDetails={setShowProjectDetails}
-    manualPoints={manualPoints}
-    totalDistance={totalDistance}
-    trackingMode={trackingMode}
-    currentPosition={currentPosition}
-    currentProject={currentProject}
-    snappingEnabled={snappingEnabled}
-    onToggleSnapping={toggleSnapping}
-    gpsAccuracy={gpsAccuracy}
-    speed={speed}
-    handleRemovePoints={handleRemovePoints}
-    showProjectDialog={showProjectDialog}
-  />
-)}
+      {/* Controles de Rastreamento */}
+      {tracking && showTrackingControls && (
+        <ControlesRastreamento
+          tracking={tracking}
+          paused={paused}
+          pauseTracking={pauseTracking}
+          addManualPoint={addManualPoint}
+          stopTracking={stopTracking}
+          setShowProjectDialog={setShowProjectDialog}
+          setShowProjectDetails={setShowProjectDetails}
+          manualPoints={manualPoints}
+          totalDistance={totalDistance}
+          trackingMode={trackingMode}
+          currentPosition={currentPosition}
+          currentProject={currentProject}
+          snappingEnabled={snappingEnabled}
+          onToggleSnapping={toggleSnapping}
+          gpsAccuracy={gpsAccuracy}
+          speed={speed}
+          handleRemovePoints={handleRemovePoints}
+          showProjectDialog={showProjectDialog}
+        />
+      )}
 
       {/* Popup Moderno para Marcadores */}
       {popupMarker && (
@@ -3647,6 +3815,7 @@ const loadProject = (project) => {
           markers={filteredMarkers}
           manualPoints={manualPoints}
           currentPosition={currentPosition}
+          loadedProjects={loadedProjects}
           onClose={() => setArMode(false)}
         />
       )}
@@ -3666,25 +3835,24 @@ const loadProject = (project) => {
         }}
       />
 
-     { /* Input oculto para importação de arquivos KML/KMZ - CORRIGIDO */ }
-<input
-  ref={fileInputRef}
-  id="file-input"
-  type="file"
-  accept=".kml,.kmz"
-  onChange={handleFileImport}
-  className="hidden"
-/>
+      {/* Inputs ocultos para importação */}
+      <input
+        ref={fileInputRef}
+        id="file-input"
+        type="file"
+        accept=".kml,.kmz"
+        onChange={handleFileImport}
+        className="hidden"
+      />
 
-{/* Input oculto para importação de projetos - CORRIGIDO */}
-<input
-  ref={projectInputRef}
-  id="project-input"
-  type="file"
-  accept=".kml,.kmz"
-  onChange={handleProjectImport}
-  className="hidden"
-/>
+      <input
+        ref={projectInputRef}
+        id="project-input"
+        type="file"
+        accept=".kml,.kmz"
+        onChange={handleProjectImport}
+        className="hidden"
+      />
 
       {/* Input oculto para upload de fotos */}
       <input

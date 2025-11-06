@@ -1717,3 +1717,52 @@ canvas {
 [data-radix-dialog-content] {
   z-index: 10000 !important;
 }
+
+/* Adicione ao App.css */
+.ruler-point-marker {
+  background: linear-gradient(135deg, #4b5563 0%, #374151 100%);
+  border: 2px solid #ffffff;
+  border-radius: 2px 2px 8px 8px;
+  width: 20px;
+  height: 28px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  color: white;
+  font-size: 9px;
+  font-weight: bold;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  animation: pulse-point 2s infinite;
+  position: relative;
+  transform: translateY(-5px);
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.ruler-point-marker:hover {
+  transform: translateY(-5px) scale(1.1);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
+  z-index: 1000;
+}
+
+.ruler-point-marker::before {
+  content: "";
+  position: absolute;
+  top: -6px;
+  width: 8px;
+  height: 8px;
+  background: #f59e0b;
+  border-radius: 50%;
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.8);
+  animation: lightFlicker 2s infinite;
+}
+
+.ruler-point-marker::after {
+  content: "";
+  position: absolute;
+  top: 6px;
+  width: 14px;
+  height: 2px;
+  background: #6b7280;
+  border-radius: 1px;
+}
