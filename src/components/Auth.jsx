@@ -14,14 +14,28 @@ export default function Auth({ onAuthSuccess }) {
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(null)
   const [showPassword, setShowPassword] = useState(false)
-
-  // Limpar tokens inválidos ao iniciar
+  
+  // CORREÇÃO: Limpeza mais robusta de tokens
   useEffect(() => {
     const clearInvalidTokens = async () => {
       try {
+        // Limpar todos os possíveis tokens
         await supabase.auth.signOut()
+        
+        // Limpar storage local
         localStorage.removeItem('supabase.auth.token')
         sessionStorage.removeItem('supabase.auth.token')
+        
+        // Limpar dados específicos do app
+        const keysToRemove = []
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i)
+          if (key && key.includes('supabase') || key.includes('jamaaw')) {
+            keysToRemove.push(key)
+          }
+        }
+        keysToRemove.forEach(key => localStorage.removeItem(key))
+        
       } catch (error) {
         console.log('Cleanup de tokens realizado')
       }
@@ -29,22 +43,25 @@ export default function Auth({ onAuthSuccess }) {
     
     clearInvalidTokens()
   }, [])
-
+  
   const handleAuth = async (e) => {
     e.preventDefault()
     setLoading(true)
     setError(null)
     setSuccess(null)
-
+    
     try {
-      // Forçar signOut antes de novo login para limpar tokens inválidos
+      // CORREÇÃO: Reset completo antes de nova tentativa
       await supabase.auth.signOut()
-
+      
+      // Pequeno delay para garantir que o signOut foi processado
+      await new Promise(resolve => setTimeout(resolve, 500))
+      
       if (isLogin) {
         // Login
         const { data, error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
+          email: email.trim(),
+          password: password.trim(),
         })
         
         if (error) {
@@ -54,6 +71,8 @@ export default function Auth({ onAuthSuccess }) {
           } else if (error.message.includes('Email not confirmed')) {
             throw new Error('Por favor, confirme seu email antes de fazer login.')
           } else if (error.message.includes('Invalid Refresh Token')) {
+            // CORREÇÃO: Limpar tokens inválidos e tentar novamente
+            await supabase.auth.signOut()
             throw new Error('Sessão expirada. Por favor, faça login novamente.')
           } else {
             throw error
@@ -67,8 +86,8 @@ export default function Auth({ onAuthSuccess }) {
       } else {
         // Registro
         const { data, error } = await supabase.auth.signUp({
-          email,
-          password,
+          email: email.trim(),
+          password: password.trim(),
           options: {
             emailRedirectTo: `${window.location.origin}`,
           },
@@ -94,6 +113,8 @@ export default function Auth({ onAuthSuccess }) {
       setLoading(false)
     }
   }
+  
+  // ... restante do código permanece igual
 
   const handlePasswordReset = async () => {
     if (!email) {
@@ -138,6 +159,35 @@ export default function Auth({ onAuthSuccess }) {
         </div>
 
         <CardContent className="p-6">
+          {/* Botão de Login com Google */}
+          <Button
+            onClick={handleGoogleLogin}
+            disabled={googleLoading}
+            className="w-full bg-white hover:bg-gray-100 text-gray-800 font-semibold py-3 text-base h-12 transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed mb-4 border border-gray-300"
+          >
+            {googleLoading ? (
+              <div className="flex items-center gap-2">
+                <div className="w-5 h-5 border-2 border-gray-800 border-t-transparent rounded-full animate-spin" />
+                Conectando...
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <Chrome className="w-5 h-5" />
+                Continuar com Google
+              </div>
+            )}
+          </Button>
+
+          {/* Divisor */}
+          <div className="relative my-6">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-slate-600/50"></div>
+            </div>
+            <div className="relative flex justify-center text-sm">
+              <span className="px-2 bg-slate-800 text-gray-400">ou</span>
+            </div>
+          </div>
+
           <form onSubmit={handleAuth} className="space-y-5">
             {/* Mensagens de status */}
             {error && (

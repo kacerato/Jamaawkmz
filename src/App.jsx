@@ -182,11 +182,6 @@ const getUniqueProjectName = (baseName, existingProjects) => {
   return newName;
 };
 
-// NOVA FUNÇÃO: Verificar se pode carregar projetos
-const canLoadProjects = () => {
-  return !tracking && manualPoints.length === 0;
-};
-
 function App() {
   const mapboxToken = 'pk.eyJ1Ijoia2FjZXJhdG8iLCJhIjoiY21oZG1nNnViMDRybjJub2VvZHV1aHh3aiJ9.l7tCaIPEYqcqDI8_aScm7Q';
   const mapRef = useRef();
@@ -271,6 +266,11 @@ function App() {
   // Filtros Kalman para suavização
   const kalmanLatRef = useRef(new KalmanFilter(0.1, 0.1));
   const kalmanLngRef = useRef(new KalmanFilter(0.1, 0.1));
+
+  // NOVA FUNÇÃO: Verificar se pode carregar projetos
+  const canLoadProjects = () => {
+    return !tracking && manualPoints.length === 0;
+  };
 
   // Função para atualizar progresso da importação
   const updateImportProgress = (progress, step, action) => {
@@ -431,15 +431,26 @@ function App() {
     console.log('🆕 Novo projeto iniciado');
   };
 
-  // Verificar autenticação ao iniciar
+  // Verificar autenticação ao iniciar - CORRIGIDO
   useEffect(() => {
     const checkAuth = async () => {
       try {
+        // CORREÇÃO: Limpar tokens antes de verificar sessão
+        const clearStoredTokens = () => {
+          try {
+            localStorage.removeItem('supabase.auth.token')
+            sessionStorage.removeItem('supabase.auth.token')
+          } catch (e) {
+            console.log('Cleanup de tokens no checkAuth')
+          }
+        }
+
         const { data: { session }, error } = await supabase.auth.getSession()
         
         if (error) {
           console.error('Erro ao verificar sessão:', error)
           if (error.message.includes('Invalid Refresh Token')) {
+            clearStoredTokens()
             await supabase.auth.signOut()
           }
         }
@@ -447,6 +458,8 @@ function App() {
         setUser(session?.user ?? null)
       } catch (error) {
         console.error('Erro inesperado na autenticação:', error)
+        // CORREÇÃO: Em caso de erro, definir user como null
+        setUser(null)
       } finally {
         setAuthLoading(false)
       }
@@ -457,14 +470,17 @@ function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log('Auth state change:', event)
       
-      if (event === 'SIGNED_OUT') {
+      // CORREÇÃO: Tratamento mais robusto para mudanças de estado
+      if (event === 'SIGNED_OUT' || event === 'USER_DELETED' || event === 'TOKEN_REFRESHED') {
         setUser(null)
-        setMarkers([])
-        setProjects([])
-        setLoadedProjects([])
+        if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
+          setMarkers([])
+          setProjects([])
+          setLoadedProjects([])
+        }
       } else if (event === 'SIGNED_IN') {
         setUser(session.user)
-      } else if (event === 'TOKEN_REFRESHED') {
+      } else if (event === 'INITIAL_SESSION') {
         setUser(session?.user ?? null)
       }
     })
