@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-import { MapPinned, User, Mail, Lock, Eye, EyeOff, ArrowRight, CheckCircle } from 'lucide-react'
+import { MapPinned, User, Mail, Lock, Eye, EyeOff, ArrowRight, CheckCircle, Chrome } from 'lucide-react'
 import { Button } from '@/components/ui/button.jsx'
 import { Input } from '@/components/ui/input.jsx'
 import { Label } from '@/components/ui/label.jsx'
@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 
 export default function Auth({ onAuthSuccess }) {
   const [loading, setLoading] = useState(false)
+  const [googleLoading, setGoogleLoading] = useState(false) // Adicionei esta linha
   const [isLogin, setIsLogin] = useState(true)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -44,7 +45,7 @@ export default function Auth({ onAuthSuccess }) {
     clearInvalidTokens()
   }, [])
   
-    // Função para login com Google
+  // Função para login com Google
   const handleGoogleLogin = async () => {
     setGoogleLoading(true)
     setError(null)
@@ -146,8 +147,6 @@ export default function Auth({ onAuthSuccess }) {
       setLoading(false)
     }
   }
-  
-  // ... restante do código permanece igual
 
   const handlePasswordReset = async () => {
     if (!email) {
