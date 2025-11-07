@@ -44,6 +44,39 @@ export default function Auth({ onAuthSuccess }) {
     clearInvalidTokens()
   }, [])
   
+    // Função para login com Google
+  const handleGoogleLogin = async () => {
+    setGoogleLoading(true)
+    setError(null)
+    setSuccess(null)
+
+    try {
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          },
+          redirectTo: `${window.location.origin}/auth/callback`
+        }
+      })
+
+      if (error) {
+        throw error
+      }
+
+      // O redirecionamento para o Google acontecerá automaticamente
+      setSuccess('Redirecionando para o Google...')
+      
+    } catch (error) {
+      console.error('Erro no login com Google:', error)
+      setError(error.message || 'Erro ao conectar com o Google')
+    } finally {
+      setGoogleLoading(false)
+    }
+  }
+  
   const handleAuth = async (e) => {
     e.preventDefault()
     setLoading(true)
