@@ -182,6 +182,11 @@ const getUniqueProjectName = (baseName, existingProjects) => {
   return newName;
 };
 
+// NOVA FUNÇÃO: Verificar se pode carregar projetos
+const canLoadProjects = () => {
+  return !tracking && manualPoints.length === 0;
+};
+
 function App() {
   const mapboxToken = 'pk.eyJ1Ijoia2FjZXJhdG8iLCJhIjoiY21oZG1nNnViMDRybjJub2VvZHV1aHh3aiJ9.l7tCaIPEYqcqDI8_aScm7Q';
   const mapRef = useRef();
@@ -274,9 +279,14 @@ function App() {
     setImportCurrentAction(action);
   };
 
-  // Função para continuar projeto existente
+  // MODIFICADO: Função para continuar projeto existente
   const continueProject = (project) => {
     if (!project) return;
+    
+    if (tracking) {
+      alert('Pare o rastreamento atual antes de continuar outro projeto.');
+      return;
+    }
     
     console.log('🔄 Continuando projeto:', project.name);
     
@@ -296,6 +306,129 @@ function App() {
     
     // Atualiza o último tempo de ponto automático
     setLastAutoPointTime(Date.now());
+  };
+
+  // MODIFICADO: Função loadProject para verificar se pode carregar
+  const loadProject = (project) => {
+    if (!canLoadProjects()) {
+      alert('Não é possível carregar projetos durante o rastreamento ativo. Pare o rastreamento atual primeiro.');
+      return;
+    }
+
+    if (!project || !project.points) {
+      console.error('Projeto inválido:', project);
+      alert('Erro: Projeto inválido ou corrompido.');
+      return;
+    }
+
+    // Gerar cor única para o projeto se não tiver
+    const projectWithColor = {
+      ...project,
+      color: project.color || generateRandomColor(),
+      points: project.points.map(point => ({
+        ...point,
+        projectId: project.id,
+        projectName: project.name
+      }))
+    };
+
+    setLoadedProjects(prev => {
+      // Remove se já existir (toggle)
+      const exists = prev.find(p => p.id === project.id);
+      if (exists) {
+        return prev.filter(p => p.id !== project.id);
+      } else {
+        return [...prev, projectWithColor];
+      }
+    });
+
+    setShowProjectsList(false);
+  };
+
+  // MODIFICADO: Função loadMultipleProjects para verificar se pode carregar
+  const loadMultipleProjects = () => {
+    if (!canLoadProjects()) {
+      alert('Não é possível carregar projetos durante o rastreamento ativo. Pare o rastreamento atual primeiro.');
+      return;
+    }
+
+    if (selectedProjects.length === 0) {
+      alert('Selecione pelo menos um projeto para carregar');
+      return;
+    }
+
+    const projectsWithColors = selectedProjects.map(project => ({
+      ...project,
+      color: project.color || generateRandomColor(),
+      points: project.points.map(point => ({
+        ...point,
+        projectId: project.id,
+        projectName: project.name
+      }))
+    }));
+
+    setLoadedProjects(prev => {
+      const newProjects = projectsWithColors.filter(
+        newProject => !prev.some(existing => existing.id === newProject.id)
+      );
+      return [...prev, ...newProjects];
+    });
+
+    setSelectedProjects([]);
+    setShowProjectsList(false);
+  };
+
+  // MODIFICADO: Função startTracking para continuar do projeto carregado
+  const startTracking = () => {
+    // Se já existe um projeto carregado, continuar a partir dele
+    if (currentProject && manualPoints.length > 0) {
+      console.log('🔄 Continuando projeto existente:', currentProject.name);
+      setTracking(true);
+      setPaused(false);
+      setShowTrackingControls(true);
+      setShowRulerPopup(false);
+      setLastAutoPointTime(Date.now());
+      
+      kalmanLatRef.current = new KalmanFilter(0.1, 0.1);
+      kalmanLngRef.current = new KalmanFilter(0.1, 0.1);
+      return;
+    }
+    
+    // Caso contrário, iniciar novo rastreamento
+    setTracking(true);
+    setPaused(false);
+    setManualPoints([]);
+    setTotalDistance(0);
+    setLastAutoPointTime(Date.now());
+    setShowTrackingControls(true);
+    setShowRulerPopup(false);
+    
+    kalmanLatRef.current = new KalmanFilter(0.1, 0.1);
+    kalmanLngRef.current = new KalmanFilter(0.1, 0.1);
+  };
+
+  // MODIFICADO: Função startNewProject para limpar tudo
+  const startNewProject = () => {
+    if (tracking) {
+      if (!confirm('Deseja parar o rastreamento atual e iniciar um novo projeto?')) {
+        return;
+      }
+      stopTracking();
+    }
+
+    if (currentProject && manualPoints.length > 0) {
+      if (!confirm(`Deseja iniciar um novo projeto? O projeto atual "${currentProject.name}" será descartado.`)) {
+        return;
+      }
+    }
+    
+    setCurrentProject(null);
+    setProjectName('');
+    setManualPoints([]);
+    setTotalDistance(0);
+    setShowProjectDetails(false);
+    setShowRulerPopup(false);
+    console.log('🆕 Novo projeto iniciado');
   };
 
   // Verificar autenticação ao iniciar
@@ -1605,74 +1738,12 @@ function App() {
     });
   };
 
-  // ========== FUNÇÕES PARA MÚLTIPLOS PROJETOS CARREGADOS ==========
-
-  // Função para carregar projeto individual
-  const loadProject = (project) => {
-    if (!project || !project.points) {
-      console.error('Projeto inválido:', project);
-      alert('Erro: Projeto inválido ou corrompido.');
-      return;
-    }
-
-    // Gerar cor única para o projeto se não tiver
-    const projectWithColor = {
-      ...project,
-      color: project.color || generateRandomColor(),
-      points: project.points.map(point => ({
-        ...point,
-        projectId: project.id,
-        projectName: project.name
-      }))
-    };
-
-    setLoadedProjects(prev => {
-      // Remove se já existir (toggle)
-      const exists = prev.find(p => p.id === project.id);
-      if (exists) {
-        return prev.filter(p => p.id !== project.id);
-      } else {
-        return [...prev, projectWithColor];
-      }
-    });
-
-    setShowProjectsList(false);
-  };
-
-  // Função para carregar múltiplos projetos
-  const loadMultipleProjects = () => {
-    if (selectedProjects.length === 0) {
-      alert('Selecione pelo menos um projeto para carregar');
-      return;
-    }
-
-    const projectsWithColors = selectedProjects.map(project => ({
-      ...project,
-      color: project.color || generateRandomColor(),
-      points: project.points.map(point => ({
-        ...point,
-        projectId: project.id,
-        projectName: project.name
-      }))
-    }));
-
-    setLoadedProjects(prev => {
-      const newProjects = projectsWithColors.filter(
-        newProject => !prev.some(existing => existing.id === newProject.id)
-      );
-      return [...prev, ...newProjects];
-    });
-
-    setSelectedProjects([]);
-    setShowProjectsList(false);
-  };
+  // ========== FIM DAS NOVAS FUNÇÕES ==========
 
   // Função para remover projeto carregado
   const removeLoadedProject = (projectId) => {
     setLoadedProjects(prev => prev.filter(p => p.id !== projectId));
   };
-
-  // ========== FIM DAS NOVAS FUNÇÕES ==========
 
   // Função para editar marcador
   const handleEditMarker = useCallback((marker) => {
@@ -1792,97 +1863,6 @@ function App() {
   }
 
   // ========== FUNÇÕES DA RÉGUA MANUAL ==========
-
-  // Iniciar rastreamento
-  const startTracking = () => {
-    setTracking(true);
-    setPaused(false);
-    setManualPoints([]);
-    setTotalDistance(0);
-    setLastAutoPointTime(Date.now());
-    setShowTrackingControls(true);
-    setShowRulerPopup(false);
-    
-    kalmanLatRef.current = new KalmanFilter(0.1, 0.1);
-    kalmanLngRef.current = new KalmanFilter(0.1, 0.1);
-  };
-
-  // Iniciar novo projeto (limpa o projeto atual)
-  const startNewProject = () => {
-    if (currentProject && manualPoints.length > 0) {
-      if (!confirm(`Deseja iniciar um novo projeto? O projeto atual "${currentProject.name}" será descartado.`)) {
-        return;
-      }
-    }
-    
-    setCurrentProject(null);
-    setProjectName('');
-    setManualPoints([]);
-    setTotalDistance(0);
-    setShowProjectDetails(false);
-    setShowRulerPopup(false);
-    startTracking();
-    console.log('🆕 Novo projeto iniciado');
-  };
-
-  // Função stopTracking corrigida
-  const stopTracking = async () => {
-    try {
-      const pointsToSave = [...manualPoints];
-      
-      // Só salva automaticamente se houver pontos e não estiver no diálogo de projeto
-      if (pointsToSave.length > 0 && !showProjectDialog) {
-        console.log('💾 Salvamento automático ao parar rastreamento...');
-        
-        // Usa o nome do projeto atual ou gera um nome padrão
-        let projectNameToUse = projectName;
-        if (currentProject && !projectName.trim()) {
-          projectNameToUse = currentProject.name;
-        } else if (!projectName.trim()) {
-          projectNameToUse = `Rastreamento ${new Date().toLocaleString('pt-BR')}`;
-        }
-        
-        if (projectNameToUse.trim() && pointsToSave.length > 0) {
-          await saveProject(true, pointsToSave);
-        }
-      }
-    } catch (error) {
-      console.error('Erro ao salvar projeto automaticamente:', error);
-    } finally {
-      // SEMPRE limpa os estados, mesmo se houver erro no salvamento
-      setTracking(false);
-      setPaused(false);
-      setShowTrackingControls(false);
-      setManualPoints([]);
-      setTotalDistance(0);
-      setPositionHistory([]);
-      setGpsAccuracy(null);
-      setSpeed(0);
-      setLastAutoPointTime(0);
-      
-      console.log('✅ Rastreamento parado e estados resetados');
-    }
-  };
-
-  // Pausar rastreamento
-  const pauseTracking = async () => {
-    try {
-      const pointsToSave = [...manualPoints];
-      if (pointsToSave.length > 0 && tracking && !paused) {
-        console.log('⏸️ Salvamento automático ao pausar...');
-        await saveProject(true, pointsToSave);
-      }
-    } catch (error) {
-      console.error('Erro ao salvar projeto automaticamente:', error);
-    } finally {
-      setPaused(!paused);
-    }
-  };
-
-  // Função para alternar alinhamento
-  const toggleSnapping = () => {
-    setSnappingEnabled(!snappingEnabled);
-  };
 
   // Adicionar ponto manual com snapping
   const addManualPoint = async () => {
@@ -2051,6 +2031,65 @@ function App() {
       return updatedPoints
     })
   }
+
+  // Pausar rastreamento
+  const pauseTracking = async () => {
+    try {
+      const pointsToSave = [...manualPoints];
+      if (pointsToSave.length > 0 && tracking && !paused) {
+        console.log('⏸️ Salvamento automático ao pausar...');
+        await saveProject(true, pointsToSave);
+      }
+    } catch (error) {
+      console.error('Erro ao salvar projeto automaticamente:', error);
+    } finally {
+      setPaused(!paused);
+    }
+  };
+
+  // Função para alternar alinhamento
+  const toggleSnapping = () => {
+    setSnappingEnabled(!snappingEnabled);
+  };
+
+  // MODIFICADO: Função stopTracking corrigida
+  const stopTracking = async () => {
+    try {
+      const pointsToSave = [...manualPoints];
+      
+      // Só salva automaticamente se houver pontos e não estiver no diálogo de projeto
+      if (pointsToSave.length > 0 && !showProjectDialog) {
+        console.log('💾 Salvamento automático ao parar rastreamento...');
+        
+        // Usa o nome do projeto atual ou gera um nome padrão
+        let projectNameToUse = projectName;
+        if (currentProject && !projectName.trim()) {
+          projectNameToUse = currentProject.name;
+        } else if (!projectName.trim()) {
+          projectNameToUse = `Rastreamento ${new Date().toLocaleString('pt-BR')}`;
+        }
+        
+        if (projectNameToUse.trim() && pointsToSave.length > 0) {
+          await saveProject(true, pointsToSave);
+        }
+      }
+    } catch (error) {
+      console.error('Erro ao salvar projeto automaticamente:', error);
+    } finally {
+      // SEMPRE limpa os estados, mesmo se houver erro no salvamento
+      setTracking(false);
+      setPaused(false);
+      setShowTrackingControls(false);
+      setManualPoints([]);
+      setTotalDistance(0);
+      setPositionHistory([]);
+      setGpsAccuracy(null);
+      setSpeed(0);
+      setLastAutoPointTime(0);
+      
+      console.log('✅ Rastreamento parado e estados resetados');
+    }
+  };
 
   // Limpar pontos
   const clearManualPoints = () => {
@@ -2642,9 +2681,16 @@ function App() {
                     <Button
                       size="sm"
                       variant="ghost"
-                      onClick={() => setShowProjectsList(true)}
+                      onClick={() => {
+                        if (tracking) {
+                          alert('Não é possível gerenciar projetos durante o rastreamento. Pare o rastreamento atual primeiro.');
+                          return;
+                        }
+                        setShowProjectsList(true);
+                      }}
                       className="h-6 w-6 p-0 text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10"
                       title="Ver todos os projetos"
+                      disabled={tracking}
                     >
                       <Layers className="w-3 h-3" />
                     </Button>
@@ -2655,8 +2701,14 @@ function App() {
                   {projects.slice(0, 3).map(project => (
                     <div
                       key={project.id}
-                      className="flex items-center gap-3 p-3 bg-slate-800/80 rounded-lg border border-slate-700 hover:border-cyan-500/50 transition-all cursor-pointer group relative z-50"
+                      className={`flex items-center gap-3 p-3 bg-slate-800/80 rounded-lg border border-slate-700 transition-all cursor-pointer group relative z-50 ${
+                        tracking ? 'opacity-50 cursor-not-allowed' : 'hover:border-cyan-500/50'
+                      }`}
                       onClick={() => {
+                        if (tracking) {
+                          alert('Não é possível carregar projetos durante o rastreamento. Pare o rastreamento atual primeiro.');
+                          return;
+                        }
                         if (isValidProject(project)) {
                           loadProject(project);
                           setSidebarOpen(false);
@@ -2718,7 +2770,14 @@ function App() {
                     <Button
                       variant="ghost"
                       className="w-full text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10 text-sm mt-2 py-2"
-                      onClick={() => setShowProjectsList(true)}
+                      onClick={() => {
+                        if (tracking) {
+                          alert('Não é possível gerenciar projetos durante o rastreamento. Pare o rastreamento atual primeiro.');
+                          return;
+                        }
+                        setShowProjectsList(true);
+                      }}
+                      disabled={tracking}
                     >
                       Ver todos os projetos ({projects.length})
                     </Button>
@@ -2762,7 +2821,14 @@ function App() {
                       <Button
                         variant="ghost"
                         className="w-full text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10 text-xs py-1"
-                        onClick={() => setShowLoadedProjects(true)}
+                        onClick={() => {
+                          if (tracking) {
+                            alert('Não é possível gerenciar projetos durante o rastreamento. Pare o rastreamento atual primeiro.');
+                            return;
+                          }
+                          setShowLoadedProjects(true);
+                        }}
+                        disabled={tracking}
                       >
                         Ver todos ({loadedProjects.length})
                       </Button>
@@ -3004,9 +3070,17 @@ function App() {
         {/* Botão de Projetos Carregados */}
         <Button
           size="icon"
-          className="bg-gradient-to-br from-slate-800 to-slate-700 backdrop-blur-sm hover:from-slate-700 hover:to-slate-600 text-white shadow-xl border border-slate-600/50 transition-all-smooth hover-lift"
-          onClick={() => setShowLoadedProjects(true)}
-          disabled={loadedProjects.length === 0}
+          className={`bg-gradient-to-br from-slate-800 to-slate-700 backdrop-blur-sm text-white shadow-xl border border-slate-600/50 transition-all-smooth ${
+            tracking ? 'opacity-50 cursor-not-allowed' : 'hover:from-slate-700 hover:to-slate-600 hover-lift'
+          }`}
+          onClick={() => {
+            if (tracking) {
+              alert('Não é possível gerenciar projetos durante o rastreamento. Pare o rastreamento atual primeiro.');
+              return;
+            }
+            setShowLoadedProjects(true);
+          }}
+          disabled={tracking || loadedProjects.length === 0}
         >
           <Layers className="w-5 h-5" />
         </Button>
@@ -3107,20 +3181,19 @@ function App() {
                 </div>
               </div>
 
-              {/* Botão Iniciar/Continuar */}
+              {/* MODIFICADO: Botão Iniciar/Continuar */}
               <Button
-                onClick={currentProject ? () => {
-                  if (confirm(`Deseja continuar adicionando pontos ao projeto "${currentProject.name}"?`)) {
-                    continueProject(currentProject);
-                  }
-                } : startTracking}
+                onClick={currentProject && manualPoints.length > 0 ? () => continueProject(currentProject) : startTracking}
                 className="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-medium py-3 text-base"
               >
                 <Play className="w-4 h-4 mr-2" />
-                {currentProject ? `Continuar em "${currentProject.name}"` : 'Iniciar Sessão de Rastreamento'}
+                {currentProject && manualPoints.length > 0 ? 
+                  `Continuar "${currentProject.name}"` : 
+                  'Iniciar Sessão de Rastreamento'
+                }
               </Button>
 
-              {/* Botão para novo projeto se já existe um carregado */}
+              {/* MODIFICADO: Botão para novo projeto se já existe um carregado */}
               {currentProject && (
                 <Button
                   onClick={startNewProject}
@@ -3128,7 +3201,7 @@ function App() {
                   className="w-full mt-2 border-cyan-500 text-cyan-400 hover:bg-cyan-500/10"
                 >
                   <Plus className="w-4 h-4 mr-2" />
-                  Iniciar Novo Projeto
+                  Iniciar Projeto Completamente Novo
                 </Button>
               )}
 
@@ -3273,7 +3346,7 @@ function App() {
             </div>
             <Button
               onClick={loadMultipleProjects}
-              disabled={selectedProjects.length === 0}
+              disabled={selectedProjects.length === 0 || tracking}
               className="bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white"
             >
               <FolderOpen className="w-4 h-4 mr-2" />
@@ -3329,10 +3402,15 @@ function App() {
                     <Button
                       size="sm"
                       onClick={() => {
+                        if (tracking) {
+                          alert('Não é possível carregar projetos durante o rastreamento. Pare o rastreamento atual primeiro.');
+                          return;
+                        }
                         loadProject(project);
                         setShowProjectsList(false);
                       }}
                       className="compact-button bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white"
+                      disabled={tracking}
                     >
                       <Play className="w-3 h-3 mr-1" />
                       Carregar
