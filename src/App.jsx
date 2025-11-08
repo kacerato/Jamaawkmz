@@ -279,36 +279,165 @@ function App() {
     setImportCurrentAction(action);
   };
 
-  // MODIFICADO: Função para continuar projeto existente
-  const continueProject = (project) => {
-    if (!project) return;
-    
-    if (tracking) {
-      alert('Pare o rastreamento atual antes de continuar outro projeto.');
+  // FUNÇÃO SALVAR PROJETO - CORRIGIDA: Não cria novo projeto ao renomear
+  const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
+    // Verificação de segurança
+    if (!pointsToSave || pointsToSave.length === 0) {
+      console.log('⚠️ Nenhum ponto para salvar');
+      if (!autoSave) {
+        alert('Não há pontos para salvar no projeto.');
+      }
       return;
     }
     
-    console.log('🔄 Continuando projeto:', project.name);
+    if (autoSave && pointsToSave.length === 0) {
+      return;
+    }
     
-    // Carrega os pontos do projeto para continuar
-    setManualPoints(project.points || []);
-    setTotalDistance(project.totalDistance || project.total_distance || 0);
-    setCurrentProject(project);
-    setProjectName(project.name);
-    setTrackingMode(project.trackingMode || project.tracking_mode || 'manual');
+    let projectNameToUse = projectName;
+    if (currentProject && !projectName.trim()) {
+      projectNameToUse = currentProject.name;
+    } else if (autoSave && !projectName.trim() && !currentProject) {
+      projectNameToUse = `Rastreamento ${new Date().toLocaleString('pt-BR')}`;
+    }
     
-    // Inicia o rastreamento
+    if (!projectNameToUse.trim() && pointsToSave.length === 0) {
+      if (!autoSave) {
+        alert('Digite um nome para o projeto e certifique-se de ter pontos no traçado.');
+      }
+      return;
+    }
+    
+    const calculatedTotalDistance = calculateTotalDistance(pointsToSave) || 0;
+    
+    const projectData = {
+      name: projectNameToUse.trim(),
+      points: pointsToSave,
+      total_distance: calculatedTotalDistance,
+      bairro: selectedBairro !== 'todos' ? selectedBairro : 'Vários',
+      tracking_mode: trackingMode,
+      updated_at: new Date().toISOString()
+    };
+    
+    try {
+      let savedProject;
+      
+      // CORREÇÃO: SEMPRE atualizar se currentProject existe (edição/renomeação)
+      if (currentProject) {
+        console.log('🔄 Atualizando projeto existente:', currentProject.name);
+        
+        if (isOnline && user) {
+          const { data, error } = await supabase
+            .from('projetos')
+            .update(projectData)
+            .eq('id', currentProject.id)
+            .eq('user_id', user.id)
+            .select();
+          
+          if (error) throw error;
+          savedProject = data[0];
+        } else {
+          savedProject = {
+            ...currentProject,
+            ...projectData
+          };
+        }
+        
+        // Atualizar na lista de projetos
+        const updatedProjects = projects.map(p =>
+          p.id === currentProject.id ? savedProject : p
+        );
+        setProjects(updatedProjects);
+        localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
+        
+      } else {
+        // Apenas criar novo se NÃO existe currentProject
+        if (isOnline && user) {
+          const { data, error } = await supabase
+            .from('projetos')
+            .insert([{ ...projectData, user_id: user.id }])
+            .select();
+          
+          if (error) throw error;
+          savedProject = data[0];
+        } else {
+          savedProject = {
+            ...projectData,
+            id: `offline_${Date.now()}`,
+            created_at: new Date().toISOString(),
+            user_id: user?.id || 'offline'
+          };
+        }
+        
+        const updatedProjects = [...projects, savedProject];
+        setProjects(updatedProjects);
+        localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
+      }
+      
+      setCurrentProject(savedProject);
+      
+      if (!autoSave) {
+        setProjectName('');
+        setShowProjectDialog(false);
+        setTracking(false);
+        setPaused(false);
+        setShowTrackingControls(false);
+        setManualPoints([]);
+        setTotalDistance(0);
+        
+        alert(currentProject ? 'Projeto atualizado com sucesso!' : 'Projeto salvo com sucesso!');
+      } else {
+        console.log('✅ Projeto salvo automaticamente:', savedProject.name);
+      }
+      
+    } catch (error) {
+      console.error('Erro ao salvar projeto:', error);
+      if (!autoSave) {
+        alert('Erro ao salvar projeto. Tente novamente.');
+      }
+    }
+  };
+
+  // CORREÇÃO: Função startTracking simplificada
+  const startTracking = () => {
+    // Se existe UM projeto carregado E tem pontos, continuar dele
+    if (loadedProjects.length === 1 && loadedProjects[0].points.length > 0) {
+      const project = loadedProjects[0];
+      console.log('🔄 Continuando do projeto carregado:', project.name);
+      
+      setCurrentProject(project);
+      setManualPoints(project.points);
+      setTotalDistance(project.totalDistance || project.total_distance || 0);
+      setProjectName(project.name);
+      setTrackingMode(project.trackingMode || project.tracking_mode || 'manual');
+    }
+    
+    // Se existe currentProject E tem pontos, continuar dele
+    else if (currentProject && manualPoints.length > 0) {
+      console.log('🔄 Continuando projeto atual:', currentProject.name);
+    }
+    
+    // Caso contrário, iniciar novo rastreamento
+    else {
+      console.log('🆕 Iniciando novo rastreamento');
+      setManualPoints([]);
+      setTotalDistance(0);
+      setCurrentProject(null);
+      setProjectName('');
+    }
+    
+    // Sempre iniciar/continuar rastreamento
     setTracking(true);
     setPaused(false);
     setShowTrackingControls(true);
     setShowRulerPopup(false);
-    setShowProjectsList(false);
-    
-    // Atualiza o último tempo de ponto automático
     setLastAutoPointTime(Date.now());
+    
+    kalmanLatRef.current = new KalmanFilter(0.1, 0.1);
+    kalmanLngRef.current = new KalmanFilter(0.1, 0.1);
   };
 
-  // MODIFICADO: Função loadProject para verificar se pode carregar
+  // CORREÇÃO: Função loadProject para evitar conflitos
   const loadProject = (project) => {
     if (!canLoadProjects()) {
       alert('Não é possível carregar projetos durante o rastreamento ativo. Pare o rastreamento atual primeiro.');
@@ -321,93 +450,36 @@ function App() {
       return;
     }
 
-    // Gerar cor única para o projeto se não tiver
-    const projectWithColor = {
-      ...project,
-      color: project.color || generateRandomColor(),
-      points: project.points.map(point => ({
-        ...point,
-        projectId: project.id,
-        projectName: project.name
-      }))
-    };
-
-    setLoadedProjects(prev => {
-      // Remove se já existir (toggle)
-      const exists = prev.find(p => p.id === project.id);
-      if (exists) {
-        return prev.filter(p => p.id !== project.id);
-      } else {
-        return [...prev, projectWithColor];
-      }
-    });
-
-    setShowProjectsList(false);
-  };
-
-  // MODIFICADO: Função loadMultipleProjects para verificar se pode carregar
-  const loadMultipleProjects = () => {
-    if (!canLoadProjects()) {
-      alert('Não é possível carregar projetos durante o rastreamento ativo. Pare o rastreamento atual primeiro.');
-      return;
-    }
-
-    if (selectedProjects.length === 0) {
-      alert('Selecione pelo menos um projeto para carregar');
-      return;
-    }
-
-    const projectsWithColors = selectedProjects.map(project => ({
-      ...project,
-      color: project.color || generateRandomColor(),
-      points: project.points.map(point => ({
-        ...point,
-        projectId: project.id,
-        projectName: project.name
-      }))
-    }));
-
-    setLoadedProjects(prev => {
-      const newProjects = projectsWithColors.filter(
-        newProject => !prev.some(existing => existing.id === newProject.id)
-      );
-      return [...prev, ...newProjects];
-    });
-
-    setSelectedProjects([]);
-    setShowProjectsList(false);
-  };
-
-  // MODIFICADO: Função startTracking para continuar do projeto carregado
-  const startTracking = () => {
-    // Se já existe um projeto carregado, continuar a partir dele
-    if (currentProject && manualPoints.length > 0) {
-      console.log('🔄 Continuando projeto existente:', currentProject.name);
-      setTracking(true);
-      setPaused(false);
-      setShowTrackingControls(true);
-      setShowRulerPopup(false);
-      setLastAutoPointTime(Date.now());
+    // Se já está carregado, remover (toggle)
+    const exists = loadedProjects.find(p => p.id === project.id);
+    if (exists) {
+      setLoadedProjects(prev => prev.filter(p => p.id !== project.id));
       
-      kalmanLatRef.current = new KalmanFilter(0.1, 0.1);
-      kalmanLngRef.current = new KalmanFilter(0.1, 0.1);
-      return;
+      // Se era o projeto atual, limpar
+      if (currentProject && currentProject.id === project.id) {
+        setCurrentProject(null);
+        setManualPoints([]);
+        setTotalDistance(0);
+      }
+    } else {
+      // Adicionar projeto carregado
+      const projectWithColor = {
+        ...project,
+        color: project.color || generateRandomColor(),
+        points: project.points.map(point => ({
+          ...point,
+          projectId: project.id,
+          projectName: project.name
+        }))
+      };
+
+      setLoadedProjects(prev => [...prev, projectWithColor]);
     }
-    
-    // Caso contrário, iniciar novo rastreamento
-    setTracking(true);
-    setPaused(false);
-    setManualPoints([]);
-    setTotalDistance(0);
-    setLastAutoPointTime(Date.now());
-    setShowTrackingControls(true);
-    setShowRulerPopup(false);
-    
-    kalmanLatRef.current = new KalmanFilter(0.1, 0.1);
-    kalmanLngRef.current = new KalmanFilter(0.1, 0.1);
+
+    setShowProjectsList(false);
   };
 
-  // MODIFICADO: Função startNewProject para limpar tudo
+  // CORREÇÃO: Função startNewProject para limpar tudo
   const startNewProject = () => {
     if (tracking) {
       if (!confirm('Deseja parar o rastreamento atual e iniciar um novo projeto?')) {
@@ -2127,122 +2199,6 @@ function App() {
     }
   };
 
-  // FUNÇÃO SALVAR PROJETO
-  const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
-    // Verificação de segurança
-    if (!pointsToSave || pointsToSave.length === 0) {
-      console.log('⚠️ Nenhum ponto para salvar');
-      if (!autoSave) {
-        alert('Não há pontos para salvar no projeto.');
-      }
-      return;
-    }
-    
-    if (autoSave && pointsToSave.length === 0) {
-      return;
-    }
-    
-    let projectNameToUse = projectName;
-    if (currentProject && !projectName.trim()) {
-      projectNameToUse = currentProject.name;
-    } else if (autoSave && !projectName.trim() && !currentProject) {
-      projectNameToUse = `Rastreamento ${new Date().toLocaleString('pt-BR')}`;
-    }
-    
-    if (!projectNameToUse.trim() && pointsToSave.length === 0) {
-      if (!autoSave) {
-        alert('Digite um nome para o projeto e certifique-se de ter pontos no traçado.');
-      }
-      return;
-    }
-    
-    const calculatedTotalDistance = calculateTotalDistance(pointsToSave) || 0;
-    
-    const projectData = {
-      name: projectNameToUse.trim(),
-      points: pointsToSave,
-      total_distance: calculatedTotalDistance,
-      bairro: selectedBairro !== 'todos' ? selectedBairro : 'Vários',
-      tracking_mode: trackingMode,
-      updated_at: new Date().toISOString()
-    };
-    
-    try {
-      let savedProject;
-      
-      if (currentProject) {
-        console.log('🔄 Atualizando projeto existente:', currentProject.name);
-        
-        if (isOnline && user) {
-          const { data, error } = await supabase
-            .from('projetos')
-            .update(projectData)
-            .eq('id', currentProject.id)
-            .eq('user_id', user.id)
-            .select();
-          
-          if (error) throw error;
-          savedProject = data[0];
-        } else {
-          savedProject = {
-            ...currentProject,
-            ...projectData
-          };
-        }
-        
-        const updatedProjects = projects.map(p =>
-          p.id === currentProject.id ? savedProject : p
-        );
-        setProjects(updatedProjects);
-        localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
-        
-      } else {
-        if (isOnline && user) {
-          const { data, error } = await supabase
-            .from('projetos')
-            .insert([{ ...projectData, user_id: user.id }])
-            .select();
-          
-          if (error) throw error;
-          savedProject = data[0];
-        } else {
-          savedProject = {
-            ...projectData,
-            id: `offline_${Date.now()}`,
-            created_at: new Date().toISOString(),
-            user_id: user?.id || 'offline'
-          };
-        }
-        
-        const updatedProjects = [...projects, savedProject];
-        setProjects(updatedProjects);
-        localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
-      }
-      
-      setCurrentProject(savedProject);
-      
-      if (!autoSave) {
-        setProjectName('');
-        setShowProjectDialog(false);
-        setTracking(false);
-        setPaused(false);
-        setShowTrackingControls(false);
-        setManualPoints([]);
-        setTotalDistance(0);
-        
-        alert(currentProject ? 'Projeto atualizado com sucesso!' : 'Projeto salvo com sucesso!');
-      } else {
-        console.log('✅ Projeto salvo automaticamente:', savedProject.name);
-      }
-      
-    } catch (error) {
-      console.error('Erro ao salvar projeto:', error);
-      if (!autoSave) {
-        alert('Erro ao salvar projeto. Tente novamente.');
-      }
-    }
-  };
-
   // Deletar projeto - SUPABASE PRIMÁRIO
   const deleteProject = async (projectId) => {
     if (!confirm('Tem certeza que deseja deletar este projeto?')) {
@@ -3197,20 +3153,22 @@ function App() {
                 </div>
               </div>
 
-              {/* MODIFICADO: Botão Iniciar/Continuar */}
+              {/* CORREÇÃO: Botão Iniciar/Continuar simplificado */}
               <Button
-                onClick={currentProject && manualPoints.length > 0 ? () => continueProject(currentProject) : startTracking}
+                onClick={startTracking}
                 className="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-medium py-3 text-base"
               >
                 <Play className="w-4 h-4 mr-2" />
-                {currentProject && manualPoints.length > 0 ? 
-                  `Continuar "${currentProject.name}"` : 
-                  'Iniciar Sessão de Rastreamento'
+                {loadedProjects.length === 1 ? 
+                  `Continuar "${loadedProjects[0].name}"` : 
+                  currentProject && manualPoints.length > 0 ? 
+                    `Continuar "${currentProject.name}"` : 
+                    'Iniciar Rastreamento'
                 }
               </Button>
 
-              {/* MODIFICADO: Botão para novo projeto se já existe um carregado */}
-              {currentProject && (
+              {/* CORREÇÃO: Botão para novo projeto se já existe um carregado */}
+              {(loadedProjects.length === 1 || (currentProject && manualPoints.length > 0)) && (
                 <Button
                   onClick={startNewProject}
                   variant="outline"
