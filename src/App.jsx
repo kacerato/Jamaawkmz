@@ -478,6 +478,67 @@ function App() {
 
     setShowProjectsList(false);
   };
+  
+  // FUNÇÃO PARA CARREGAR MÚLTIPLOS PROJETOS - ADICIONAR ESTA FUNÇÃO
+const loadMultipleProjects = () => {
+  if (!canLoadProjects()) {
+    alert('Não é possível carregar projetos durante o rastreamento ativo. Pare o rastreamento atual primeiro.');
+    return;
+  }
+
+  if (selectedProjects.length === 0) {
+    alert('Selecione pelo menos um projeto para carregar');
+    return;
+  }
+
+  const projectsWithColors = selectedProjects.map(project => ({
+    ...project,
+    color: project.color || generateRandomColor(),
+    points: project.points.map(point => ({
+      ...point,
+      projectId: project.id,
+      projectName: project.name
+    }))
+  }));
+
+  setLoadedProjects(prev => {
+    const newProjects = projectsWithColors.filter(
+      newProject => !prev.some(existing => existing.id === newProject.id)
+    );
+    return [...prev, ...newProjects];
+  });
+
+  setSelectedProjects([]);
+  setShowProjectsList(false);
+};
+
+// FUNÇÃO PARA CARREGAR MÚLTIPLOS PROJETOS SELECIONADOS - ADICIONAR SE NÃO EXISTIR
+const loadMultipleProjects = () => {
+  if (selectedProjects.length === 0) {
+    alert('Selecione pelo menos um projeto para carregar');
+    return;
+  }
+
+  const projectsWithColors = selectedProjects.map(project => ({
+    ...project,
+    color: project.color || generateRandomColor(),
+    points: project.points.map(point => ({
+      ...point,
+      projectId: project.id,
+      projectName: project.name
+    }))
+  }));
+
+  setLoadedProjects(prev => {
+    const newProjects = projectsWithColors.filter(
+      newProject => !prev.some(existing => existing.id === newProject.id)
+    );
+    return [...prev, ...newProjects];
+  });
+
+  setSelectedProjects([]);
+  setShowProjectsList(false);
+};
 
   // CORREÇÃO: Função startNewProject para limpar tudo
   const startNewProject = () => {
