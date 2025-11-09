@@ -46,37 +46,48 @@ export default function Auth({ onAuthSuccess }) {
   }, [])
   
   // Função para login com Google
-  const handleGoogleLogin = async () => {
-    setGoogleLoading(true)
-    setError(null)
-    setSuccess(null)
-
-    try {
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          queryParams: {
-            access_type: 'offline',
-            prompt: 'consent',
-          },
-          redirectTo: `${window.location.origin}/auth/callback`
-        }
-      })
-
-      if (error) {
-        throw error
+// CORREÇÃO: Login com Google melhorado
+const handleGoogleLogin = async () => {
+  setGoogleLoading(true);
+  setError(null);
+  setSuccess(null);
+  
+  try {
+    // Limpar qualquer sessão existente
+    await supabase.auth.signOut();
+    
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        queryParams: {
+          access_type: 'offline',
+          prompt: 'consent',
+        },
+        redirectTo: window.location.origin
       }
-
-      // O redirecionamento para o Google acontecerá automaticamente
-      setSuccess('Redirecionando para o Google...')
-      
-    } catch (error) {
-      console.error('Erro no login com Google:', error)
-      setError(error.message || 'Erro ao conectar com o Google')
-    } finally {
-      setGoogleLoading(false)
+    });
+    
+    if (error) {
+      throw error;
     }
+    
+    setSuccess('Redirecionando para o Google...');
+    
+  } catch (error) {
+    console.error('Erro no login com Google:', error);
+    
+    // Mensagens de erro mais amigáveis
+    if (error.message.includes('popup')) {
+      setError('O popup foi bloqueado. Permita popups para este site.');
+    } else if (error.message.includes('configuration')) {
+      setError('Configuração do Google OAuth não encontrada.');
+    } else {
+      setError('Erro ao conectar com o Google. Tente novamente.');
+    }
+  } finally {
+    setGoogleLoading(false);
   }
+};
   
   const handleAuth = async (e) => {
     e.preventDefault()
