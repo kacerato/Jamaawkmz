@@ -279,7 +279,7 @@ function App() {
     setImportCurrentAction(action);
   };
 
-  // FUNÇÃO SALVAR PROJETO - CORRIGIDA: Não cria novo projeto ao renomear
+  // FUNÇÃO SALVAR PROJETO - CORRIGIDA: Agora usa editingProject para renomeação
   const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
     // Verificação de segurança
     if (!pointsToSave || pointsToSave.length === 0) {
@@ -295,9 +295,13 @@ function App() {
     }
     
     let projectNameToUse = projectName;
-    if (currentProject && !projectName.trim()) {
+    
+    // CORREÇÃO: Prioridade para editingProject em caso de renomeação
+    if (editingProject && !projectName.trim()) {
+      projectNameToUse = editingProject.name;
+    } else if (currentProject && !projectName.trim()) {
       projectNameToUse = currentProject.name;
-    } else if (autoSave && !projectName.trim() && !currentProject) {
+    } else if (autoSave && !projectName.trim() && !currentProject && !editingProject) {
       projectNameToUse = `Rastreamento ${new Date().toLocaleString('pt-BR')}`;
     }
     
@@ -322,9 +326,45 @@ function App() {
     try {
       let savedProject;
       
-      // CORREÇÃO: SEMPRE atualizar se currentProject existe (edição/renomeação)
-      if (currentProject) {
-        console.log('🔄 Atualizando projeto existente:', currentProject.name);
+      // CORREÇÃO CRÍTICA: Prioridade para editingProject (renomeação)
+      if (editingProject) {
+        console.log('🔄 Atualizando projeto em edição:', editingProject.name);
+        
+        if (isOnline && user) {
+          const { data, error } = await supabase
+            .from('projetos')
+            .update(projectData)
+            .eq('id', editingProject.id)
+            .eq('user_id', user.id)
+            .select();
+          
+          if (error) throw error;
+          savedProject = data[0];
+        } else {
+          savedProject = {
+            ...editingProject,
+            ...projectData
+          };
+        }
+        
+        // Atualizar na lista de projetos
+        const updatedProjects = projects.map(p =>
+          p.id === editingProject.id ? savedProject : p
+        );
+        setProjects(updatedProjects);
+        localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
+        
+        // Se o projeto editado é o mesmo que o atual, atualizar currentProject também
+        if (currentProject && currentProject.id === editingProject.id) {
+          setCurrentProject(savedProject);
+        }
+        
+        // Limpar editingProject após salvar
+        setEditingProject(null);
+        
+      } else if (currentProject) {
+        // CORREÇÃO: Atualizar projeto atual se não estiver em modo edição
+        console.log('🔄 Atualizando projeto atual:', currentProject.name);
         
         if (isOnline && user) {
           const { data, error } = await supabase
@@ -350,8 +390,10 @@ function App() {
         setProjects(updatedProjects);
         localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
         
+        setCurrentProject(savedProject);
+        
       } else {
-        // Apenas criar novo se NÃO existe currentProject
+        // Apenas criar novo se NÃO existe currentProject NEM editingProject
         if (isOnline && user) {
           const { data, error } = await supabase
             .from('projetos')
@@ -374,18 +416,25 @@ function App() {
         localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
       }
       
-      setCurrentProject(savedProject);
+      // Só definir como currentProject se não for um autoSave e não estivermos editando
+      if (!autoSave && !editingProject) {
+        setCurrentProject(savedProject);
+      }
       
       if (!autoSave) {
         setProjectName('');
         setShowProjectDialog(false);
-        setTracking(false);
-        setPaused(false);
-        setShowTrackingControls(false);
-        setManualPoints([]);
-        setTotalDistance(0);
         
-        alert(currentProject ? 'Projeto atualizado com sucesso!' : 'Projeto salvo com sucesso!');
+        // Só parar o rastreamento se não estivermos editando
+        if (!editingProject) {
+          setTracking(false);
+          setPaused(false);
+          setShowTrackingControls(false);
+          setManualPoints([]);
+          setTotalDistance(0);
+        }
+        
+        alert(editingProject ? 'Projeto atualizado com sucesso!' : 'Projeto salvo com sucesso!');
       } else {
         console.log('✅ Projeto salvo automaticamente:', savedProject.name);
       }
@@ -479,38 +528,38 @@ function App() {
     setShowProjectsList(false);
   };
   
-  // FUNÇÃO PARA CARREGAR MÚLTIPLOS PROJETOS - ADICIONAR ESTA FUNÇÃO
-const loadMultipleProjects = () => {
-  if (!canLoadProjects()) {
-    alert('Não é possível carregar projetos durante o rastreamento ativo. Pare o rastreamento atual primeiro.');
-    return;
-  }
+  // FUNÇÃO PARA CARREGAR MÚLTIPLOS PROJETOS
+  const loadMultipleProjects = () => {
+    if (!canLoadProjects()) {
+      alert('Não é possível carregar projetos durante o rastreamento ativo. Pare o rastreamento atual primeiro.');
+      return;
+    }
 
-  if (selectedProjects.length === 0) {
-    alert('Selecione pelo menos um projeto para carregar');
-    return;
-  }
+    if (selectedProjects.length === 0) {
+      alert('Selecione pelo menos um projeto para carregar');
+      return;
+    }
 
-  const projectsWithColors = selectedProjects.map(project => ({
-    ...project,
-    color: project.color || generateRandomColor(),
-    points: project.points.map(point => ({
-      ...point,
-      projectId: project.id,
-      projectName: project.name
-    }))
-  }));
+    const projectsWithColors = selectedProjects.map(project => ({
+      ...project,
+      color: project.color || generateRandomColor(),
+      points: project.points.map(point => ({
+        ...point,
+        projectId: project.id,
+        projectName: project.name
+      }))
+    }));
 
-  setLoadedProjects(prev => {
-    const newProjects = projectsWithColors.filter(
-      newProject => !prev.some(existing => existing.id === newProject.id)
-    );
-    return [...prev, ...newProjects];
-  });
+    setLoadedProjects(prev => {
+      const newProjects = projectsWithColors.filter(
+        newProject => !prev.some(existing => existing.id === newProject.id)
+      );
+      return [...prev, ...newProjects];
+    });
 
-  setSelectedProjects([]);
-  setShowProjectsList(false);
-};
+    setSelectedProjects([]);
+    setShowProjectsList(false);
+  };
 
   // CORREÇÃO: Função startNewProject para limpar tudo
   const startNewProject = () => {
@@ -2259,6 +2308,11 @@ const loadMultipleProjects = () => {
         setTotalDistance(0);
       }
       
+      // CORREÇÃO: Também remover editingProject se for o mesmo
+      if (editingProject && editingProject.id === projectId) {
+        setEditingProject(null);
+      }
+      
       alert('Projeto deletado com sucesso!');
       
     } catch (error) {
@@ -3836,7 +3890,7 @@ const loadMultipleProjects = () => {
         </Dialog>
       )}
 
-      {/* Dialog para Salvar Projeto */}
+      {/* Dialog para Salvar/Editar Projeto - ATUALIZADO */}
       <Dialog open={showProjectDialog} onOpenChange={(open) => {
         setShowProjectDialog(open);
         if (!open) {
@@ -3851,7 +3905,10 @@ const loadMultipleProjects = () => {
               {editingProject ? 'Atualizar Projeto' : 'Salvar Projeto'}
             </DialogTitle>
             <DialogDescription className="text-gray-400 text-sm">
-              {editingProject ? 'Atualize os dados do projeto' : 'Salve o traçado atual como um novo projeto'}
+              {editingProject ? 
+                `Atualize os dados do projeto "${editingProject.name}"` : 
+                'Salve o traçado atual como um novo projeto'
+              }
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
