@@ -47,7 +47,6 @@ export default function Auth({ onAuthSuccess }) {
   
   // Função para login com Google
 // CORREÇÃO: Login com Google melhorado
-// CORREÇÃO: Login com Google - URL de redirecionamento fixa
 const handleGoogleLogin = async () => {
   setGoogleLoading(true);
   setError(null);
@@ -64,8 +63,7 @@ const handleGoogleLogin = async () => {
           access_type: 'offline',
           prompt: 'consent',
         },
-        // CORREÇÃO CRÍTICA: Usar URL absoluta do Supabase
-        redirectTo: 'https://qinojuywharkofzugqbw.supabase.co/auth/v1/callback'
+        redirectTo: window.location.origin
       }
     });
     
@@ -83,8 +81,6 @@ const handleGoogleLogin = async () => {
       setError('O popup foi bloqueado. Permita popups para este site.');
     } else if (error.message.includes('configuration')) {
       setError('Configuração do Google OAuth não encontrada.');
-    } else if (error.message.includes('redirect_uri_mismatch')) {
-      setError('Erro de configuração. Entre em contato com o suporte.');
     } else {
       setError('Erro ao conectar com o Google. Tente novamente.');
     }
