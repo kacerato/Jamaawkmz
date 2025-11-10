@@ -67,6 +67,25 @@ const safeToFixed = (value, decimals = 2) => {
   return Number(value).toFixed(decimals);
 };
 
+// Função para formatar distância detalhada
+const formatDistanceDetailed = (distanceInMeters) => {
+  if (distanceInMeters === undefined || distanceInMeters === null || isNaN(distanceInMeters)) {
+    return "0 m";
+  }
+  
+  const distance = Number(distanceInMeters);
+  
+  if (distance < 1) {
+    return `${(distance * 100).toFixed(0)} cm`;
+  } else if (distance < 1000) {
+    return `${distance.toFixed(0)} m`;
+  } else if (distance < 10000) {
+    return `${(distance / 1000).toFixed(2)} km`;
+  } else {
+    return `${(distance / 1000).toFixed(1)} km`;
+  }
+};
+
 // Filtro Kalman para suavização GPS
 class KalmanFilter {
   constructor(R = 1, Q = 1, A = 1, B = 0, C = 1) {
@@ -1575,6 +1594,45 @@ function App() {
     }
   }
 
+  // Função para limpar todas as marcações
+  const handleClearAllMarkers = async () => {
+    if (!confirm('Tem certeza que deseja limpar todas as marcações? Esta ação não pode ser desfeita.')) {
+      return
+    }
+
+    try {
+      if (isOnline && user) {
+        const { error } = await supabase
+          .from('marcacoes')
+          .delete()
+          .eq('user_id', user.id)
+        
+        if (error && error.code !== '42P01') {
+          console.error('Erro ao limpar marcações:', error)
+          alert('Erro ao limpar marcações do servidor')
+          return
+        }
+      }
+
+      setMarkers([])
+      setFilteredMarkers([])
+      handleClearRoute()
+      
+      if (user) {
+        try {
+          await Preferences.remove({ key: `jamaaw_markers_${user.id}` })
+        } catch (e) {
+          localStorage.removeItem(`jamaaw_markers_${user.id}`)
+        }
+      }
+
+      alert('Todas as marcações foram removidas com sucesso!')
+    } catch (error) {
+      console.error('Erro ao limpar marcações:', error)
+      alert('Erro ao limpar marcações')
+    }
+  }
+
   // Função para exportar marcações como KML
   const handleExport = () => {
     if (markers.length === 0) {
@@ -1856,45 +1914,6 @@ function App() {
     setRouteCoordinates([])
     setDistanceResult(null)
     setSelectedForDistance([])
-  }
-
-  // Função para limpar todas as marcações
-  const handleClearAllMarkers = async () => {
-    if (!confirm('Tem certeza que deseja limpar todas as marcações? Esta ação não pode ser desfeita.')) {
-      return
-    }
-
-    try {
-      if (isOnline && user) {
-        const { error } = await supabase
-          .from('marcacoes')
-          .delete()
-          .eq('user_id', user.id)
-        
-        if (error && error.code !== '42P01') {
-          console.error('Erro ao limpar marcações:', error)
-          alert('Erro ao limpar marcações do servidor')
-          return
-        }
-      }
-
-      setMarkers([])
-      setFilteredMarkers([])
-      handleClearRoute()
-      
-      if (user) {
-        try {
-          await Preferences.remove({ key: `jamaaw_markers_${user.id}` })
-        } catch (e) {
-          localStorage.removeItem(`jamaaw_markers_${user.id}`)
-        }
-      }
-
-      alert('Todas as marcações foram removidas com sucesso!')
-    } catch (error) {
-      console.error('Erro ao limpar marcações:', error)
-      alert('Erro ao limpar marcações')
-    }
   }
 
   // ========== NOVAS FUNÇÕES PARA SELEÇÃO MÚLTIPLA ==========
@@ -2798,7 +2817,46 @@ function App() {
                       Exportar
                     </Button>
                   </div>
+
+                  {/* Botão para limpar marcações - apenas se houver marcações */}
+                  {markers.length > 0 && (
+                    <Button
+                      size="sm"
+                      className="w-full bg-red-500 hover:bg-red-600 text-white h-10 text-xs"
+                      onClick={handleClearImportedMarkers}
+                    >
+                      <X className="w-4 h-4 mr-1" />
+                      Limpar Marcações
+                    </Button>
+                  )}
                 </div>
+
+                {/* Seção de seleção múltipla */}
+                {selectedMarkers.length > 0 && (
+                  <div className="menu-section">
+                    <h3 className="menu-section-title">
+                      {selectedMarkers.length} Marcadores Selecionados
+                    </h3>
+                    <div className="space-y-2">
+                      <Button
+                        size="sm"
+                        className="w-full bg-cyan-500 hover:bg-cyan-600 text-white"
+                        onClick={() => setShowBatchBairroDialog(true)}
+                      >
+                        <MapPin className="w-4 h-4 mr-2" />
+                        Definir Bairro
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="w-full border-slate-600 text-gray-400 hover:text-white"
+                        onClick={() => setSelectedMarkers([])}
+                      >
+                        Limpar Seleção
+                      </Button>
+                    </div>
+                  </div>
+                )}
 
                 {/* Filtros */}
                 <div className="space-y-3">
@@ -3349,57 +3407,103 @@ function App() {
 
       {/* Diálogo de Projetos Carregados */}
       <Dialog open={showLoadedProjects} onOpenChange={setShowLoadedProjects}>
-        <DialogContent className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white border-slate-700/50 w-[95vw] max-w-md mx-auto shadow-2xl max-h-[80vh] overflow-hidden fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[10000]">
+        <DialogContent className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white border-slate-700/50 w-[95vw] max-w-2xl mx-auto shadow-2xl max-h-[80vh] overflow-hidden fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[10000]">
           <DialogHeader>
             <DialogTitle className="text-cyan-400 text-xl font-bold flex items-center gap-2">
               <Layers className="w-5 h-5" />
               Projetos Carregados ({loadedProjects.length})
             </DialogTitle>
             <DialogDescription className="text-gray-400 text-sm">
-              Gerencie os projetos exibidos no mapa
+              Projetos ativos no mapa - Clique para ver detalhes
             </DialogDescription>
           </DialogHeader>
           
           <div className="max-h-[60vh] overflow-y-auto custom-scrollbar">
-            <div className="space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-2">
               {loadedProjects.map(project => (
                 <div
                   key={project.id}
-                  className="flex items-center gap-4 p-4 bg-slate-800/50 rounded-lg border border-slate-700 hover:border-cyan-500/30 transition-all group"
+                  className="bg-slate-800 rounded-lg border border-slate-700 hover:border-cyan-500 transition-all group relative overflow-hidden"
                 >
+                  {/* Header do projeto */}
                   <div 
-                    className="w-4 h-4 rounded-full flex-shrink-0"
+                    className="h-2 w-full"
                     style={{ backgroundColor: project.color }}
                   ></div>
                   
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-white text-sm mb-1">{project.name}</h3>
-                    <div className="flex items-center gap-4 text-xs text-gray-400">
-                      <span>{project.points.length} pontos</span>
-                      <span>{safeToFixed(((project.totalDistance || project.total_distance) || 0) / 1000, 2)} km</span>
+                  <div className="p-4">
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-bold text-white text-lg mb-1 truncate">
+                          {project.name}
+                        </h3>
+                        <div className="flex items-center gap-2 text-sm text-gray-400">
+                          <span>{project.points.length} pontos</span>
+                          <span>•</span>
+                          <span>{project.trackingMode || project.tracking_mode || 'manual'}</span>
+                        </div>
+                      </div>
+                      
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => removeLoadedProject(project.id)}
+                        className="text-red-400 hover:text-red-300 hover:bg-red-500/20"
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+
+                    {/* Estatísticas principais */}
+                    <div className="grid grid-cols-3 gap-3 mb-3">
+                      <div className="text-center">
+                        <div className="text-cyan-400 font-bold text-xl">
+                          {project.points.length}
+                        </div>
+                        <div className="text-gray-400 text-xs">Pontos</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-green-400 font-bold text-xl">
+                          {formatDistanceDetailed(project.totalDistance || project.total_distance || 0)}
+                        </div>
+                        <div className="text-gray-400 text-xs">Distância</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-purple-400 font-bold text-xl">
+                          {project.bairro || 'Vários'}
+                        </div>
+                        <div className="text-gray-400 text-xs">Bairro</div>
+                      </div>
+                    </div>
+
+                    {/* Ações rápidas */}
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          setPointPopupInfo({ 
+                            project, 
+                            showOverview: true 
+                          });
+                          setShowLoadedProjects(false);
+                        }}
+                        className="flex-1 bg-cyan-500 hover:bg-cyan-600 text-white text-xs"
+                      >
+                        <Info className="w-3 h-3 mr-1" />
+                        Detalhes
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => exportProjectAsKML(project)}
+                        className="border-green-500 text-green-400 hover:bg-green-500/20 text-xs"
+                      >
+                        <Download className="w-3 h-3" />
+                      </Button>
                     </div>
                   </div>
-                  
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => removeLoadedProject(project.id)}
-                    className="border-red-500/50 text-red-400 hover:bg-red-500/20"
-                  >
-                    <X className="w-3 h-3" />
-                  </Button>
                 </div>
               ))}
-              
-              {loadedProjects.length === 0 && (
-                <div className="text-center py-12">
-                  <Layers className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-                  <h3 className="text-lg font-semibold text-gray-400 mb-2">Nenhum projeto carregado</h3>
-                  <p className="text-gray-500 text-sm">
-                    Carregue projetos para vê-los no mapa
-                  </p>
-                </div>
-              )}
             </div>
           </div>
           
@@ -3426,7 +3530,7 @@ function App() {
 
       {/* Diálogo para Definir Bairro em Massa */}
       <Dialog open={showBatchBairroDialog} onOpenChange={setShowBatchBairroDialog}>
-        <DialogContent className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white border-slate-700/50 max-w-md mx-auto">
+        <DialogContent className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white border-slate-700/50 max-w-md mx-auto shadow-2xl">
           <DialogHeader>
             <DialogTitle className="text-cyan-400 text-xl font-bold">
               Definir Bairro para {selectedMarkers.length} Marcadores
@@ -3537,7 +3641,7 @@ function App() {
             </DialogDescription>
           </DialogHeader>
           {editingMarker && (
-            <div className="space-y-4 py-4">
+            <div className="space-y-4">
               <div className="grid grid-cols-1 gap-4">
                 <div>
                   <Label className="text-gray-300 font-medium">Nome</Label>

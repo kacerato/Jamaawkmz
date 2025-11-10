@@ -211,6 +211,21 @@ const ControlesRastreamento = ({
           </div>
         )}
       </div> 
+      // Adicionar no componente ControlesRastreamento, antes do fechamento do último div:
+{selectedMarkers.length > 0 && (
+  <div className="mt-2 p-2 bg-cyan-500/10 border border-cyan-500/20 rounded-lg">
+    <div className="flex items-center justify-between text-xs">
+      <span className="text-cyan-400">{selectedMarkers.length} marcadores selecionados</span>
+      <Button
+        size="sm"
+        onClick={() => setSelectedMarkers([])}
+        className="h-5 text-xs bg-cyan-500 hover:bg-cyan-600 text-white"
+      >
+        Limpar
+      </Button>
+    </div>
+  </div>
+)}
       </div>
   );
 };
