@@ -203,6 +203,18 @@ const getUniqueProjectName = (baseName, existingProjects) => {
   return newName;
 };
 
+// Função para calcular distância total de todos os projetos carregados
+const calculateTotalDistanceAllProjects = (projects) => {
+  if (!projects || projects.length === 0) return 0;
+  
+  let total = 0;
+  projects.forEach(project => {
+    total += project.totalDistance || project.total_distance || 0;
+  });
+  
+  return total;
+};
+
 function App() {
   const mapboxToken = 'pk.eyJ1Ijoia2FjZXJhdG8iLCJhIjoiY21oZG1nNnViMDRybjJub2VvZHV1aHh3aiJ9.l7tCaIPEYqcqDI8_aScm7Q';
   const mapRef = useRef();
@@ -288,6 +300,9 @@ function App() {
   // Filtros Kalman para suavização
   const kalmanLatRef = useRef(new KalmanFilter(0.1, 0.1));
   const kalmanLngRef = useRef(new KalmanFilter(0.1, 0.1));
+
+  // Calcular a distância total de todos os projetos carregados
+  const totalDistanceAllProjects = calculateTotalDistanceAllProjects(loadedProjects);
 
   // CORREÇÃO: Função de logout corrigida
   const handleLogout = async () => {
@@ -1763,25 +1778,6 @@ function App() {
     }
   };
 
-  // Função para formatar distância de forma detalhada
-  const formatDistance = (distanceInMeters) => {
-    if (distanceInMeters === undefined || distanceInMeters === null || isNaN(distanceInMeters)) {
-      return "0 m";
-    }
-    
-    const distance = Number(distanceInMeters);
-    
-    if (distance < 1) {
-      return `${(distance * 100).toFixed(0)} cm`;
-    } else if (distance < 1000) {
-      return `${distance.toFixed(0)} m`;
-    } else if (distance < 10000) {
-      return `${(distance / 1000).toFixed(2)} km`;
-    } else {
-      return `${(distance / 1000).toFixed(1)} km`;
-    }
-  };
-
   // Função para calcular distância entre dois pontos
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
     const R = 6371e3
@@ -2980,9 +2976,9 @@ function App() {
                     </div>
                     <div className="stat-item">
                       <div className="stat-value">
-                        {safeToFixed(totalDistance / 1000, 2)}
+                        {formatDistanceDetailed(totalDistanceAllProjects)}
                       </div>
-                      <div className="stat-label">Km Total</div>
+                      <div className="stat-label">Distância Total</div>
                     </div>
                   </div>
                 </div>
@@ -3070,8 +3066,8 @@ function App() {
         </Button>
       </div>
 
-      {/* Botão de Seleção Múltipla */}
-      <div className="absolute bottom-32 right-4 z-10">
+      {/* Botão de Seleção Múltipla - POSIÇÃO CORRIGIDA */}
+      <div className="absolute bottom-40 right-4 z-10">
         <Button
           size="icon"
           className="bg-white/80 backdrop-blur-sm hover:bg-white text-slate-900 shadow-xl border border-slate-200/50 transition-all-smooth hover-lift rounded-full w-12 h-12"
@@ -3276,7 +3272,7 @@ function App() {
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div className="text-center p-2 bg-slate-700/30 rounded">
                   <div className="text-cyan-400 font-bold text-sm">
-                    {formatDistance(currentProject.totalDistance || currentProject.total_distance || 0)}
+                    {formatDistanceDetailed(currentProject.totalDistance || currentProject.total_distance || 0)}
                   </div>
                   <div className="text-gray-400">Distância</div>
                 </div>
@@ -3590,6 +3586,21 @@ function App() {
                 </div>
               ))}
             </div>
+
+            {/* Distância total dos projetos carregados */}
+            {loadedProjects.length > 0 && (
+              <div className="mt-4 p-3 bg-slate-800/50 rounded-lg border border-slate-700">
+                <div className="flex items-center justify-between">
+                  <span className="text-cyan-400 text-sm font-medium">Distância Total:</span>
+                  <span className="text-white font-bold text-lg">
+                    {formatDistanceDetailed(totalDistanceAllProjects)}
+                  </span>
+                </div>
+                <div className="text-xs text-gray-400 mt-1">
+                  Soma de todos os projetos carregados
+                </div>
+              </div>
+            )}
           </div>
           
           <div className="flex gap-2 pt-4 border-t border-slate-700/50">

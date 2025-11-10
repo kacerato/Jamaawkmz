@@ -22,13 +22,37 @@ const ControlesRastreamento = ({
   handleRemovePoints,
   showProjectDialog,
   selectedMarkers = [],
-  setSelectedMarkers
+  setSelectedMarkers,
+  formatDistanceDetailed
 }) => {
   const safeManualPoints = manualPoints || [];
   const safeTotalDistance = totalDistance || 0;
   const safeTrackingMode = trackingMode || 'manual';
   const safeGpsAccuracy = gpsAccuracy || 0;
   const safeSpeed = speed || 0;
+  
+  // Função para formatar distância detalhada (fallback caso não seja passada como prop)
+  const formatDistance = (distanceInMeters) => {
+    if (formatDistanceDetailed) {
+      return formatDistanceDetailed(distanceInMeters);
+    }
+    
+    if (distanceInMeters === undefined || distanceInMeters === null || isNaN(distanceInMeters)) {
+      return "0 m";
+    }
+    
+    const distance = Number(distanceInMeters);
+    
+    if (distance < 1) {
+      return `${(distance * 100).toFixed(0)} cm`;
+    } else if (distance < 1000) {
+      return `${distance.toFixed(0)} m`;
+    } else if (distance < 10000) {
+      return `${(distance / 1000).toFixed(2)} km`;
+    } else {
+      return `${(distance / 1000).toFixed(1)} km`;
+    }
+  };
   
   return (
     <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 z-50 animate-slide-in-bottom">
@@ -44,10 +68,7 @@ const ControlesRastreamento = ({
           </div>
           <div className="text-right">
             <p className="text-white font-bold text-lg">
-              {safeTotalDistance < 1000 ? 
-                `${Math.round(safeTotalDistance)}m` : 
-                `${(safeTotalDistance / 1000).toFixed(1)}km`
-              }
+              {formatDistance(safeTotalDistance)}
             </p>
           </div>
         </div>
@@ -63,6 +84,7 @@ const ControlesRastreamento = ({
                 ? 'bg-green-500 hover:bg-green-600 text-white' 
                 : 'bg-yellow-500 hover:bg-yellow-600 text-white'
             }`}
+            title={paused ? 'Continuar rastreamento' : 'Pausar rastreamento'}
           >
             {paused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
           </Button>
@@ -199,6 +221,7 @@ const ControlesRastreamento = ({
                 onClick={() => setShowProjectDetails(true)}
                 size="sm"
                 className="flex-1 text-xs h-7 bg-cyan-500 hover:bg-cyan-600 text-white"
+                title="Ver detalhes do projeto"
               >
                 Detalhes
               </Button>
@@ -206,6 +229,7 @@ const ControlesRastreamento = ({
                 onClick={handleRemovePoints}
                 size="sm"
                 className="flex-1 text-xs h-7 bg-red-500 hover:bg-red-600 text-white"
+                title="Limpar pontos do projeto"
               >
                 Limpar
               </Button>
@@ -222,6 +246,7 @@ const ControlesRastreamento = ({
                 size="sm"
                 onClick={() => setSelectedMarkers && setSelectedMarkers([])}
                 className="h-5 text-xs bg-cyan-500 hover:bg-cyan-600 text-white"
+                title="Limpar seleção"
               >
                 <Layers className="w-3 h-3 mr-1" />
                 Limpar
