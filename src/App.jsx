@@ -22,6 +22,8 @@ import ResumoProjeto from './components/ResumoProjeto'
 import ControlesRastreamento from './components/ControlesRastreamento'
 import ModernPopup from './components/ModernPopup'
 import ImportProgressPopup from './components/ImportProgressPopup'
+import MultipleSelectionPopup from './components/MultipleSelectionPopup'
+import BairroDetectionService from './components/BairroDetectionService'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import './App.css'
 
@@ -48,13 +50,13 @@ const mapStyles = {
   outdoors: { name: 'Ar Livre', url: 'mapbox://styles/mapbox/outdoors-v11' },
 };
 
-// Função para gerar cores aleatórias
+// Função para gerar cores aleatórias MAIS ESCURAS
 const generateRandomColor = () => {
   const colors = [
-    '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', 
-    '#DDA0DD', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9',
-    '#F8B195', '#F67280', '#C06C84', '#6C5B7B', '#355C7D',
-    '#99B898', '#FECEAB', '#FF847C', '#E84A5F', '#2A363B'
+    '#1e3a8a', '#3730a3', '#5b21b6', '#7c2d12', '#831843',
+    '#0f766e', '#1e40af', '#334155', '#475569', '#6b21a8',
+    '#86198f', '#9d174d', '#be185d', '#7e22ce', '#6d28d9',
+    '#4338ca', '#374151', '#4b5563', '#1f2937', '#111827'
   ];
   return colors[Math.floor(Math.random() * colors.length)];
 };
@@ -281,6 +283,7 @@ function App() {
   const [selectedMarkers, setSelectedMarkers] = useState([]);
   const [showBatchBairroDialog, setShowBatchBairroDialog] = useState(false);
   const [selectedProjects, setSelectedProjects] = useState([]);
+  const [showMultipleSelection, setShowMultipleSelection] = useState(false);
 
   // Filtros Kalman para suavização
   const kalmanLatRef = useRef(new KalmanFilter(0.1, 0.1));
@@ -317,6 +320,7 @@ function App() {
       setProjects([]);
       setManualPoints([]);
       setCurrentProject(null);
+      setSelectedMarkers([]);
       
       console.log('Logout concluído com sucesso');
       
@@ -326,6 +330,7 @@ function App() {
       setUser(null);
       setMarkers([]);
       setProjects([]);
+      setSelectedMarkers([]);
     }
   };
 
@@ -549,7 +554,7 @@ function App() {
   };
 
   // CORREÇÃO: Função loadProject para evitar conflitos
-  const loadProject = (project) => {
+  const loadProject = async (project) => {
     if (!canLoadProjects()) {
       alert('Não é possível carregar projetos durante o rastreamento ativo. Pare o rastreamento atual primeiro.');
       return;
@@ -573,9 +578,23 @@ function App() {
         setTotalDistance(0);
       }
     } else {
+      // Detectar bairro automaticamente se for "Vários"
+      let bairroDetectado = project.bairro;
+      if (project.bairro === 'Vários' || !project.bairro) {
+        try {
+          setImportCurrentAction('Detectando bairro...');
+          bairroDetectado = await BairroDetectionService.detectBairroForProject(project.points);
+          console.log('Bairro detectado:', bairroDetectado);
+        } catch (error) {
+          console.warn('Não foi possível detectar o bairro:', error);
+          bairroDetectado = 'Vários';
+        }
+      }
+
       // Adicionar projeto carregado
       const projectWithColor = {
         ...project,
+        bairro: bairroDetectado,
         color: project.color || generateRandomColor(),
         points: project.points.map(point => ({
           ...point,
@@ -693,6 +712,7 @@ function App() {
           setMarkers([])
           setProjects([])
           setLoadedProjects([])
+          setSelectedMarkers([])
         }
       } else if (event === 'SIGNED_IN') {
         setUser(session.user)
@@ -1920,6 +1940,15 @@ function App() {
 
   // Função para alternar seleção de marcador
   const toggleMarkerSelection = (marker) => {
+    if (marker === 'all') {
+      if (selectedMarkers.length === markers.length) {
+        setSelectedMarkers([]);
+      } else {
+        setSelectedMarkers([...markers]);
+      }
+      return;
+    }
+    
     setSelectedMarkers(prev => {
       const exists = prev.find(m => m.id === marker.id)
       if (exists) {
@@ -1951,6 +1980,7 @@ function App() {
 
       setSelectedMarkers([]);
       setShowBatchBairroDialog(false);
+      setShowMultipleSelection(false);
       alert(`${selectedMarkers.length} marcadores atualizados para o bairro ${bairro}`);
     } catch (error) {
       console.error('Erro ao atualizar marcadores em massa:', error);
@@ -2663,8 +2693,8 @@ function App() {
             </Marker>
           )}
 
-          {/* Popup para pontos dos projetos */}
-          {pointPopupInfo && (
+          {/* Popup para pontos dos projetos - CORRIGIDO */}
+          {pointPopupInfo && pointPopupInfo.point && (
             <Popup
               longitude={pointPopupInfo.point.lng}
               latitude={pointPopupInfo.point.lat}
@@ -2686,10 +2716,10 @@ function App() {
                     Ponto <span className="text-white font-semibold">{pointPopupInfo.pointNumber}</span> de {pointPopupInfo.totalPoints}
                   </p>
                   <p className="text-gray-400">
-                    Lat: {pointPopupInfo.point.lat.toFixed(6)}
+                    Lat: {pointPopupInfo.point.lat?.toFixed(6) || 'N/A'}
                   </p>
                   <p className="text-gray-400">
-                    Lng: {pointPopupInfo.point.lng.toFixed(6)}
+                    Lng: {pointPopupInfo.point.lng?.toFixed(6) || 'N/A'}
                   </p>
                 </div>
                 <button
@@ -2841,10 +2871,10 @@ function App() {
                       <Button
                         size="sm"
                         className="w-full bg-cyan-500 hover:bg-cyan-600 text-white"
-                        onClick={() => setShowBatchBairroDialog(true)}
+                        onClick={() => setShowMultipleSelection(true)}
                       >
                         <MapPin className="w-4 h-4 mr-2" />
-                        Definir Bairro
+                        Gerenciar Seleção
                       </Button>
                       <Button
                         size="sm"
@@ -3007,6 +3037,29 @@ function App() {
           <Star className="w-5 h-5" />
         </Button>
       </div>
+
+      {/* Botão de Seleção Múltipla */}
+      <div className="absolute bottom-32 right-4 z-10">
+        <Button
+          size="icon"
+          className="bg-white/80 backdrop-blur-sm hover:bg-white text-slate-900 shadow-xl border border-slate-200/50 transition-all-smooth hover-lift rounded-full w-12 h-12"
+          onClick={() => setShowMultipleSelection(true)}
+          title="Seleção Múltipla"
+        >
+          <Layers className="w-6 h-6" />
+        </Button>
+      </div>
+
+      {/* Popup de Seleção Múltipla */}
+      <MultipleSelectionPopup
+        isOpen={showMultipleSelection}
+        onClose={() => setShowMultipleSelection(false)}
+        markers={markers}
+        selectedMarkers={selectedMarkers}
+        onToggleMarker={toggleMarkerSelection}
+        onBatchBairroUpdate={handleBatchBairroUpdate}
+        bairros={bairros}
+      />
 
       {/* Popup da Régua Manual */}
       {!tracking && showRulerPopup && (
@@ -3875,6 +3928,8 @@ function App() {
           speed={speed}
           handleRemovePoints={handleRemovePoints}
           showProjectDialog={showProjectDialog}
+          selectedMarkers={selectedMarkers}
+          setSelectedMarkers={setSelectedMarkers}
         />
       )}
 

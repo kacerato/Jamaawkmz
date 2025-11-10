@@ -1,6 +1,6 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
-import { Play, Pause, Square, MapPin, Save, Navigation } from 'lucide-react';
+import { Play, Pause, Square, MapPin, Save, Navigation, Layers } from 'lucide-react';
 
 const ControlesRastreamento = ({
   tracking,
@@ -21,6 +21,8 @@ const ControlesRastreamento = ({
   speed,
   handleRemovePoints,
   showProjectDialog,
+  selectedMarkers = [],
+  setSelectedMarkers
 }) => {
   const safeManualPoints = manualPoints || [];
   const safeTotalDistance = totalDistance || 0;
@@ -210,23 +212,24 @@ const ControlesRastreamento = ({
             </div>
           </div>
         )}
-      </div> 
-      // Adicionar no componente ControlesRastreamento, antes do fechamento do último div:
-{selectedMarkers.length > 0 && (
-  <div className="mt-2 p-2 bg-cyan-500/10 border border-cyan-500/20 rounded-lg">
-    <div className="flex items-center justify-between text-xs">
-      <span className="text-cyan-400">{selectedMarkers.length} marcadores selecionados</span>
-      <Button
-        size="sm"
-        onClick={() => setSelectedMarkers([])}
-        className="h-5 text-xs bg-cyan-500 hover:bg-cyan-600 text-white"
-      >
-        Limpar
-      </Button>
-    </div>
-  </div>
-)}
-      </div>
+
+        {/* Seção de seleção múltipla - CORRIGIDA */}
+        {selectedMarkers && selectedMarkers.length > 0 && (
+          <div className="mt-2 p-2 bg-cyan-500/10 border border-cyan-500/20 rounded-lg">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-cyan-400">{selectedMarkers.length} marcadores selecionados</span>
+              <Button
+                size="sm"
+                onClick={() => setSelectedMarkers && setSelectedMarkers([])}
+                className="h-5 text-xs bg-cyan-500 hover:bg-cyan-600 text-white"
+              >
+                <Layers className="w-3 h-3 mr-1" />
+                Limpar
+              </Button>
+            </div>
+          </div>
+        )}
+      </div> </div>
   );
 };
 
