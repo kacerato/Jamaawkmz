@@ -609,18 +609,49 @@ function App() {
     setShowProjectsList(false);
   };
   
-  // FUNÇÃO PARA CARREGAR MÚLTIPLOS PROJETOS
-  const loadMultipleProjects = () => {
-    if (!canLoadProjects()) {
-      alert('Não é possível carregar projetos durante o rastreamento ativo. Pare o rastreamento atual primeiro.');
-      return;
-    }
-
-    if (selectedProjects.length === 0) {
-      alert('Selecione pelo menos um projeto para carregar');
-      return;
-    }
-
+  const loadMultipleProjects = async () => {
+  if (!canLoadProjects()) {
+    alert('Não é possível carregar projetos durante o rastreamento ativo. Pare o rastreamento atual primeiro.');
+    return;
+  }
+  
+  if (selectedProjects.length === 0) {
+    alert('Selecione pelo menos um projeto para carregar');
+    return;
+  }
+  
+  try {
+    setImportCurrentAction('Detectando bairros dos projetos...');
+    
+    // CORREÇÃO: Usa a nova função para detectar bairro de múltiplos projetos
+    const detectedBairro = await BairroDetectionService.detectBairroForMultipleProjects(selectedProjects);
+    
+    const projectsWithColors = selectedProjects.map(project => ({
+      ...project,
+      color: project.color || generateRandomColor(),
+      bairro: detectedBairro, // Usa o bairro detectado para todos os projetos
+      points: project.points.map(point => ({
+        ...point,
+        projectId: project.id,
+        projectName: project.name
+      }))
+    }));
+    
+    setLoadedProjects(prev => {
+      const newProjects = projectsWithColors.filter(
+        newProject => !prev.some(existing => existing.id === newProject.id)
+      );
+      return [...prev, ...newProjects];
+    });
+    
+    setSelectedProjects([]);
+    setShowProjectsList(false);
+    
+    console.log(`✅ ${selectedProjects.length} projetos carregados com bairro: ${detectedBairro}`);
+    
+  } catch (error) {
+    console.error('Erro ao carregar múltiplos projetos:', error);
+    // Fallback: carrega sem detecção de bairro
     const projectsWithColors = selectedProjects.map(project => ({
       ...project,
       color: project.color || generateRandomColor(),
@@ -630,17 +661,18 @@ function App() {
         projectName: project.name
       }))
     }));
-
+    
     setLoadedProjects(prev => {
       const newProjects = projectsWithColors.filter(
         newProject => !prev.some(existing => existing.id === newProject.id)
       );
       return [...prev, ...newProjects];
     });
-
+    
     setSelectedProjects([]);
     setShowProjectsList(false);
-  };
+  }
+};
 
   // CORREÇÃO: Função startNewProject para limpar tudo
   const startNewProject = () => {

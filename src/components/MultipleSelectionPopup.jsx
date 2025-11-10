@@ -1,4 +1,3 @@
-// MultipleSelectionPopup.jsx
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -16,7 +15,7 @@ const MultipleSelectionPopup = ({
   if (!isOpen) return null;
   
   return (
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+    <div className="fixed inset-0 z-[10000] flex items-start justify-center pt-16 p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
       <div className="w-full max-w-md mx-auto animate-scale-in">
         <Card className="bg-gradient-to-br from-slate-800 to-slate-700 border-slate-600/50 shadow-2xl">
           <CardHeader className="pb-3">
