@@ -299,6 +299,7 @@ function App() {
 
   // Novos estados para modo régua
   const [selectedContinuePoint, setSelectedContinuePoint] = useState(null);
+  const [selectingContinuePoint, setSelectingContinuePoint] = useState(false);
 
   // Filtros Kalman para suavização
   const kalmanLatRef = useRef(new KalmanFilter(0.1, 0.1));
@@ -345,11 +346,11 @@ function App() {
   }
 
   // Função para continuar a partir do ponto selecionado
-  const continueFromSelectedPoint = () => {
-    if (!selectedContinuePoint) return
+  const continueFromSelectedPoint = (point = selectedContinuePoint) => {
+    if (!point) return
   
     // Encontrar o índice do ponto na lista
-    const pointIndex = manualPoints.findIndex(p => p.id === selectedContinuePoint.id)
+    const pointIndex = manualPoints.findIndex(p => p.id === point.id)
     if (pointIndex === -1) return
   
     // Truncar a lista de pontos até o ponto selecionado (inclusive)
@@ -367,6 +368,7 @@ function App() {
     setManualPoints(truncatedPoints)
     setTotalDistance(newTotalDistance)
     setSelectedContinuePoint(null)
+    setSelectingContinuePoint(false)
   
     // Reiniciar o rastreamento a partir desse ponto
     setTracking(true)
@@ -379,6 +381,7 @@ function App() {
   // Função para cancelar a seleção de ponto para continuar
   const cancelContinueSelection = () => {
     setSelectedContinuePoint(null)
+    setSelectingContinuePoint(false)
   }
 
   // Função para adicionar ponto no modo régua (quando clica no mapa)
@@ -2355,6 +2358,8 @@ function App() {
       setGpsAccuracy(null);
       setSpeed(0);
       setLastAutoPointTime(0);
+      setSelectingContinuePoint(false);
+      setSelectedContinuePoint(null);
       
       console.log('✅ Rastreamento parado e estados resetados');
     }
@@ -2366,6 +2371,8 @@ function App() {
     setTotalDistance(0)
     setCurrentProject(null)
     setLastAutoPointTime(0)
+    setSelectingContinuePoint(false)
+    setSelectedContinuePoint(null)
   }
 
   // Função para remover pontos de um projeto carregado
@@ -2376,6 +2383,8 @@ function App() {
       setCurrentProject(null);
       setShowProjectDetails(false);
       setProjectName('');
+      setSelectingContinuePoint(false);
+      setSelectedContinuePoint(null);
       console.log('✅ Projeto removido após limpeza de pontos');
     }
   };
@@ -2571,6 +2580,24 @@ function App() {
           mapStyle={mapStyles[mapStyle].url}
           mapboxAccessToken={mapboxToken}
           onClick={(e) => {
+            // Se estiver no modo seleção de ponto para continuar
+            if (selectingContinuePoint) {
+              const { lng, lat } = e.lngLat;
+              
+              // Encontrar o ponto mais próximo do clique
+              const clickedPoint = manualPoints.find(point => 
+                calculateDistance(lat, lng, point.lat, point.lng) < 10 // 10 metros de tolerância
+              );
+              
+              if (clickedPoint) {
+                continueFromSelectedPoint(clickedPoint);
+              } else {
+                // Se clicou longe de um ponto, cancelar seleção
+                setSelectingContinuePoint(false);
+              }
+              return;
+            }
+            
             // Se estiver no modo régua e rastreando, adiciona ponto
             if (tracking && trackingMode === 'ruler' && !paused) {
               const { lng, lat } = e.lngLat
@@ -2655,8 +2682,28 @@ function App() {
           {manualPoints.length > 0 && (
             <>
               {manualPoints.map((point, index) => (
-                <Marker key={point.id} longitude={point.lng} latitude={point.lat}>
-                  <div className="ruler-point-marker">{index + 1}</div>
+                <Marker 
+                  key={point.id} 
+                  longitude={point.lng} 
+                  latitude={point.lat}
+                  onClick={(e) => {
+                    e.originalEvent.stopPropagation();
+                    // Se estiver no modo seleção, selecionar este ponto para continuar
+                    if (selectingContinuePoint) {
+                      continueFromSelectedPoint(point);
+                    }
+                  }}
+                >
+                  <div 
+                    className={`ruler-point-marker ${selectedContinuePoint?.id === point.id ? 'ruler-point-selected' : ''}`}
+                    style={{ 
+                      backgroundColor: selectedContinuePoint?.id === point.id ? '#8B5CF6' : '#4b5563',
+                      borderColor: '#ffffff',
+                      cursor: selectingContinuePoint ? 'pointer' : 'default'
+                    }}
+                  >
+                    {index + 1}
+                  </div>
                 </Marker>
               ))}
               <Source id="manual-route" type="geojson" data={{
@@ -2744,6 +2791,16 @@ function App() {
                 </button>
               </div>
             </Popup>
+          )}
+
+          {/* Overlay de instrução quando estiver selecionando ponto */}
+          {selectingContinuePoint && (
+            <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 bg-cyan-500 text-white px-4 py-2 rounded-lg shadow-lg animate-pulse">
+              <div className="flex items-center gap-2">
+                <MousePointer className="w-4 h-4" />
+                <span className="text-sm font-medium">Clique em qualquer ponto do traçado para continuar a partir dele</span>
+              </div>
+            </div>
           )}
         </Map>
       </div>
@@ -3021,6 +3078,9 @@ function App() {
             {tracking && (
               <span className="text-xs text-green-400 ml-2 bg-green-500/20 px-2 py-0.5 rounded-full">Rastreando</span>
             )}
+            {selectingContinuePoint && (
+              <span className="text-xs text-purple-400 ml-2 bg-purple-500/20 px-2 py-0.5 rounded-full">Selecionando Ponto</span>
+            )}
           </div>
         </div>
 
@@ -3175,19 +3235,15 @@ function App() {
                     </Button>
                     <Button
                       onClick={() => {
-                        if (manualPoints.length > 0) {
-                          selectPointToContinue(manualPoints[manualPoints.length - 1])
-                        }
+                        setSelectingContinuePoint(true);
+                        setShowRulerPopup(false);
                       }}
                       className="flex-1 bg-purple-500 hover:bg-purple-600 text-white text-sm"
                     >
-                      <Navigation className="w-4 h-4 mr-1" />
-                      Continuar
+                      <MousePointer className="w-4 h-4 mr-1" />
+                      Selecionar Ponto
                     </Button>
                   </div>
-                  <p className="text-xs text-gray-400 text-center">
-                    Clique no mapa para adicionar pontos
-                  </p>
                 </div>
               )}
 
@@ -3255,48 +3311,8 @@ function App() {
         </div>
       )}
 
-      {/* Popup para selecionar ponto para continuar */}
-      {selectedContinuePoint && (
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <Card className="bg-gradient-to-br from-slate-800 to-slate-700 border-slate-600/50 shadow-2xl text-white w-80">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg font-bold text-white flex items-center gap-2">
-                <Navigation className="w-5 h-5 text-cyan-400" />
-                Continuar a Partir do Ponto
-              </CardTitle>
-              <p className="text-gray-400 text-sm">
-                Deseja continuar o rastreamento a partir deste ponto?
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="bg-slate-700/30 rounded-lg p-3">
-                <p className="text-white text-sm">
-                  Ponto selecionado: #{manualPoints.findIndex(p => p.id === selectedContinuePoint.id) + 1}
-                </p>
-                <p className="text-gray-400 text-xs">
-                  Lat: {selectedContinuePoint.lat.toFixed(6)}<br/>
-                  Lng: {selectedContinuePoint.lng.toFixed(6)}
-                </p>
-              </div>
-              
-              <div className="flex gap-2">
-                <Button
-                  onClick={cancelContinueSelection}
-                  className="flex-1 bg-gray-500 hover:bg-gray-600 text-white"
-                >
-                  Cancelar
-                </Button>
-                <Button
-                  onClick={continueFromSelectedPoint}
-                  className="flex-1 bg-green-500 hover:bg-green-600 text-white"
-                >
-                  Continuar
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+      {/* Popup para selecionar ponto para continuar - REMOVIDO */}
+      {/* O sistema agora usa seleção direta no mapa */}
 
       {/* Popup de Detalhes do Projeto */}
       {showProjectDetails && currentProject && (
@@ -4037,6 +4053,11 @@ function App() {
           addRulerPoint={addRulerPoint}
           selectPointToContinue={selectPointToContinue}
           formatDistanceDetailed={formatDistanceDetailed}
+          // Novas props para seleção de ponto
+          selectingContinuePoint={selectingContinuePoint}
+          setSelectingContinuePoint={setSelectingContinuePoint}
+          continueFromSelectedPoint={continueFromSelectedPoint}
+          cancelContinueSelection={cancelContinueSelection}
         />
       )}
 

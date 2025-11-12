@@ -27,7 +27,12 @@ const ControlesRastreamento = ({
   // Novas props para o modo régua
   undoLastPoint,
   addRulerPoint,
-  selectPointToContinue
+  selectPointToContinue,
+  // Novas props para seleção de ponto
+  selectingContinuePoint,
+  setSelectingContinuePoint,
+  continueFromSelectedPoint,
+  cancelContinueSelection
 }) => {
   const safeManualPoints = manualPoints || [];
   const safeTotalDistance = totalDistance || 0;
@@ -139,14 +144,22 @@ const ControlesRastreamento = ({
           ) : (
             <Button
               onClick={() => {
-                if (safeManualPoints.length > 0) {
-                  selectPointToContinue(safeManualPoints[safeManualPoints.length - 1]);
+                if (selectingContinuePoint) {
+                  // Cancelar seleção se já estiver selecionando
+                  setSelectingContinuePoint(false);
+                  cancelContinueSelection && cancelContinueSelection();
+                } else {
+                  // Iniciar modo de seleção
+                  setSelectingContinuePoint(true);
                 }
               }}
-              disabled={safeManualPoints.length === 0}
               size="sm"
-              className="h-9 tracking-button bg-purple-500 hover:bg-purple-600 text-white"
-              title="Selecionar ponto para continuar"
+              className={`h-9 tracking-button ${
+                selectingContinuePoint 
+                  ? 'bg-purple-600 text-white' 
+                  : 'bg-purple-500 hover:bg-purple-600 text-white'
+              }`}
+              title={selectingContinuePoint ? "Cancelar seleção de ponto" : "Selecionar ponto para continuar"}
             >
               <MousePointer className="w-4 h-4" />
             </Button>
@@ -167,9 +180,13 @@ const ControlesRastreamento = ({
         <div className="flex items-center justify-between text-xs text-gray-300">
           <div className="flex items-center gap-2">
             <div className={`w-1.5 h-1.5 rounded-full ${
-              safeTrackingMode === 'manual' && snappingEnabled ? 'bg-green-500 animate-pulse' : 'bg-gray-500'
+              safeTrackingMode === 'manual' && snappingEnabled ? 'bg-green-500 animate-pulse' : 
+              selectingContinuePoint ? 'bg-purple-500 animate-pulse' : 'bg-gray-500'
             }`}></div>
-            <span>{safeTrackingMode === 'manual' ? 'Manual' : 'Régua'}</span>
+            <span>
+              {selectingContinuePoint ? 'Selecionando...' : 
+               safeTrackingMode === 'manual' ? 'Manual' : 'Régua'}
+            </span>
             {currentProject && (
               <span className="text-cyan-400 bg-cyan-500/20 px-1.5 py-0.5 rounded text-[10px]">
                 {currentProject.name}
@@ -195,28 +212,20 @@ const ControlesRastreamento = ({
                 {Math.round(safeSpeed * 3.6)}km/h
               </span>
             )}
-            {safeTrackingMode === 'ruler' && (
+            {safeTrackingMode === 'ruler' && !selectingContinuePoint && (
               <span className="text-green-400" title="Modo Régua Ativo">
                 Clique no mapa
+              </span>
+            )}
+            {selectingContinuePoint && (
+              <span className="text-purple-400 animate-pulse" title="Selecionando ponto">
+                Clique em um ponto
               </span>
             )}
           </div>
         </div>
 
-        {/* Instruções específicas do modo Régua */}
-        {safeTrackingMode === 'ruler' && !paused && (
-          <div className="mt-2 p-2 bg-green-500/10 border border-green-500/20 rounded-lg">
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-green-400">Modo Régua Ativo</span>
-              <span className="text-green-300">
-                Clique no mapa para adicionar pontos
-              </span>
-            </div>
-            <div className="text-[10px] text-green-300 mt-1">
-              Use "Voltar Ponto" para corrigir ou "Selecionar" para continuar de um ponto específico
-            </div>
-          </div>
-        )}
+        {/* REMOVIDO: Seção de instruções desnecessárias do modo Régua */}
 
         {/* Indicador de qualidade do GPS - APENAS NO MODO MANUAL */}
         {safeTrackingMode === 'manual' && safeGpsAccuracy > 0 && (
@@ -298,6 +307,18 @@ const ControlesRastreamento = ({
               <Save className="w-4 h-4 mr-1" />
               Salvar Projeto
             </Button>
+          </div>
+        )}
+
+        {/* Indicador de modo de seleção ativo */}
+        {selectingContinuePoint && (
+          <div className="mt-2 p-2 bg-purple-500/10 border border-purple-500/20 rounded-lg">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-purple-400 animate-pulse">Modo Seleção Ativo</span>
+              <span className="text-purple-300 text-[10px]">
+                Clique em qualquer ponto do traçado
+              </span>
+            </div>
           </div>
         )}
       </div>
