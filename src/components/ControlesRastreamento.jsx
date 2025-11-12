@@ -1,6 +1,6 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
-import { Play, Pause, Square, MapPin, Save, Navigation, Layers } from 'lucide-react';
+import { Play, Pause, Square, MapPin, Save, Navigation, Layers, Undo, MousePointer } from 'lucide-react';
 
 const ControlesRastreamento = ({
   tracking,
@@ -23,7 +23,11 @@ const ControlesRastreamento = ({
   showProjectDialog,
   selectedMarkers = [],
   setSelectedMarkers,
-  formatDistanceDetailed
+  formatDistanceDetailed,
+  // Novas props para o modo régua
+  undoLastPoint,
+  addRulerPoint,
+  selectPointToContinue
 }) => {
   const safeManualPoints = manualPoints || [];
   const safeTotalDistance = totalDistance || 0;
@@ -58,7 +62,7 @@ const ControlesRastreamento = ({
     <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 z-50 animate-slide-in-bottom">
       <div className="bg-gradient-to-r from-slate-800 to-slate-700 backdrop-blur-lg border border-slate-600/50 rounded-xl shadow-2xl p-3 min-w-[320px] max-w-[95vw] tracking-controls-container">
         
-        {/* Header compacto - ATUALIZADO COM ANIMAÇÃO */}
+        {/* Header compacto - ATUALIZADO PARA MODO RÉGUA */}
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <div className={`w-2 h-2 rounded-full ${paused ? 'bg-yellow-500' : 'bg-green-500 animate-pulse'}`}></div>
@@ -70,10 +74,13 @@ const ControlesRastreamento = ({
             <p className="text-white font-bold text-lg">
               {formatDistance(safeTotalDistance)}
             </p>
+            <p className="text-cyan-400 text-xs">
+              {safeTrackingMode === 'manual' ? 'Modo Manual' : 'Modo Régua'}
+            </p>
           </div>
         </div>
 
-        {/* Botões principais - AGORA COM 5 COLUNAS */}
+        {/* Botões principais - ATUALIZADO PARA MODO RÉGUA */}
         <div className="grid grid-cols-5 gap-2 mb-2">
           {/* Botão Pausar/Continuar */}
           <Button
@@ -89,22 +96,37 @@ const ControlesRastreamento = ({
             {paused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
           </Button>
 
-          {/* Botão de Alinhamento - NOVO */}
-          <Button
-            onClick={onToggleSnapping}
-            size="sm"
-            className={`h-9 tracking-button snapping-toggle ${
-              snappingEnabled 
-                ? 'bg-green-500 hover:bg-green-600 text-white' 
-                : 'bg-gray-500 hover:bg-gray-600 text-white'
-            }`}
-            title={snappingEnabled ? 'Alinhamento ativo - Clique para desativar' : 'Alinhamento inativo - Clique para ativar'}
-          >
-            <Navigation className="w-4 h-4" />
-          </Button>
-
-          {/* Botão de Ponto Manual */}
+          {/* Botão de Alinhamento - APENAS NO MODO MANUAL */}
           {safeTrackingMode === 'manual' && (
+            <Button
+              onClick={onToggleSnapping}
+              size="sm"
+              className={`h-9 tracking-button snapping-toggle ${
+                snappingEnabled 
+                  ? 'bg-green-500 hover:bg-green-600 text-white' 
+                  : 'bg-gray-500 hover:bg-gray-600 text-white'
+              }`}
+              title={snappingEnabled ? 'Alinhamento ativo' : 'Alinhamento inativo'}
+            >
+              <Navigation className="w-4 h-4" />
+            </Button>
+          )}
+
+          {/* Botão de Voltar Ponto - APENAS SE HOUVER PONTOS */}
+          {safeManualPoints.length > 0 && (
+            <Button
+              onClick={undoLastPoint}
+              disabled={safeManualPoints.length === 0}
+              size="sm"
+              className="h-9 tracking-button bg-orange-500 hover:bg-orange-600 text-white"
+              title="Voltar último ponto"
+            >
+              <Undo className="w-4 h-4" />
+            </Button>
+          )}
+
+          {/* Botão de Ponto Manual/Selecionar para Continuar */}
+          {safeTrackingMode === 'manual' ? (
             <Button
               onClick={addManualPoint}
               disabled={paused || !currentPosition}
@@ -114,17 +136,19 @@ const ControlesRastreamento = ({
             >
               <MapPin className="w-4 h-4" />
             </Button>
-          )}
-
-          {/* Botão Salvar Projeto */}
-          {safeManualPoints.length > 0 && !showProjectDialog && (
+          ) : (
             <Button
-              onClick={() => setShowProjectDialog(true)}
+              onClick={() => {
+                if (safeManualPoints.length > 0) {
+                  selectPointToContinue(safeManualPoints[safeManualPoints.length - 1]);
+                }
+              }}
+              disabled={safeManualPoints.length === 0}
               size="sm"
               className="h-9 tracking-button bg-purple-500 hover:bg-purple-600 text-white"
-              title="Salvar projeto"
+              title="Selecionar ponto para continuar"
             >
-              <Save className="w-4 h-4" />
+              <MousePointer className="w-4 h-4" />
             </Button>
           )}
 
@@ -139,11 +163,13 @@ const ControlesRastreamento = ({
           </Button>
         </div>
 
-        {/* Status info compacta - ATUALIZADA COM INDICADOR DE ALINHAMENTO */}
+        {/* Status info compacta - ATUALIZADA */}
         <div className="flex items-center justify-between text-xs text-gray-300">
           <div className="flex items-center gap-2">
-            <div className={`w-1.5 h-1.5 rounded-full ${snappingEnabled ? 'bg-green-500 animate-pulse' : 'bg-gray-500'}`}></div>
-            <span>{safeTrackingMode === 'manual' ? 'Manual' : 'Auto'}</span>
+            <div className={`w-1.5 h-1.5 rounded-full ${
+              safeTrackingMode === 'manual' && snappingEnabled ? 'bg-green-500 animate-pulse' : 'bg-gray-500'
+            }`}></div>
+            <span>{safeTrackingMode === 'manual' ? 'Manual' : 'Régua'}</span>
             {currentProject && (
               <span className="text-cyan-400 bg-cyan-500/20 px-1.5 py-0.5 rounded text-[10px]">
                 {currentProject.name}
@@ -152,7 +178,7 @@ const ControlesRastreamento = ({
           </div>
           
           <div className="flex items-center gap-3">
-            {safeGpsAccuracy > 0 && (
+            {safeTrackingMode === 'manual' && safeGpsAccuracy > 0 && (
               <span 
                 className={
                   safeGpsAccuracy <= 10 ? 'text-green-400' : 
@@ -164,31 +190,36 @@ const ControlesRastreamento = ({
                 ±{Math.round(safeGpsAccuracy)}m
               </span>
             )}
-            {safeSpeed > 0.5 && (
+            {safeTrackingMode === 'manual' && safeSpeed > 0.5 && (
               <span className="text-cyan-400" title="Velocidade atual">
                 {Math.round(safeSpeed * 3.6)}km/h
+              </span>
+            )}
+            {safeTrackingMode === 'ruler' && (
+              <span className="text-green-400" title="Modo Régua Ativo">
+                Clique no mapa
               </span>
             )}
           </div>
         </div>
 
-        {/* Informações adicionais em modo automático */}
-        {safeTrackingMode === 'automatic' && !paused && (
+        {/* Instruções específicas do modo Régua */}
+        {safeTrackingMode === 'ruler' && !paused && (
           <div className="mt-2 p-2 bg-green-500/10 border border-green-500/20 rounded-lg">
             <div className="flex items-center justify-between text-xs">
-              <span className="text-green-400">Modo Automático</span>
+              <span className="text-green-400">Modo Régua Ativo</span>
               <span className="text-green-300">
-                {safeSpeed > 0.5 ? 'Em movimento' : 'Aguardando movimento'}
+                Clique no mapa para adicionar pontos
               </span>
             </div>
             <div className="text-[10px] text-green-300 mt-1">
-              Pontos automáticos a cada 10m
+              Use "Voltar Ponto" para corrigir ou "Selecionar" para continuar de um ponto específico
             </div>
           </div>
         )}
 
-        {/* Indicador de qualidade do GPS */}
-        {safeGpsAccuracy > 0 && (
+        {/* Indicador de qualidade do GPS - APENAS NO MODO MANUAL */}
+        {safeTrackingMode === 'manual' && safeGpsAccuracy > 0 && (
           <div className="mt-2">
             <div className="flex items-center justify-between text-xs text-gray-400 mb-1">
               <span>Qualidade do GPS:</span>
@@ -237,7 +268,7 @@ const ControlesRastreamento = ({
           </div>
         )}
 
-        {/* Seção de seleção múltipla - CORRIGIDA */}
+        {/* Seção de seleção múltipla */}
         {selectedMarkers && selectedMarkers.length > 0 && (
           <div className="mt-2 p-2 bg-cyan-500/10 border border-cyan-500/20 rounded-lg">
             <div className="flex items-center justify-between text-xs">
@@ -254,7 +285,23 @@ const ControlesRastreamento = ({
             </div>
           </div>
         )}
-      </div> </div>
+
+        {/* Botão Salvar Projeto - MOVIDO PARA AQUI PARA MELHOR VISIBILIDADE */}
+        {safeManualPoints.length > 0 && !showProjectDialog && (
+          <div className="mt-3 pt-2 border-t border-slate-600/50">
+            <Button
+              onClick={() => setShowProjectDialog(true)}
+              size="sm"
+              className="w-full h-8 tracking-button bg-purple-500 hover:bg-purple-600 text-white"
+              title="Salvar projeto"
+            >
+              <Save className="w-4 h-4 mr-1" />
+              Salvar Projeto
+            </Button>
+          </div>
+        )}
+      </div>
+    </div>
   );
 };
 
