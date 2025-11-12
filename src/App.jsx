@@ -346,37 +346,21 @@ function App() {
   }
 
   // Função para continuar a partir do ponto selecionado
-  const continueFromSelectedPoint = (point = selectedContinuePoint) => {
-    if (!point) return
+ // Função para continuar a partir do ponto selecionado - CORRIGIDA
+const continueFromSelectedPoint = (point = selectedContinuePoint) => {
+  if (!point) return;
   
-    // Encontrar o índice do ponto na lista
-    const pointIndex = manualPoints.findIndex(p => p.id === point.id)
-    if (pointIndex === -1) return
+  // Apenas define o ponto selecionado e mantém todos os pontos existentes
+  setSelectedContinuePoint(point);
+  setSelectingContinuePoint(false);
   
-    // Truncar a lista de pontos até o ponto selecionado (inclusive)
-    const truncatedPoints = manualPoints.slice(0, pointIndex + 1)
+  // Reiniciar o rastreamento a partir desse ponto
+  setTracking(true);
+  setPaused(false);
+  setShowTrackingControls(true);
   
-    // Recalcular a distância total até o ponto selecionado
-    let newTotalDistance = 0
-    for (let i = 0; i < truncatedPoints.length - 1; i++) {
-      newTotalDistance += calculateDistance(
-        truncatedPoints[i].lat, truncatedPoints[i].lng,
-        truncatedPoints[i + 1].lat, truncatedPoints[i + 1].lng
-      )
-    }
-
-    setManualPoints(truncatedPoints)
-    setTotalDistance(newTotalDistance)
-    setSelectedContinuePoint(null)
-    setSelectingContinuePoint(false)
-  
-    // Reiniciar o rastreamento a partir desse ponto
-    setTracking(true)
-    setPaused(false)
-    setShowTrackingControls(true)
-  
-    console.log('🔄 Continuando rastreamento a partir do ponto selecionado')
-  }
+  console.log('🔄 Continuando rastreamento a partir do ponto selecionado (sem truncar pontos)');
+};
 
   // Função para cancelar a seleção de ponto para continuar
   const cancelContinueSelection = () => {
@@ -384,32 +368,55 @@ function App() {
     setSelectingContinuePoint(false)
   }
 
-  // Função para adicionar ponto no modo régua (quando clica no mapa)
-  const addRulerPoint = (lat, lng) => {
-    if (!tracking || paused || trackingMode !== 'ruler') return
+// Função para adicionar ponto no modo régua (quando clica no mapa) - ATUALIZADA
+const addRulerPoint = (lat, lng) => {
+  if (!tracking || paused || trackingMode !== 'ruler') return;
   
-    const newPoint = {
-      lat,
-      lng,
-      id: Date.now(),
-      timestamp: Date.now()
-    }
-
-    setManualPoints(prev => {
-      const updatedPoints = [...prev, newPoint]
-      
-      if (updatedPoints.length > 1) {
-        const lastPoint = updatedPoints[updatedPoints.length - 2]
-        const distance = calculateDistance(
-          lastPoint.lat, lastPoint.lng,
-          newPoint.lat, newPoint.lng
-        )
-        setTotalDistance(prevDist => prevDist + distance)
+  const newPoint = {
+    lat,
+    lng,
+    id: Date.now(),
+    timestamp: Date.now()
+  };
+  
+  setManualPoints(prev => {
+    let updatedPoints;
+    
+    // Se há um ponto selecionado para continuar, insere após esse ponto
+    if (selectedContinuePoint) {
+      const pointIndex = prev.findIndex(p => p.id === selectedContinuePoint.id);
+      if (pointIndex !== -1) {
+        // Insere o novo ponto após o ponto selecionado
+        updatedPoints = [
+          ...prev.slice(0, pointIndex + 1),
+          newPoint,
+          ...prev.slice(pointIndex + 1)
+        ];
+        
+        // Limpa o ponto de continuação após o primeiro uso
+        setSelectedContinuePoint(null);
+      } else {
+        updatedPoints = [...prev, newPoint];
       }
-      
-      return updatedPoints
-    })
-  }
+    } else {
+      updatedPoints = [...prev, newPoint];
+    }
+    
+    // Recalcula a distância total
+    if (updatedPoints.length > 1) {
+      let newTotalDistance = 0;
+      for (let i = 0; i < updatedPoints.length - 1; i++) {
+        newTotalDistance += calculateDistance(
+          updatedPoints[i].lat, updatedPoints[i].lng,
+          updatedPoints[i + 1].lat, updatedPoints[i + 1].lng
+        );
+      }
+      setTotalDistance(newTotalDistance);
+    }
+    
+    return updatedPoints;
+  });
+};
 
   // CORREÇÃO: Função de logout corrigida
   const handleLogout = async () => {

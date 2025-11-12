@@ -62,6 +62,20 @@ const ControlesRastreamento = ({
       return `${(distance / 1000).toFixed(1)} km`;
     }
   };
+
+  // Função corrigida para continuar a partir de um ponto sem truncar
+  const handleContinueFromPoint = (point) => {
+    if (!point) return;
+
+    // Apenas define o ponto selecionado para continuar, sem truncar a lista
+    // A lógica de continuação será tratada no App.js quando novos pontos forem adicionados
+    setSelectingContinuePoint(false);
+    
+    // Chama a função do App.js passando o ponto selecionado
+    if (continueFromSelectedPoint) {
+      continueFromSelectedPoint(point);
+    }
+  };
   
   return (
     <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 z-50 animate-slide-in-bottom">
@@ -224,8 +238,6 @@ const ControlesRastreamento = ({
             )}
           </div>
         </div>
-
-        {/* REMOVIDO: Seção de instruções desnecessárias do modo Régua */}
 
         {/* Indicador de qualidade do GPS - APENAS NO MODO MANUAL */}
         {safeTrackingMode === 'manual' && safeGpsAccuracy > 0 && (
