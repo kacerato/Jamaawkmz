@@ -1,6 +1,6 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
-import { Play, Pause, Square, MapPin, Save, Navigation, Layers, Undo, MousePointer } from 'lucide-react';
+import { Play, Pause, Square, MapPin, Save, Navigation, Layers, Undo, MousePointer, X } from 'lucide-react';
 
 const ControlesRastreamento = ({
   tracking,
@@ -23,23 +23,21 @@ const ControlesRastreamento = ({
   showProjectDialog,
   selectedMarkers = [],
   setSelectedMarkers,
-  formatDistanceDetailed,
   // Novas props para o modo régua
   undoLastPoint,
-  addRulerPoint,
-  selectPointToContinue,
   // Novas props para seleção de ponto
   selectingContinuePoint,
   setSelectingContinuePoint,
-  continueFromSelectedPoint,
-  cancelContinueSelection
+  selectedContinuePoint,
+  cancelContinueSelection,
+  formatDistanceDetailed
 }) => {
   const safeManualPoints = manualPoints || [];
   const safeTotalDistance = totalDistance || 0;
   const safeTrackingMode = trackingMode || 'manual';
   const safeGpsAccuracy = gpsAccuracy || 0;
   const safeSpeed = speed || 0;
-  
+
   // Função para formatar distância detalhada (fallback caso não seja passada como prop)
   const formatDistance = (distanceInMeters) => {
     if (formatDistanceDetailed) {
@@ -63,25 +61,20 @@ const ControlesRastreamento = ({
     }
   };
 
-  // Função corrigida para continuar a partir de um ponto sem truncar
-  const handleContinueFromPoint = (point) => {
-    if (!point) return;
-
-    // Apenas define o ponto selecionado para continuar, sem truncar a lista
-    // A lógica de continuação será tratada no App.js quando novos pontos forem adicionados
-    setSelectingContinuePoint(false);
-    
-    // Chama a função do App.js passando o ponto selecionado
-    if (continueFromSelectedPoint) {
-      continueFromSelectedPoint(point);
-    }
+  // Encontrar a posição do ponto selecionado para continuar
+  const getSelectedPointPosition = () => {
+    if (!selectedContinuePoint) return null;
+    const index = safeManualPoints.findIndex(p => p.id === selectedContinuePoint.id);
+    return index !== -1 ? index + 1 : null;
   };
-  
+
+  const selectedPointPosition = getSelectedPointPosition();
+
   return (
     <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 z-50 animate-slide-in-bottom">
       <div className="bg-gradient-to-r from-slate-800 to-slate-700 backdrop-blur-lg border border-slate-600/50 rounded-xl shadow-2xl p-3 min-w-[320px] max-w-[95vw] tracking-controls-container">
         
-        {/* Header compacto - ATUALIZADO PARA MODO RÉGUA */}
+        {/* Header compacto */}
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <div className={`w-2 h-2 rounded-full ${paused ? 'bg-yellow-500' : 'bg-green-500 animate-pulse'}`}></div>
@@ -99,7 +92,7 @@ const ControlesRastreamento = ({
           </div>
         </div>
 
-        {/* Botões principais - ATUALIZADO PARA MODO RÉGUA */}
+        {/* Botões principais */}
         <div className="grid grid-cols-5 gap-2 mb-2">
           {/* Botão Pausar/Continuar */}
           <Button
@@ -190,7 +183,7 @@ const ControlesRastreamento = ({
           </Button>
         </div>
 
-        {/* Status info compacta - ATUALIZADA */}
+        {/* Status info compacta */}
         <div className="flex items-center justify-between text-xs text-gray-300">
           <div className="flex items-center gap-2">
             <div className={`w-1.5 h-1.5 rounded-full ${
@@ -265,6 +258,31 @@ const ControlesRastreamento = ({
           </div>
         )}
 
+        {/* Indicador de ponto selecionado para continuar */}
+        {selectedContinuePoint && selectedPointPosition && (
+          <div className="mt-2 p-2 bg-purple-500/20 border border-purple-500/40 rounded-lg">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-purple-300 font-medium">
+                Continuando do ponto {selectedPointPosition}
+              </span>
+              <Button
+                size="sm"
+                onClick={() => {
+                  setSelectedContinuePoint && setSelectedContinuePoint(null);
+                  setSelectingContinuePoint && setSelectingContinuePoint(false);
+                }}
+                className="h-5 text-xs bg-purple-500 hover:bg-purple-600 text-white"
+                title="Cancelar continuação"
+              >
+                <X className="w-3 h-3" />
+              </Button>
+            </div>
+            <p className="text-purple-200 text-[10px] mt-1">
+              Novos pontos serão inseridos APÓS este ponto
+            </p>
+          </div>
+        )}
+
         {/* Ações rápidas para projetos carregados */}
         {currentProject && safeManualPoints.length > 0 && (
           <div className="mt-3 pt-2 border-t border-slate-600/50">
@@ -307,7 +325,7 @@ const ControlesRastreamento = ({
           </div>
         )}
 
-        {/* Botão Salvar Projeto - MOVIDO PARA AQUI PARA MELHOR VISIBILIDADE */}
+        {/* Botão Salvar Projeto */}
         {safeManualPoints.length > 0 && !showProjectDialog && (
           <div className="mt-3 pt-2 border-t border-slate-600/50">
             <Button
