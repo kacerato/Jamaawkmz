@@ -215,6 +215,22 @@ const calculateTotalDistanceAllProjects = (projects) => {
   return total;
 };
 
+// Função para calcular distância entre dois pontos
+const calculateDistance = (lat1, lon1, lat2, lon2) => {
+  const R = 6371e3
+  const φ1 = lat1 * Math.PI / 180
+  const φ2 = lat2 * Math.PI / 180
+  const Δφ = (lat2 - lat1) * Math.PI / 180
+  const Δλ = (lon2 - lon1) * Math.PI / 180
+
+  const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+            Math.cos(φ1) * Math.cos(φ2) *
+            Math.sin(Δλ / 2) * Math.sin(Δλ / 2)
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+
+  return R * c
+}
+
 function App() {
   const mapboxToken = 'pk.eyJ1Ijoia2FjZXJhdG8iLCJhIjoiY21oZG1nNnViMDRybjJub2VvZHV1aHh3aiJ9.l7tCaIPEYqcqDI8_aScm7Q';
   const mapRef = useRef();
@@ -308,7 +324,100 @@ function App() {
   // Calcular a distância total de todos os projetos carregados
   const totalDistanceAllProjects = calculateTotalDistanceAllProjects(loadedProjects);
 
-  // ========== FUNÇÕES CORRIGIDAS PARA MODO RÉGUA ==========
+  // ========== NOVAS FUNÇÕES PARA RAMIFICAÇÕES INDEPENDENTES ==========
+
+  // NOVA FUNÇÃO: Recalcular distância total considerando ramificações
+  const recalculateTotalDistance = (points) => {
+    if (points.length < 2) {
+      setTotalDistance(0);
+      return;
+    }
+    
+    let totalDistance = 0;
+    const connections = [];
+    
+    // Identificar todas as conexões entre pontos
+    for (let i = 0; i < points.length; i++) {
+      const currentPoint = points[i];
+      
+      if (currentPoint.parentPointId) {
+        // É uma ramificação - conectar ao ponto pai
+        const parentPoint = points.find(p => p.id === currentPoint.parentPointId);
+        if (parentPoint) {
+          connections.push([parentPoint, currentPoint]);
+        }
+      } else if (i > 0) {
+        // É parte da sequência principal - conectar ao ponto anterior
+        const prevPoint = points[i - 1];
+        // Só conectar se o ponto anterior não for uma ramificação OU se for ramificação do mesmo ponto
+        if (!prevPoint.parentPointId || prevPoint.parentPointId === points[i - 2]?.id) {
+          connections.push([prevPoint, currentPoint]);
+        }
+      }
+    }
+    
+    // Calcular distância de todas as conexões
+    connections.forEach(([pointA, pointB]) => {
+      totalDistance += calculateDistance(
+        pointA.lat, pointA.lng,
+        pointB.lat, pointB.lng
+      );
+    });
+    
+    setTotalDistance(totalDistance);
+  };
+
+  // NOVA FUNÇÃO: addRulerPoint corrigida para criar ramificações independentes
+  const addRulerPoint = (lat, lng) => {
+    if (!tracking || paused || trackingMode !== 'ruler') return;
+    
+    const newPoint = {
+      lat,
+      lng,
+      id: Date.now(),
+      timestamp: Date.now(),
+      // Marcar como ponto de ramificação se estiver continuando de um ponto específico
+      isBranch: !!selectedContinuePoint,
+      parentPointId: selectedContinuePoint ? selectedContinuePoint.id : null
+    };
+
+    setManualPoints(prev => {
+      let updatedPoints;
+      
+      if (selectedContinuePoint) {
+        // MODO RAMIFICAÇÃO: Adiciona o novo ponto sem modificar a sequência existente
+        updatedPoints = [...prev, newPoint];
+        
+        console.log('🌿 Nova ramificação criada do ponto:', selectedContinuePoint.id);
+      } else {
+        // MODO NORMAL: Adiciona à sequência principal
+        updatedPoints = [...prev, newPoint];
+      }
+      
+      // Recalcula a distância total considerando todas as conexões
+      recalculateTotalDistance(updatedPoints);
+      
+      return updatedPoints;
+    });
+  };
+
+  // ATUALIZAR: Função continueFromSelectedPoint para modo ramificação
+  const continueFromSelectedPoint = (point = selectedContinuePoint) => {
+    if (!point) return;
+    
+    setSelectedContinuePoint(point);
+    setSelectingContinuePoint(false);
+    
+    setTracking(true);
+    setPaused(false);
+    setShowTrackingControls(true);
+    
+    console.log('🌿 Modo ramificação ativado - Novos pontos serão ramificações independentes');
+  };
+
+  // ========== FIM DAS NOVAS FUNÇÕES ==========
+
+  // ========== FUNÇÕES EXISTENTES MANTIDAS ==========
 
   // Função para ativar o modo régua
   const activateRulerMode = () => {
@@ -325,143 +434,17 @@ function App() {
       const newPoints = prev.slice(0, -1)
       
       // Recalcular a distância total
-      let newTotalDistance = 0
-      for (let i = 0; i < newPoints.length - 1; i++) {
-        newTotalDistance += calculateDistance(
-          newPoints[i].lat, newPoints[i].lng,
-          newPoints[i + 1].lat, newPoints[i + 1].lng
-        )
-      }
-      setTotalDistance(newTotalDistance)
+      recalculateTotalDistance(newPoints);
       
       return newPoints
     })
   }
-
-  // Função para selecionar ponto para continuar
-  const selectPointToContinue = (point) => {
-    setSelectedContinuePoint(point)
-    setShowRulerPopup(false)
-    console.log('📍 Ponto selecionado para continuar:', point)
-  }
-
-// Função para continuar a partir do ponto selecionado - ATUALIZADA
-const continueFromSelectedPoint = (point = selectedContinuePoint) => {
-  if (!point) return;
-  
-  // Define o ponto selecionado para criar bifurcação
-  setSelectedContinuePoint(point);
-  setSelectingContinuePoint(false);
-  
-  // Manter o rastreamento ativo
-  setTracking(true);
-  setPaused(false);
-  setShowTrackingControls(true);
-  
-  console.log('🔄 Modo bifurcação ativado - Novos pontos serão ramificações do ponto selecionado');
-};
 
   // Função para cancelar a seleção de ponto para continuar
   const cancelContinueSelection = () => {
     setSelectedContinuePoint(null)
     setSelectingContinuePoint(false)
   }
-
-  // Função para adicionar ponto no modo régua (quando clica no mapa) - ATUALIZADA
-const addRulerPoint = (lat, lng) => {
-  if (!tracking || paused || trackingMode !== 'ruler') return;
-  
-  const newPoint = {
-    lat,
-    lng,
-    id: Date.now(),
-    timestamp: Date.now(),
-    // Adicionar flag para indicar se é um ponto de bifurcação
-    isBranch: selectedContinuePoint ? true : false,
-    parentPointId: selectedContinuePoint ? selectedContinuePoint.id : null
-  };
-  
-  setManualPoints(prev => {
-    let updatedPoints;
-    
-    // Se há um ponto selecionado para continuar, criamos uma bifurcação
-    if (selectedContinuePoint) {
-      const pointIndex = prev.findIndex(p => p.id === selectedContinuePoint.id);
-      if (pointIndex !== -1) {
-        // Encontramos todos os pontos que são descendentes do ponto selecionado
-        const mainBranchPoints = [];
-        const branchPoints = [];
-        
-        // Separar os pontos: main branch (original) e branch (nova bifurcação)
-        let currentParent = selectedContinuePoint.id;
-        for (let i = 0; i < prev.length; i++) {
-          const point = prev[i];
-          if (point.parentPointId === currentParent ||
-            (i > pointIndex && !point.isBranch && point.parentPointId === null)) {
-            mainBranchPoints.push(point);
-            currentParent = point.id;
-          } else if (point.isBranch && point.parentPointId === selectedContinuePoint.id) {
-            branchPoints.push(point);
-          }
-        }
-        
-        // Adicionar o novo ponto como uma bifurcação
-        updatedPoints = [
-          ...prev.slice(0, pointIndex + 1), // Todos os pontos até o ponto selecionado
-          ...branchPoints, // Pontos existentes da bifurcação
-          newPoint, // Novo ponto da bifurcação
-          ...prev.slice(pointIndex + 1).filter(p =>
-            !branchPoints.includes(p) && p.parentPointId !== selectedContinuePoint.id
-          ) // Manter outros pontos não relacionados a esta bifurcação
-        ];
-        
-        console.log('🔄 Nova bifurcação criada a partir do ponto:', selectedContinuePoint.id);
-      } else {
-        updatedPoints = [...prev, newPoint];
-      }
-    } else {
-      // Adição normal sem bifurcação
-      updatedPoints = [...prev, newPoint];
-    }
-    
-    // Recalcula a distância total considerando todas as bifurcações
-    if (updatedPoints.length > 1) {
-      let newTotalDistance = 0;
-      
-      // Calcular distância do ramo principal
-      const mainBranch = updatedPoints.filter(p => !p.isBranch || p.parentPointId === null);
-      for (let i = 0; i < mainBranch.length - 1; i++) {
-        newTotalDistance += calculateDistance(
-          mainBranch[i].lat, mainBranch[i].lng,
-          mainBranch[i + 1].lat, mainBranch[i + 1].lng
-        );
-      }
-      
-      // Calcular distância dos ramos secundários
-      const branchPoints = updatedPoints.filter(p => p.isBranch);
-      const processedBranches = new Set();
-      
-      branchPoints.forEach(point => {
-        if (!processedBranches.has(point.parentPointId)) {
-          const branch = updatedPoints.filter(p =>
-            p.parentPointId === point.parentPointId || p.id === point.parentPointId
-          );
-          for (let i = 0; i < branch.length - 1; i++) {
-            newTotalDistance += calculateDistance(
-              branch[i].lat, branch[i].lng,
-              branch[i + 1].lat, branch[i + 1].lng
-            );
-          }
-          processedBranches.add(point.parentPointId);
-        }
-      });
-      
-      setTotalDistance(newTotalDistance);
-    }
-    
-    return updatedPoints;
-  });
-};
 
   // CORREÇÃO: Função de logout corrigida
   const handleLogout = async () => {
@@ -870,6 +853,22 @@ const addRulerPoint = (lat, lng) => {
     setShowProjectDetails(false);
     setShowRulerPopup(false);
     console.log('🆕 Novo projeto iniciado');
+  };
+
+  // Função para calcular distância total
+  const calculateTotalDistance = (points) => {
+    if (points.length < 2) return 0;
+    
+    let total = 0;
+    for (let i = 0; i < points.length - 1; i++) {
+      total += calculateDistance(
+        points[i].lat, 
+        points[i].lng,
+        points[i + 1].lat, 
+        points[i + 1].lng
+      );
+    }
+    return total;
   };
 
   // Verificar autenticação ao iniciar - CORRIGIDO
@@ -1935,38 +1934,6 @@ const addRulerPoint = (lat, lng) => {
     }
   };
 
-  // Função para calcular distância entre dois pontos
-  const calculateDistance = (lat1, lon1, lat2, lon2) => {
-    const R = 6371e3
-    const φ1 = lat1 * Math.PI / 180
-    const φ2 = lat2 * Math.PI / 180
-    const Δφ = (lat2 - lat1) * Math.PI / 180
-    const Δλ = (lon2 - lon1) * Math.PI / 180
-
-    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-              Math.cos(φ1) * Math.cos(φ2) *
-              Math.sin(Δλ / 2) * Math.sin(Δλ / 2)
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-
-    return R * c
-  }
-
-  // Função para calcular distância total
-  const calculateTotalDistance = (points) => {
-    if (points.length < 2) return 0;
-    
-    let total = 0;
-    for (let i = 0; i < points.length - 1; i++) {
-      total += calculateDistance(
-        points[i].lat, 
-        points[i].lng,
-        points[i + 1].lat, 
-        points[i + 1].lng
-      );
-    }
-    return total;
-  };
-
   // Função para obter rota da API OSRM
   const getRouteFromAPI = async (start, end) => {
     try {
@@ -2343,14 +2310,8 @@ const addRulerPoint = (lat, lng) => {
     setManualPoints(prev => {
       const updatedPoints = [...prev, newPoint]
       
-      if (updatedPoints.length > 1) {
-        const lastPoint = updatedPoints[updatedPoints.length - 2]
-        const distance = calculateDistance(
-          lastPoint.lat, lastPoint.lng,
-          newPoint.lat, newPoint.lng
-        )
-        setTotalDistance(prevDist => prevDist + distance)
-      }
+      // Recalcula a distância total usando a nova função
+      recalculateTotalDistance(updatedPoints);
       
       return updatedPoints
     })
@@ -2730,55 +2691,60 @@ const addRulerPoint = (lat, lng) => {
             </React.Fragment>
           ))}
 
-          {/* Traçado manual atual */}
+          {/* Traçado manual atual - ATUALIZADO PARA RAMIFICAÇÕES */}
           {manualPoints.length > 0 && (
             <>
-        // No componente de renderização dos pontos, adicionar estilo diferenciado para pontos de bifurcação
-{manualPoints.map((point, index) => {
-  const isBranchPoint = point.isBranch;
-  const isSelectedForContinue = selectedContinuePoint?.id === point.id;
-  
-  return (
-    <Marker 
-      key={point.id} 
-      longitude={point.lng} 
-      latitude={point.lat}
-      onClick={(e) => {
-        e.originalEvent.stopPropagation();
-        if (selectingContinuePoint) {
-          continueFromSelectedPoint(point);
-        }
-      }}
-    >
-      <div 
-        className={`ruler-point-marker ${isBranchPoint ? 'ruler-point-branch' : ''} ${
-          isSelectedForContinue ? 'ruler-point-selected' : ''
-        }`}
-        style={{ 
-          backgroundColor: isBranchPoint ? '#8B5CF6' : 
-                         isSelectedForContinue ? '#8B5CF6' : '#4b5563',
-          borderColor: '#ffffff',
-          cursor: selectingContinuePoint ? 'pointer' : 'default'
-        }}
-        title={isBranchPoint ? `Ponto de bifurcação (${index + 1})` : `Ponto ${index + 1}`}
-      >
-        {index + 1}
-        {isBranchPoint && (
-          <div className="absolute -top-1 -right-1 w-3 h-3 bg-purple-500 rounded-full border border-white"></div>
-        )}
-      </div>
-    </Marker>
-  );
-})}
-              <Source id="manual-route" type="geojson" data={{
+              {/* Renderizar todos os pontos */}
+              {manualPoints.map((point, index) => {
+                const isBranchPoint = point.isBranch;
+                const isSelectedForContinue = selectedContinuePoint?.id === point.id;
+                const pointNumber = index + 1;
+                
+                return (
+                  <Marker 
+                    key={point.id} 
+                    longitude={point.lng} 
+                    latitude={point.lat}
+                    onClick={(e) => {
+                      e.originalEvent.stopPropagation();
+                      if (selectingContinuePoint) {
+                        continueFromSelectedPoint(point);
+                      }
+                    }}
+                  >
+                    <div 
+                      className={`ruler-point-marker ${isBranchPoint ? 'ruler-point-branch' : ''} ${
+                        isSelectedForContinue ? 'ruler-point-selected' : ''
+                      }`}
+                      style={{ 
+                        backgroundColor: isBranchPoint ? '#8B5CF6' : 
+                                       isSelectedForContinue ? '#8B5CF6' : '#4b5563',
+                        borderColor: '#ffffff',
+                        cursor: selectingContinuePoint ? 'pointer' : 'default'
+                      }}
+                      title={isBranchPoint ? `Ramificação (${pointNumber})` : `Ponto ${pointNumber}`}
+                    >
+                      {pointNumber}
+                      {isBranchPoint && (
+                        <div className="absolute -top-1 -right-1 w-2 h-2 bg-purple-500 rounded-full border border-white"></div>
+                      )}
+                    </div>
+                  </Marker>
+                );
+              })}
+
+              {/* Linha da sequência principal */}
+              <Source id="main-route" type="geojson" data={{
                 type: 'Feature',
                 geometry: {
                   type: 'LineString',
-                  coordinates: manualPoints.map(p => [p.lng, p.lat])
+                  coordinates: manualPoints
+                    .filter(point => !point.isBranch) // Apenas pontos da sequência principal
+                    .map(p => [p.lng, p.lat])
                 }
               }}>
                 <Layer
-                  id="manual-route-layer"
+                  id="main-route-layer"
                   type="line"
                   paint={{
                     'line-color': '#1e3a8a',
@@ -2787,6 +2753,42 @@ const addRulerPoint = (lat, lng) => {
                   }}
                 />
               </Source>
+
+              {/* Linhas das ramificações */}
+              {manualPoints
+                .filter(point => point.isBranch && point.parentPointId)
+                .map((branchPoint, index) => {
+                  const parentPoint = manualPoints.find(p => p.id === branchPoint.parentPointId);
+                  if (!parentPoint) return null;
+                  
+                  return (
+                    <Source 
+                      key={`branch-${branchPoint.id}`} 
+                      type="geojson" 
+                      data={{
+                        type: 'Feature',
+                        geometry: {
+                          type: 'LineString',
+                          coordinates: [
+                            [parentPoint.lng, parentPoint.lat],
+                            [branchPoint.lng, branchPoint.lat]
+                          ]
+                        }
+                      }}
+                    >
+                      <Layer
+                        id={`branch-layer-${branchPoint.id}`}
+                        type="line"
+                        paint={{
+                          'line-color': '#8B5CF6',
+                          'line-width': 3,
+                          'line-opacity': 0.7,
+                          'line-dasharray': [2, 2]
+                        }}
+                      />
+                    </Source>
+                  );
+                })}
             </>
           )}
 
@@ -2818,7 +2820,7 @@ const addRulerPoint = (lat, lng) => {
             </Marker>
           )}
 
-          {/* Popup para pontos dos projetos - CORRIGIDO */}
+          {/* Popup para pontos dos projetos */}
           {pointPopupInfo && pointPopupInfo.point && (
             <Popup
               longitude={pointPopupInfo.point.lng}
@@ -3374,9 +3376,6 @@ const addRulerPoint = (lat, lng) => {
           </Card>
         </div>
       )}
-
-      {/* Popup para selecionar ponto para continuar - REMOVIDO */}
-      {/* O sistema agora usa seleção direta no mapa */}
 
       {/* Popup de Detalhes do Projeto */}
       {showProjectDetails && currentProject && (
@@ -4114,13 +4113,11 @@ const addRulerPoint = (lat, lng) => {
           setSelectedMarkers={setSelectedMarkers}
           // Novas props para o modo régua
           undoLastPoint={undoLastPoint}
-          addRulerPoint={addRulerPoint}
-          selectPointToContinue={selectPointToContinue}
           formatDistanceDetailed={formatDistanceDetailed}
           // Novas props para seleção de ponto
           selectingContinuePoint={selectingContinuePoint}
           setSelectingContinuePoint={setSelectingContinuePoint}
-          continueFromSelectedPoint={continueFromSelectedPoint}
+          selectedContinuePoint={selectedContinuePoint}
           cancelContinueSelection={cancelContinueSelection}
         />
       )}
@@ -4203,4 +4200,4 @@ const addRulerPoint = (lat, lng) => {
   )
 }
 
-export default App 
+export default App

@@ -2440,3 +2440,8 @@ body {
   background: #f59e0b !important;
   box-shadow: 0 0 8px rgba(245, 158, 11, 1) !important;
 }
+
+/* Linha tracejada para ramificações */
+.line-dashed {
+  border-top: 2px dashed #8B5CF6;
+}
