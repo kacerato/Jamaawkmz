@@ -2428,3 +2428,15 @@ body {
   transform: scale(1.2) !important;
   z-index: 1000 !important;
 }
+
+/* Adicionar ao App.css */
+.ruler-point-branch {
+  background: linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%) !important;
+  border: 2px solid #ffffff !important;
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.6) !important;
+}
+
+.ruler-point-branch::before {
+  background: #f59e0b !important;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 1) !important;
+}

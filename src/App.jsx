@@ -345,20 +345,21 @@ function App() {
     console.log('📍 Ponto selecionado para continuar:', point)
   }
 
-  // Função para continuar a partir do ponto selecionado
-  const continueFromSelectedPoint = (point = selectedContinuePoint) => {
-    if (!point) return;
-    
-    setSelectedContinuePoint(point);
-    setSelectingContinuePoint(false);
-    
-    // Reiniciar o rastreamento a partir desse ponto
-    setTracking(true);
-    setPaused(false);
-    setShowTrackingControls(true);
-    
-    console.log('🔄 Continuando rastreamento a partir do ponto selecionado');
-  };
+// Função para continuar a partir do ponto selecionado - ATUALIZADA
+const continueFromSelectedPoint = (point = selectedContinuePoint) => {
+  if (!point) return;
+  
+  // Define o ponto selecionado para criar bifurcação
+  setSelectedContinuePoint(point);
+  setSelectingContinuePoint(false);
+  
+  // Manter o rastreamento ativo
+  setTracking(true);
+  setPaused(false);
+  setShowTrackingControls(true);
+  
+  console.log('🔄 Modo bifurcação ativado - Novos pontos serão ramificações do ponto selecionado');
+};
 
   // Função para cancelar a seleção de ponto para continuar
   const cancelContinueSelection = () => {
@@ -366,50 +367,101 @@ function App() {
     setSelectingContinuePoint(false)
   }
 
-  // CORREÇÃO CRÍTICA: Função para adicionar ponto no modo régua - AGORA CORRETA
-  const addRulerPoint = (lat, lng) => {
-    if (!tracking || paused || trackingMode !== 'ruler') return;
-    
-    const newPoint = {
-      lat,
-      lng,
-      id: Date.now(),
-      timestamp: Date.now()
-    };
-    
-    setManualPoints(prev => {
-      let updatedPoints;
-      
-      // Se há um ponto selecionado para continuar, cria um ramo separado
-      if (selectedContinuePoint) {
-        // CORREÇÃO: Não insere no meio da sequência principal
-        // Em vez disso, adiciona ao final e marca como ramificação
-        updatedPoints = [...prev, newPoint];
-        
-        console.log('🌿 Criando ramificação do ponto:', selectedContinuePoint);
-        
-        // Limpa o ponto de continuação após o uso
-        setSelectedContinuePoint(null);
-      } else {
-        // Adiciona normalmente no final
-        updatedPoints = [...prev, newPoint];
-      }
-      
-      // Recalcula a distância total considerando apenas o traçado principal
-      if (updatedPoints.length > 1) {
-        let newTotalDistance = 0;
-        for (let i = 0; i < updatedPoints.length - 1; i++) {
-          newTotalDistance += calculateDistance(
-            updatedPoints[i].lat, updatedPoints[i].lng,
-            updatedPoints[i + 1].lat, updatedPoints[i + 1].lng
-          );
-        }
-        setTotalDistance(newTotalDistance);
-      }
-      
-      return updatedPoints;
-    });
+  // Função para adicionar ponto no modo régua (quando clica no mapa) - ATUALIZADA
+const addRulerPoint = (lat, lng) => {
+  if (!tracking || paused || trackingMode !== 'ruler') return;
+  
+  const newPoint = {
+    lat,
+    lng,
+    id: Date.now(),
+    timestamp: Date.now(),
+    // Adicionar flag para indicar se é um ponto de bifurcação
+    isBranch: selectedContinuePoint ? true : false,
+    parentPointId: selectedContinuePoint ? selectedContinuePoint.id : null
   };
+  
+  setManualPoints(prev => {
+    let updatedPoints;
+    
+    // Se há um ponto selecionado para continuar, criamos uma bifurcação
+    if (selectedContinuePoint) {
+      const pointIndex = prev.findIndex(p => p.id === selectedContinuePoint.id);
+      if (pointIndex !== -1) {
+        // Encontramos todos os pontos que são descendentes do ponto selecionado
+        const mainBranchPoints = [];
+        const branchPoints = [];
+        
+        // Separar os pontos: main branch (original) e branch (nova bifurcação)
+        let currentParent = selectedContinuePoint.id;
+        for (let i = 0; i < prev.length; i++) {
+          const point = prev[i];
+          if (point.parentPointId === currentParent ||
+            (i > pointIndex && !point.isBranch && point.parentPointId === null)) {
+            mainBranchPoints.push(point);
+            currentParent = point.id;
+          } else if (point.isBranch && point.parentPointId === selectedContinuePoint.id) {
+            branchPoints.push(point);
+          }
+        }
+        
+        // Adicionar o novo ponto como uma bifurcação
+        updatedPoints = [
+          ...prev.slice(0, pointIndex + 1), // Todos os pontos até o ponto selecionado
+          ...branchPoints, // Pontos existentes da bifurcação
+          newPoint, // Novo ponto da bifurcação
+          ...prev.slice(pointIndex + 1).filter(p =>
+            !branchPoints.includes(p) && p.parentPointId !== selectedContinuePoint.id
+          ) // Manter outros pontos não relacionados a esta bifurcação
+        ];
+        
+        console.log('🔄 Nova bifurcação criada a partir do ponto:', selectedContinuePoint.id);
+      } else {
+        updatedPoints = [...prev, newPoint];
+      }
+    } else {
+      // Adição normal sem bifurcação
+      updatedPoints = [...prev, newPoint];
+    }
+    
+    // Recalcula a distância total considerando todas as bifurcações
+    if (updatedPoints.length > 1) {
+      let newTotalDistance = 0;
+      
+      // Calcular distância do ramo principal
+      const mainBranch = updatedPoints.filter(p => !p.isBranch || p.parentPointId === null);
+      for (let i = 0; i < mainBranch.length - 1; i++) {
+        newTotalDistance += calculateDistance(
+          mainBranch[i].lat, mainBranch[i].lng,
+          mainBranch[i + 1].lat, mainBranch[i + 1].lng
+        );
+      }
+      
+      // Calcular distância dos ramos secundários
+      const branchPoints = updatedPoints.filter(p => p.isBranch);
+      const processedBranches = new Set();
+      
+      branchPoints.forEach(point => {
+        if (!processedBranches.has(point.parentPointId)) {
+          const branch = updatedPoints.filter(p =>
+            p.parentPointId === point.parentPointId || p.id === point.parentPointId
+          );
+          for (let i = 0; i < branch.length - 1; i++) {
+            newTotalDistance += calculateDistance(
+              branch[i].lat, branch[i].lng,
+              branch[i + 1].lat, branch[i + 1].lng
+            );
+          }
+          processedBranches.add(point.parentPointId);
+        }
+      });
+      
+      setTotalDistance(newTotalDistance);
+    }
+    
+    return updatedPoints;
+  });
+};
 
   // CORREÇÃO: Função de logout corrigida
   const handleLogout = async () => {
@@ -2681,31 +2733,43 @@ function App() {
           {/* Traçado manual atual */}
           {manualPoints.length > 0 && (
             <>
-              {manualPoints.map((point, index) => (
-                <Marker 
-                  key={point.id} 
-                  longitude={point.lng} 
-                  latitude={point.lat}
-                  onClick={(e) => {
-                    e.originalEvent.stopPropagation();
-                    // Se estiver no modo seleção, selecionar este ponto para continuar
-                    if (selectingContinuePoint) {
-                      continueFromSelectedPoint(point);
-                    }
-                  }}
-                >
-                  <div 
-                    className={`ruler-point-marker ${selectedContinuePoint?.id === point.id ? 'ruler-point-selected' : ''}`}
-                    style={{ 
-                      backgroundColor: selectedContinuePoint?.id === point.id ? '#8B5CF6' : '#4b5563',
-                      borderColor: '#ffffff',
-                      cursor: selectingContinuePoint ? 'pointer' : 'default'
-                    }}
-                  >
-                    {index + 1}
-                  </div>
-                </Marker>
-              ))}
+        // No componente de renderização dos pontos, adicionar estilo diferenciado para pontos de bifurcação
+{manualPoints.map((point, index) => {
+  const isBranchPoint = point.isBranch;
+  const isSelectedForContinue = selectedContinuePoint?.id === point.id;
+  
+  return (
+    <Marker 
+      key={point.id} 
+      longitude={point.lng} 
+      latitude={point.lat}
+      onClick={(e) => {
+        e.originalEvent.stopPropagation();
+        if (selectingContinuePoint) {
+          continueFromSelectedPoint(point);
+        }
+      }}
+    >
+      <div 
+        className={`ruler-point-marker ${isBranchPoint ? 'ruler-point-branch' : ''} ${
+          isSelectedForContinue ? 'ruler-point-selected' : ''
+        }`}
+        style={{ 
+          backgroundColor: isBranchPoint ? '#8B5CF6' : 
+                         isSelectedForContinue ? '#8B5CF6' : '#4b5563',
+          borderColor: '#ffffff',
+          cursor: selectingContinuePoint ? 'pointer' : 'default'
+        }}
+        title={isBranchPoint ? `Ponto de bifurcação (${index + 1})` : `Ponto ${index + 1}`}
+      >
+        {index + 1}
+        {isBranchPoint && (
+          <div className="absolute -top-1 -right-1 w-3 h-3 bg-purple-500 rounded-full border border-white"></div>
+        )}
+      </div>
+    </Marker>
+  );
+})}
               <Source id="manual-route" type="geojson" data={{
                 type: 'Feature',
                 geometry: {
