@@ -2420,28 +2420,24 @@ body {
   }
 }
 
+/* GARANTIR QUE TODOS OS PONTOS TENHAM A MESMA APARÊNCIA */
+.ruler-point-marker,
+.ruler-point-branch,
+.ruler-point-snapped {
+  background: linear-gradient(135deg, #4b5563 0%, #374151 100%) !important;
+  border: 2px solid #ffffff !important;
+  border-radius: 2px 2px 8px 8px !important;
+  width: 20px !important;
+  height: 28px !important;
+  color: white !important;
+  font-size: 9px !important;
+  font-weight: bold !important;
+}
+
+/* Apenas o ponto selecionado tem aparência diferente */
 .ruler-point-selected {
   background: linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%) !important;
   border: 3px solid #ffffff !important;
   box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.4) !important;
   animation: pulse 1.5s infinite !important;
-  transform: scale(1.2) !important;
-  z-index: 1000 !important;
-}
-
-/* Adicionar ao App.css */
-.ruler-point-branch {
-  background: linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%) !important;
-  border: 2px solid #ffffff !important;
-  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.6) !important;
-}
-
-.ruler-point-branch::before {
-  background: #f59e0b !important;
-  box-shadow: 0 0 8px rgba(245, 158, 11, 1) !important;
-}
-
-/* Linha tracejada para ramificações */
-.line-dashed {
-  border-top: 2px dashed #8B5CF6;
 }
