@@ -25,12 +25,12 @@ const ControlesRastreamento = ({
   setSelectedMarkers,
   // Novas props para o modo régua
   undoLastPoint,
+  formatDistanceDetailed,
   // Novas props para seleção de ponto
   selectingContinuePoint,
   setSelectingContinuePoint,
   selectedContinuePoint,
-  cancelContinueSelection,
-  formatDistanceDetailed
+  cancelContinueSelection
 }) => {
   const safeManualPoints = manualPoints || [];
   const safeTotalDistance = totalDistance || 0;
@@ -258,12 +258,12 @@ const ControlesRastreamento = ({
           </div>
         )}
 
-        {/* Indicador de ponto selecionado para continuar */}
+        {/* Indicador de modo ramificação ativo */}
         {selectedContinuePoint && selectedPointPosition && (
           <div className="mt-2 p-2 bg-purple-500/20 border border-purple-500/40 rounded-lg">
             <div className="flex items-center justify-between text-xs">
               <span className="text-purple-300 font-medium">
-                Continuando do ponto {selectedPointPosition}
+                ⚡ Modo Ramificação Ativo
               </span>
               <Button
                 size="sm"
@@ -272,13 +272,13 @@ const ControlesRastreamento = ({
                   setSelectingContinuePoint && setSelectingContinuePoint(false);
                 }}
                 className="h-5 text-xs bg-purple-500 hover:bg-purple-600 text-white"
-                title="Cancelar continuação"
+                title="Cancelar ramificação"
               >
                 <X className="w-3 h-3" />
               </Button>
             </div>
             <p className="text-purple-200 text-[10px] mt-1">
-              Novos pontos serão inseridos APÓS este ponto
+              O PRÓXIMO ponto criará uma ramificação do ponto {selectedPointPosition}. Depois voltará ao normal.
             </p>
           </div>
         )}
@@ -341,7 +341,7 @@ const ControlesRastreamento = ({
         )}
 
         {/* Indicador de modo de seleção ativo */}
-        {selectingContinuePoint && (
+        {selectingContinuePoint && !selectedContinuePoint && (
           <div className="mt-2 p-2 bg-purple-500/10 border border-purple-500/20 rounded-lg">
             <div className="flex items-center justify-between text-xs">
               <span className="text-purple-400 animate-pulse">Modo Seleção Ativo</span>

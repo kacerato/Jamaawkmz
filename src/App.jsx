@@ -326,96 +326,107 @@ function App() {
 
   // ========== FUNÇÕES CORRIGIDAS PARA RAMIFICAÇÕES ==========
 
-  // FUNÇÃO SIMPLIFICADA: Recalcular distância total
-  const recalculateTotalDistance = (points) => {
-    if (points.length < 2) {
-      setTotalDistance(0);
-      return;
-    }
+  // FUNÇÃO MELHORADA: Recalcular distância total considerando apenas conexões sequenciais
+const recalculateTotalDistance = (points) => {
+  if (points.length < 2) {
+    setTotalDistance(0);
+    return;
+  }
+  
+  let totalDistance = 0;
+  
+  // Calcula distância apenas entre pontos CONSECUTIVOS na array
+  // Isso garante que ramificações não criem conexões "diagonais" indesejadas
+  for (let i = 0; i < points.length - 1; i++) {
+    const currentPoint = points[i];
+    const nextPoint = points[i + 1];
     
-    let totalDistance = 0;
-    
-    // Calcula distância entre pontos consecutivos
-    for (let i = 0; i < points.length - 1; i++) {
-      const currentPoint = points[i];
-      const nextPoint = points[i + 1];
+    // Só calcula se ambos pontos existem
+    if (currentPoint && nextPoint) {
+      const segmentDistance = calculateDistance(
+        currentPoint.lat, currentPoint.lng,
+        nextPoint.lat, nextPoint.lng
+      );
       
-      // Só calcula se ambos pontos existem e não são undefined
-      if (currentPoint && nextPoint) {
-        totalDistance += calculateDistance(
-          currentPoint.lat, currentPoint.lng,
-          nextPoint.lat, nextPoint.lng
-        );
+      totalDistance += segmentDistance;
+      
+      // Log para debug (pode remover depois)
+      if (currentPoint.isBranch || nextPoint.isBranch) {
+        console.log(`📏 Segmento ${i}-${i+1} (ramificação): ${segmentDistance.toFixed(2)}m`);
       }
     }
-    
-    setTotalDistance(totalDistance);
+  }
+  
+  setTotalDistance(totalDistance);
+  console.log(`📐 Distância total recalculada: ${totalDistance.toFixed(2)}m`);
+};
+
+  // FUNÇÃO CORRIGIDA: addRulerPoint para ramificações como pontos de partida únicos
+const addRulerPoint = (lat, lng) => {
+  if (!tracking || paused || trackingMode !== 'ruler') return;
+  
+  const newPoint = {
+    lat,
+    lng,
+    id: Date.now(),
+    timestamp: Date.now(),
+    // Marca como ponto de ramificação se estiver continuando de um ponto específico
+    isBranch: !!selectedContinuePoint,
+    parentPointId: selectedContinuePoint ? selectedContinuePoint.id : null
   };
-
-  // FUNÇÃO CORRIGIDA: addRulerPoint para ramificações como pontos de partida
-  const addRulerPoint = (lat, lng) => {
-    if (!tracking || paused || trackingMode !== 'ruler') return;
+  
+  setManualPoints(prev => {
+    let updatedPoints;
     
-    const newPoint = {
-      lat,
-      lng,
-      id: Date.now(),
-      timestamp: Date.now(),
-      // Se estiver continuando de um ponto específico, marca como ramificação
-      isBranch: !!selectedContinuePoint,
-      parentPointId: selectedContinuePoint ? selectedContinuePoint.id : null
-    };
-
-    setManualPoints(prev => {
-      let updatedPoints;
+    if (selectedContinuePoint) {
+      // MODO RAMIFICAÇÃO: Cria uma conexão única do ponto selecionado para o novo ponto
+      const parentIndex = prev.findIndex(p => p.id === selectedContinuePoint.id);
       
-      if (selectedContinuePoint) {
-        // MODO RAMIFICAÇÃO: Insere o novo ponto APÓS o ponto selecionado
-        const parentIndex = prev.findIndex(p => p.id === selectedContinuePoint.id);
+      if (parentIndex !== -1) {
+        // IMPORTANTE: Insere o novo ponto APÓS o ponto pai
+        // Isso garante que apenas UMA conexão seja criada
+        updatedPoints = [
+          ...prev.slice(0, parentIndex + 1),
+          newPoint,
+          ...prev.slice(parentIndex + 1)
+        ];
         
-        if (parentIndex !== -1) {
-          // Insere após o ponto pai
-          updatedPoints = [
-            ...prev.slice(0, parentIndex + 1),
-            newPoint,
-            ...prev.slice(parentIndex + 1)
-          ];
-          
-          console.log('🌿 Nova ramificação criada do ponto:', selectedContinuePoint.id);
-        } else {
-          // Fallback: adiciona ao final se não encontrar o pai
-          updatedPoints = [...prev, newPoint];
-        }
+        console.log('🌿 Nova ramificação criada do ponto:', selectedContinuePoint.id, 'para ponto:', newPoint.id);
         
-        // Limpa a seleção após adicionar o ponto de ramificação
+        // CRÍTICO: Limpa a seleção APÓS adicionar o PRIMEIRO ponto da ramificação
+        // Isso garante que o próximo ponto continue normalmente da sequência
         setSelectedContinuePoint(null);
+        setSelectingContinuePoint(false);
       } else {
-        // MODO NORMAL: Adiciona ao final da sequência
+        // Fallback: adiciona ao final se não encontrar o pai
         updatedPoints = [...prev, newPoint];
       }
-      
-      // Recalcula a distância total considerando todas as conexões
-      recalculateTotalDistance(updatedPoints);
-      
-      return updatedPoints;
-    });
-  };
+    } else {
+      // MODO NORMAL: Adiciona ao final da sequência
+      updatedPoints = [...prev, newPoint];
+    }
+    
+    // Recalcula a distância total considerando todas as conexões em sequência
+    recalculateTotalDistance(updatedPoints);
+    
+    return updatedPoints;
+  });
+};
 
-  // FUNÇÃO MELHORADA: continueFromSelectedPoint
-  const continueFromSelectedPoint = (point) => {
-    if (!point) return;
-    
-    setSelectedContinuePoint(point);
-    setSelectingContinuePoint(false);
-    
-    // Não reinicia o rastreamento, apenas marca o ponto de partida
-    console.log('📍 Ponto selecionado para continuar:', point.id);
-    
-    // Mensagem informativa
-    setTimeout(() => {
-      alert(`Pronto! O próximo ponto que você adicionar será inserido APÓS o ponto selecionado. Continue clicando no mapa para adicionar mais pontos.`);
-    }, 100);
-  };
+// FUNÇÃO MELHORADA: continueFromSelectedPoint
+const continueFromSelectedPoint = (point) => {
+  if (!point) return;
+  
+  setSelectedContinuePoint(point);
+  setSelectingContinuePoint(false);
+  
+  console.log('📍 Ponto selecionado para ramificação:', point.id);
+  
+  // Mensagem informativa mais clara
+  setTimeout(() => {
+    alert(`Modo Ramificação Ativo! O PRÓXIMO ponto que você clicar será conectado APENAS ao ponto ${point.id}. Após isso, a régua voltará ao modo normal.`);
+  }, 100);
+};
 
   // ========== FIM DAS FUNÇÕES CORRIGIDAS ==========
 
@@ -2815,6 +2826,19 @@ function App() {
               </div>
             </Popup>
           )}
+          
+          {/* Overlay de instrução quando estiver selecionando ponto para ramificação */}
+{selectedContinuePoint && (
+  <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 bg-purple-600 text-white px-4 py-3 rounded-lg shadow-lg animate-pulse border border-purple-400">
+    <div className="flex items-center gap-2">
+      <MousePointer className="w-4 h-4" />
+      <div>
+        <span className="text-sm font-medium">Modo Ramificação Ativo</span>
+        <p className="text-xs opacity-90">Clique no mapa para criar uma ramificação do ponto selecionado</p>
+      </div>
+    </div>
+  </div>
+)}
 
           {/* Overlay de instrução quando estiver selecionando ponto */}
           {selectingContinuePoint && (
