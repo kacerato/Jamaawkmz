@@ -555,6 +555,32 @@
   }
 }
 
+/* ========== ESTILOS PARA PONTOS DE RAMIFICAÇÃO ========== */
+.ruler-point-branch {
+  background: linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%) !important;
+  border: 2px solid #ffffff !important;
+  box-shadow: 0 4px 16px rgba(139, 92, 246, 0.6) !important;
+  animation: pulse-branch 2s infinite !important;
+}
+
+.ruler-point-selected {
+  border: 3px solid #06B6D4 !important;
+  box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.3) !important;
+  transform: translateY(-5px) scale(1.15) !important;
+  z-index: 1001 !important;
+}
+
+@keyframes pulse-branch {
+  0%, 100% {
+    transform: translateY(-5px) scale(1);
+    box-shadow: 0 4px 12px rgba(139, 92, 246, 0.6);
+  }
+  50% {
+    transform: translateY(-5px) scale(1.1);
+    box-shadow: 0 6px 18px rgba(139, 92, 246, 0.8);
+  }
+}
+
 .ruler-point-snapped {
   background: linear-gradient(135deg, #10B981 0%, #059669 100%);
   border: 2px solid #ffffff;
@@ -819,6 +845,12 @@
   color: white;
 }
 
+.badge-branch {
+  background: linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%);
+  color: white;
+  animation: pulse-branch 2s infinite;
+}
+
 /* ========== LAYOUT DOS PROJETOS ========== */
 .project-actions-grid {
   display: grid;
@@ -845,6 +877,11 @@
 .project-loaded {
   border-color: #06B6D4;
   background: linear-gradient(135deg, rgba(6, 182, 212, 0.1) 0%, rgba(2, 132, 199, 0.1) 100%);
+}
+
+.project-branch-active {
+  border-color: #8B5CF6;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(124, 58, 237, 0.1) 100%);
 }
 
 /* ========== POPUPS ========== */
@@ -910,6 +947,12 @@
   box-shadow: 0 4px 14px rgba(239, 68, 68, 0.4);
 }
 
+.btn-branch-active {
+  background: linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%);
+  box-shadow: 0 4px 14px rgba(139, 92, 246, 0.4);
+  animation: pulse-branch 2s infinite;
+}
+
 .status-indicator-tracking {
   background: linear-gradient(135deg, #10B981 0%, #059669 100%);
   animation: pulse-status 2s infinite;
@@ -922,6 +965,11 @@
 .status-indicator-snapping {
   background: linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%);
   animation: pulse-status 1.5s infinite;
+}
+
+.status-indicator-branch {
+  background: linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%);
+  animation: pulse-branch 2s infinite;
 }
 
 @keyframes pulse-status {
@@ -968,6 +1016,13 @@
   background-clip: text;
 }
 
+.gradient-text-branch {
+  background: linear-gradient(135deg, #8B5CF6 0%, #C084FC 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
 .spinner {
   border: 3px solid rgba(6, 182, 212, 0.1);
   border-top: 3px solid #06B6D4;
@@ -1006,6 +1061,10 @@
 
 .hover-glow:hover {
   box-shadow: 0 0 30px rgba(6, 182, 212, 0.6);
+}
+
+.hover-glow-branch:hover {
+  box-shadow: 0 0 30px rgba(139, 92, 246, 0.6);
 }
 
 /* ========== CHECKBOX PERSONALIZADO ========== */
@@ -1636,6 +1695,11 @@ input[type="checkbox"]:focus {
   background: linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%);
 }
 
+.ar-marker.branch {
+  background: linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%);
+  animation: pulse-branch 2s infinite;
+}
+
 .ar-distance-line {
   position: absolute;
   background: white;
@@ -1773,6 +1837,10 @@ canvas {
   }
 }
 
+.branch-counter {
+  animation: pulse-branch 2s ease-in-out infinite;
+}
+
 /* ========== ESTILOS PARA SELEÇÃO EM MASSA ========== */
 .marker-selected {
   border: 2px solid #06B6D4 !important;
@@ -1782,6 +1850,11 @@ canvas {
 .project-selected {
   background: linear-gradient(135deg, rgba(6, 182, 212, 0.2) 0%, rgba(2, 132, 199, 0.2) 100%) !important;
   border-color: #06B6D4 !important;
+}
+
+.branch-selected {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(124, 58, 237, 0.2) 100%) !important;
+  border-color: #8B5CF6 !important;
 }
 
 /* ========== BOTÃO DE ALINHAMENTO NO CONTROLE ========== */
@@ -1885,6 +1958,10 @@ canvas {
   padding: 1.5rem;
 }
 
+.modern-card-branch {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.9) 0%, rgba(124, 58, 237, 0.9) 100%);
+}
+
 /* ========== ESTILOS PARA BOTÕES GRADIENTE ========== */
 .btn-gradient-success {
   background: linear-gradient(135deg, #10B981 0%, #059669 100%);
@@ -1946,6 +2023,11 @@ canvas {
   animation: spin 1s linear infinite;
 }
 
+.loading-spinner-branch {
+  border: 4px solid rgba(139, 92, 246, 0.2);
+  border-left: 4px solid #8B5CF6;
+}
+
 /* ========== ESTILOS PARA NOTIFICAÇÕES ========== */
 .notification {
   position: fixed;
@@ -1973,6 +2055,10 @@ canvas {
 
 .notification.info {
   background: linear-gradient(135deg, #06B6D4 0%, #0284C7 100%);
+}
+
+.notification.branch {
+  background: linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%);
 }
 
 /* ========== ESTILOS PARA TOOLTIPS ========== */
@@ -2197,12 +2283,26 @@ canvas {
   animation: glowPulse 2s ease-in-out infinite;
 }
 
+.glow-effect-branch {
+  box-shadow: 0 0 20px rgba(139, 92, 246, 0.4);
+  animation: glowPulseBranch 2s ease-in-out infinite;
+}
+
 @keyframes glowPulse {
   0%, 100% {
     box-shadow: 0 0 20px rgba(6, 182, 212, 0.4);
   }
   50% {
     box-shadow: 0 0 30px rgba(6, 182, 212, 0.8);
+  }
+}
+
+@keyframes glowPulseBranch {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(139, 92, 246, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(139, 92, 246, 0.8);
   }
 }
 
@@ -2331,6 +2431,12 @@ body {
   box-shadow: 0 8px 32px rgba(6, 182, 212, 0.2);
 }
 
+.project-card-modern.branch-active {
+  border-color: #8B5CF6;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 32px rgba(139, 92, 246, 0.2);
+}
+
 .project-header-modern {
   height: 4px;
   width: 100%;
@@ -2351,6 +2457,10 @@ body {
   font-weight: 600;
 }
 
+.batch-selection-info.branch {
+  background: linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%);
+}
+
 /* Melhorias no popup de pontos */
 .point-popup-enhanced {
   background: #1e293b;
@@ -2364,6 +2474,13 @@ body {
   font-size: 1.5rem;
   font-weight: bold;
   background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.distance-display-branch {
+  background: linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -2404,6 +2521,12 @@ body {
   color: white;
 }
 
+.badge-branch {
+  background: linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%);
+  color: white;
+  animation: pulse-branch 2s infinite;
+}
+
 /* Animações suaves */
 .fade-in-up {
   animation: fadeInUp 0.3s ease-out;
@@ -2420,30 +2543,373 @@ body {
   }
 }
 
-/* Estilos para pontos de ramificação */
-.ruler-point-branch {
-  background: linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%) !important;
-  border: 2px solid #ffffff !important;
-  animation: pulse 2s infinite !important;
+/* ========== ESTILOS PARA SISTEMA DE RAMIFICAÇÕES ========== */
+.branch-connection-line {
+  stroke: #8B5CF6;
+  stroke-width: 4;
+  stroke-opacity: 0.8;
+  stroke-dasharray: 5, 5;
+  animation: dash 1.5s linear infinite;
 }
 
-.ruler-point-branch::before {
-  content: "🌿";
-  position: absolute;
-  top: -20px;
+@keyframes dash {
+  to {
+    stroke-dashoffset: -10;
+  }
+}
+
+.branch-info-panel {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(124, 58, 237, 0.1) 100%);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  border-radius: 8px;
+  padding: 1rem;
+  margin: 0.5rem 0;
+}
+
+.branch-controls {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.branch-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: rgba(139, 92, 246, 0.2);
+  color: #c4b5fd;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+/* ========== ESTILOS PARA OVERLAYS INFORMATIVOS ========== */
+.branch-overlay {
+  position: fixed;
+  top: 80px;
   left: 50%;
   transform: translateX(-50%);
-  font-size: 12px;
+  z-index: 1000;
+  background: linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%);
+  color: white;
+  padding: 12px 20px;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(139, 92, 246, 0.4);
+  animation: slideInFromTop 0.3s ease-out;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
 }
 
-/* Manter a mesma aparência para todos os pontos base */
-.ruler-point-marker {
-  background: linear-gradient(135deg, #4b5563 0%, #374151 100%) !important;
-  border: 2px solid #ffffff !important;
-  border-radius: 2px 2px 8px 8px !important;
-  width: 20px !important;
-  height: 28px !important;
-  color: white !important;
-  font-size: 9px !important;
-  font-weight: bold !important;
+.branch-overlay.warning {
+  background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%);
+  box-shadow: 0 4px 20px rgba(245, 158, 11, 0.4);
 }
+
+.branch-overlay.info {
+  background: linear-gradient(135deg, #06B6D4 0%, #0284C7 100%);
+  box-shadow: 0 4px 20px rgba(6, 182, 212, 0.4);
+}
+
+/* ========== ESTILOS PARA INDICADORES VISUAIS ========== */
+.connection-indicator {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #10B981;
+  animation: pulse 2s infinite;
+  z-index: 1000;
+}
+
+.connection-indicator.branch {
+  background: #8B5CF6;
+  animation: pulse-branch 2s infinite;
+}
+
+.connection-line {
+  position: absolute;
+  background: linear-gradient(90deg, #10B981, transparent);
+  height: 2px;
+  transform-origin: left center;
+  z-index: 999;
+}
+
+.connection-line.branch {
+  background: linear-gradient(90deg, #8B5CF6, transparent);
+}
+
+/* ========== ESTILOS PARA FEEDBACK DE USUÁRIO ========== */
+.user-feedback {
+  position: fixed;
+  bottom: 100px;
+  right: 20px;
+  z-index: 1000;
+  background: rgba(30, 41, 59, 0.9);
+  border: 1px solid #475569;
+  border-radius: 8px;
+  padding: 12px 16px;
+  color: white;
+  font-size: 0.875rem;
+  backdrop-filter: blur(10px);
+  animation: slideInFromRight 0.3s ease-out;
+  max-width: 300px;
+}
+
+.user-feedback.success {
+  border-color: #10B981;
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.user-feedback.warning {
+  border-color: #F59E0B;
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.user-feedback.error {
+  border-color: #EF4444;
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.user-feedback.info {
+  border-color: #06B6D4;
+  background: rgba(6, 182, 212, 0.1);
+}
+
+.user-feedback.branch {
+  border-color: #8B5CF6;
+  background: rgba(139, 92, 246, 0.1);
+}
+
+/* ========== ANIMAÇÕES ESPECÍFICAS PARA RAMIFICAÇÕES ========== */
+@keyframes branch-creation {
+  0% {
+    transform: scale(0) rotate(0deg);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.2) rotate(180deg);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1) rotate(360deg);
+    opacity: 1;
+  }
+}
+
+.branch-creation-animation {
+  animation: branch-creation 0.6s ease-out;
+}
+
+@keyframes connection-establish {
+  0% {
+    stroke-dasharray: 0, 100;
+    stroke-opacity: 0;
+  }
+  100% {
+    stroke-dasharray: 100, 0;
+    stroke-opacity: 0.8;
+  }
+}
+
+.connection-establish-animation {
+  animation: connection-establish 0.8s ease-out forwards;
+}
+
+/* ========== ESTILOS PARA CONTROLES DE RAMIFICAÇÃO ========== */
+.branch-control-panel {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.05) 0%, rgba(124, 58, 237, 0.05) 100%);
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  border-radius: 12px;
+  padding: 1rem;
+  margin: 1rem 0;
+}
+
+.branch-control-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  color: #c4b5fd;
+  font-weight: 600;
+}
+
+.branch-control-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.branch-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  background: rgba(139, 92, 246, 0.2);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  border-radius: 6px;
+  font-size: 0.75rem;
+  color: #c4b5fd;
+}
+
+/* ========== ESTILOS PARA VISUALIZAÇÃO HIERÁRQUICA ========== */
+.branch-hierarchy {
+  background: rgba(30, 41, 59, 0.8);
+  border: 1px solid #475569;
+  border-radius: 8px;
+  padding: 1rem;
+  margin: 1rem 0;
+}
+
+.branch-node {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  margin: 0.25rem 0;
+  background: rgba(30, 41, 59, 0.6);
+  border-radius: 6px;
+  border-left: 3px solid #06B6D4;
+}
+
+.branch-node.main {
+  border-left-color: #06B6D4;
+}
+
+.branch-node.branch {
+  border-left-color: #8B5CF6;
+  background: rgba(139, 92, 246, 0.1);
+}
+
+.branch-node-content {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+}
+
+.branch-node-actions {
+  display: flex;
+  gap: 0.25rem;
+}
+
+/* ========== ESTILOS PARA ESTADOS DE SISTEMA ========== */
+.system-status-branch {
+  background: linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%);
+  color: white;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  animation: pulse-branch 2s infinite;
+}
+
+.system-status-connected {
+  background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+  color: white;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.system-status-disconnected {
+  background: linear-gradient(135deg, #6B7280 0%, #4B5563 100%);
+  color: white;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+/* ========== ESTILOS PARA FEEDBACK DE PERFORMANCE ========== */
+.performance-indicator {
+  position: fixed;
+  bottom: 20px;
+  left: 20px;
+  z-index: 1000;
+  background: rgba(30, 41, 59, 0.9);
+  border: 1px solid #475569;
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: #94a3b8;
+  font-size: 0.75rem;
+  backdrop-filter: blur(10px);
+}
+
+.performance-good {
+  color: #10B981;
+}
+
+.performance-warning {
+  color: #F59E0B;
+}
+
+.performance-poor {
+  color: #EF4444;
+}
+
+/* ========== ESTILOS PARA MODO DESENVOLVEDOR ========== */
+.dev-tools {
+  position: fixed;
+  top: 20px;
+  left: 20px;
+  z-index: 10000;
+  background: rgba(30, 41, 59, 0.95);
+  border: 1px solid #475569;
+  border-radius: 8px;
+  padding: 1rem;
+  color: white;
+  font-family: 'Courier New', monospace;
+  font-size: 0.75rem;
+  backdrop-filter: blur(10px);
+  max-width: 400px;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.dev-tools-header {
+  display: flex;
+  justify-content: between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #475569;
+}
+
+.dev-tools-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.dev-stat {
+  display: flex;
+  justify-content: between;
+}
+
+.dev-stat-label {
+  color: #94a3b8;
+}
+
+.dev-stat-value {
+  color: #e2e8f0;
+  font-weight: 600;
+}
+
+.dev-stat-value.good {
+  color: #10B981;
+}
+
+.dev-stat-value.warning {
+  color: #F59E0B;
+}
+
+.dev-stat-value.error {
+  color: #EF4444;
+}
+
+/* ========== FIM DO ARQUIVO APP.CSS ========== */

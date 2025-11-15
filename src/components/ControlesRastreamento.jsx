@@ -258,19 +258,15 @@ const ControlesRastreamento = ({
           </div>
         )}
 
-       // No ControlesRastreamento.jsx, modifique o indicador de ramificação:
-{selectedContinuePoint && selectedPointPosition && (
+    {selectedContinuePoint && (
   <div className="mt-2 p-2 bg-purple-500/20 border border-purple-500/40 rounded-lg">
     <div className="flex items-center justify-between text-xs">
       <span className="text-purple-300 font-medium">
-        ⚡ Modo Ramificação Ativo
+        ⚡ Ramificação Ativa (Ponto {getSelectedPointPosition()})
       </span>
       <Button
         size="sm"
-        onClick={() => {
-          setSelectedContinuePoint && setSelectedContinuePoint(null);
-          setSelectingContinuePoint && setSelectingContinuePoint(false);
-        }}
+        onClick={cancelBranchMode}
         className="h-5 text-xs bg-purple-500 hover:bg-purple-600 text-white"
         title="Cancelar ramificação"
       >
@@ -278,8 +274,8 @@ const ControlesRastreamento = ({
       </Button>
     </div>
     <p className="text-purple-200 text-[10px] mt-1">
-      O PRÓXIMO ponto criará uma ramificação INDIVIDUAL do ponto {selectedPointPosition}.
-      Após isso, a régua continuará normalmente a partir da ramificação.
+      Clique no mapa para adicionar pontos à ramificação. 
+      Esta sequência será INDEPENDENTE da linha principal.
     </p>
   </div>
 )}
