@@ -264,7 +264,7 @@ function App() {
   const [gpsAccuracy, setGpsAccuracy] = useState(null);
   const [speed, setSpeed] = useState(0);
 
-  // Estados para régua manual e projetos
+  // Estados para rastreamento manual
   const [tracking, setTracking] = useState(false)
   const [paused, setPaused] = useState(false)
   const [manualPoints, setManualPoints] = useState([])
@@ -276,8 +276,6 @@ function App() {
   const [showProjectsList, setShowProjectsList] = useState(false)
   const [currentPosition, setCurrentPosition] = useState(null)
   const [showRulerPopup, setShowRulerPopup] = useState(false)
-  const [trackingMode, setTrackingMode] = useState('manual') // manual ou ruler
-  const [lastAutoPointTime, setLastAutoPointTime] = useState(0)
   const [editingProject, setEditingProject] = useState(null);
   const [showProjectDetails, setShowProjectDetails] = useState(false);
   const [newMarkerData, setNewMarkerData] = useState(null);
@@ -285,12 +283,12 @@ function App() {
   const [snappingPoints, setSnappingPoints] = useState([]);
   const [mapStyle, setMapStyle] = useState('streets');
   
-  // Novos estados para múltiplos projetos carregados
+  // Estados para múltiplos projetos carregados
   const [loadedProjects, setLoadedProjects] = useState([]);
   const [showLoadedProjects, setShowLoadedProjects] = useState(false);
   const [pointPopupInfo, setPointPopupInfo] = useState(null);
 
-  // Novos estados para popup moderno e tratamento de erros
+  // Estados para popup moderno e tratamento de erros
   const [popupMarker, setPopupMarker] = useState(null);
   const [adjustBoundsForMarkers, setAdjustBoundsForMarkers] = useState(false);
   const [adjustBoundsForProject, setAdjustBoundsForProject] = useState(false);
@@ -307,15 +305,11 @@ function App() {
   const [importSuccess, setImportSuccess] = useState(false);
   const [importError, setImportError] = useState(null);
 
-  // Novos estados para seleção múltipla
+  // Estados para seleção múltipla
   const [selectedMarkers, setSelectedMarkers] = useState([]);
   const [showBatchBairroDialog, setShowBatchBairroDialog] = useState(false);
   const [selectedProjects, setSelectedProjects] = useState([]);
   const [showMultipleSelection, setShowMultipleSelection] = useState(false);
-
-  // Novos estados para modo régua
-  const [selectedContinuePoint, setSelectedContinuePoint] = useState(null);
-  const [selectingContinuePoint, setSelectingContinuePoint] = useState(false);
 
   // Filtros Kalman para suavização
   const kalmanLatRef = useRef(new KalmanFilter(0.1, 0.1));
@@ -324,156 +318,7 @@ function App() {
   // Calcular a distância total de todos os projetos carregados
   const totalDistanceAllProjects = calculateTotalDistanceAllProjects(loadedProjects);
 
-  // ========== FUNÇÕES CORRIGIDAS PARA RAMIFICAÇÕES ==========
-
-  // FUNÇÃO CORRIGIDA: addRulerPoint para ramificações
-const addRulerPoint = (lat, lng) => {
-  if (!tracking || paused || trackingMode !== 'ruler') return;
-  
-  // CRÍTICO: Gerar um branchId ÚNICO para TODA a ramificação
-  const branchId = selectedContinuePoint ? `branch_${selectedContinuePoint.id}` : null;
-  
-  const newPoint = {
-    lat,
-    lng,
-    id: Date.now(),
-    timestamp: Date.now(),
-    // TODOS os pontos da mesma ramificação usam o MESMO branchId
-    branchId: branchId,
-    parentPointId: selectedContinuePoint ? selectedContinuePoint.id : null,
-    isBranch: !!selectedContinuePoint
-  };
-  
-  setManualPoints(prev => {
-    const updatedPoints = [...prev, newPoint];
-    
-    console.log('📍 Novo ponto:', {
-      ponto: newPoint.id,
-      branchId: newPoint.branchId,
-      parentId: newPoint.parentPointId,
-      totalPontos: updatedPoints.length
-    });
-    
-    // Recalcula a distância
-    recalculateTotalDistance(updatedPoints);
-    
-    return updatedPoints;
-  });
-};
-
-  // FUNÇÃO COMPLETAMENTE CORRIGIDA: Recalcular distância
-const recalculateTotalDistance = (points) => {
-  if (points.length < 2) {
-    setTotalDistance(0);
-    return;
-  }
-  
-  let totalDistance = 0;
-  
-  // LÓGICA CORRIGIDA: Conexões especiais para ramificações
-  for (let i = 0; i < points.length - 1; i++) {
-    const currentPoint = points[i];
-    const nextPoint = points[i + 1];
-    
-    if (currentPoint && nextPoint) {
-      // CONECTA SEMPRE, EXCETO quando são ramificações DIFERENTES
-      const shouldSkip = 
-        currentPoint.branchId && 
-        nextPoint.branchId && 
-        currentPoint.branchId !== nextPoint.branchId;
-      
-      // CONEXÃO ESPECIAL: Primeiro ponto da ramificação com seu ponto pai
-      const isFirstBranchPoint = 
-        nextPoint.branchId && 
-        nextPoint.parentPointId === currentPoint.id;
-      
-      if (!shouldSkip || isFirstBranchPoint) {
-        const segmentDistance = calculateDistance(
-          currentPoint.lat, currentPoint.lng,
-          nextPoint.lat, nextPoint.lng
-        );
-        
-        totalDistance += segmentDistance;
-        
-        console.log(`📏 Segmento ${i}-${i+1}: ${segmentDistance.toFixed(2)}m`, {
-          de: currentPoint.id,
-          para: nextPoint.id,
-          branchAtual: currentPoint.branchId,
-          branchProximo: nextPoint.branchId,
-          tipo: isFirstBranchPoint ? 'Primeira Conexão Ramificação' : 
-                currentPoint.branchId ? 'Ramificação' : 'Principal'
-        });
-      } else {
-        console.log(`⏩ PULANDO conexão ${i}-${i+1}: Ramos diferentes`);
-      }
-    }
-  }
-  
-  setTotalDistance(totalDistance);
-  console.log(`📐 DISTÂNCIA TOTAL: ${totalDistance.toFixed(2)}m`);
-};
-
-  // FUNÇÃO CORRIGIDA: continueFromSelectedPoint
-  const continueFromSelectedPoint = (point) => {
-    if (!point) return;
-    
-    setSelectedContinuePoint(point);
-    setSelectingContinuePoint(false);
-    
-    console.log('🌿 INICIANDO RAMIFICAÇÃO:', {
-      pontoPai: point.id,
-      branchId: `branch_${point.id}`,
-      posicao: manualPoints.findIndex(p => p.id === point.id) + 1
-    });
-    
-    // Mensagem informativa
-    setTimeout(() => {
-      alert(`⚡ Modo Ramificação Ativo!\n\nTodos os pontos que você clicar agora formarão uma ramificação INDEPENDENTE do ponto ${manualPoints.findIndex(p => p.id === point.id) + 1}.\n\nUse o botão "Cancelar Ramificação" para voltar ao modo normal.`);
-    }, 100);
-  };
-
-  // FUNÇÃO PARA CANCELAR MODO RAMIFICAÇÃO
-  const cancelBranchMode = () => {
-    setSelectedContinuePoint(null);
-    setSelectingContinuePoint(false);
-    console.log('🚫 Modo ramificação cancelado');
-  };
-
-  // ========== FIM DAS FUNÇÕES CORRIGIDAS ==========
-
   // ========== FUNÇÕES EXISTENTES MANTIDAS ==========
-
-  // Função para ativar o modo régua
-  const activateRulerMode = () => {
-    setTrackingMode('ruler')
-    setShowRulerPopup(false)
-    console.log('📏 Modo Régua ativado - Clique no mapa para adicionar pontos')
-  }
-
-  // Função para voltar o último ponto
-  const undoLastPoint = () => {
-    if (manualPoints.length === 0) return
-  
-    setManualPoints(prev => {
-      const newPoints = prev.slice(0, -1)
-      
-      // Se o ponto removido era o ponto de continuação, limpa a seleção
-      if (selectedContinuePoint && prev[prev.length - 1].id === selectedContinuePoint.id) {
-        setSelectedContinuePoint(null);
-      }
-      
-      // Recalcular a distância total
-      recalculateTotalDistance(newPoints);
-      
-      return newPoints
-    })
-  }
-
-  // Função para cancelar a seleção de ponto para continuar
-  const cancelContinueSelection = () => {
-    setSelectedContinuePoint(null)
-    setSelectingContinuePoint(false)
-  }
 
   // CORREÇÃO: Função de logout corrigida
   const handleLogout = async () => {
@@ -572,7 +417,7 @@ const recalculateTotalDistance = (points) => {
       points: pointsToSave,
       total_distance: calculatedTotalDistance,
       bairro: selectedBairro !== 'todos' ? selectedBairro : 'Vários',
-      tracking_mode: trackingMode,
+      tracking_mode: 'manual',
       updated_at: new Date().toISOString()
     };
     
@@ -711,7 +556,6 @@ const recalculateTotalDistance = (points) => {
       setManualPoints(project.points);
       setTotalDistance(project.totalDistance || project.total_distance || 0);
       setProjectName(project.name);
-      setTrackingMode(project.trackingMode || project.tracking_mode || 'manual');
     }
     
     // Se existe currentProject E tem pontos, continuar dele
@@ -733,7 +577,6 @@ const recalculateTotalDistance = (points) => {
     setPaused(false);
     setShowTrackingControls(true);
     setShowRulerPopup(false);
-    setLastAutoPointTime(Date.now());
     
     kalmanLatRef.current = new KalmanFilter(0.1, 0.1);
     kalmanLngRef.current = new KalmanFilter(0.1, 0.1);
@@ -1003,7 +846,7 @@ const recalculateTotalDistance = (points) => {
         points: project.points,
         total_distance: project.totalDistance || project.total_distance,
         bairro: project.bairro,
-        tracking_mode: project.trackingMode || project.tracking_mode,
+        tracking_mode: 'manual',
         user_id: user.id
       };
 
@@ -1073,7 +916,7 @@ const recalculateTotalDistance = (points) => {
               points: project.points,
               total_distance: project.totalDistance || project.total_distance,
               bairro: project.bairro,
-              tracking_mode: project.trackingMode || project.tracking_mode,
+              tracking_mode: 'manual',
               user_id: user.id
             }])
             .select();
@@ -1202,8 +1045,6 @@ const recalculateTotalDistance = (points) => {
             }].slice(-10);
             return newHistory;
           });
-          
-          // REMOVIDO: modo automático foi substituído pelo modo régua
         },
         (error) => {
           console.error('Erro ao obter localização:', error)
@@ -1238,7 +1079,7 @@ const recalculateTotalDistance = (points) => {
         navigator.geolocation.clearWatch(watchId)
       }
     }
-  }, [tracking, paused, trackingMode])
+  }, [tracking, paused])
 
   // Salvar bairros personalizados no localStorage
   const saveBairros = (newBairros) => {
@@ -1630,7 +1471,6 @@ const recalculateTotalDistance = (points) => {
         total_distance: totalDistance,
         bairro: 'Importado',
         tracking_mode: 'manual',
-        trackingMode: 'manual',
         created_at: new Date().toISOString(),
         description: `Projeto importado de ${file.name}`
       };
@@ -2305,11 +2145,11 @@ const recalculateTotalDistance = (points) => {
     return markers.filter(m => m.bairro === bairro).length
   }
 
-  // ========== FUNÇÕES DA RÉGUA MANUAL ==========
+  // ========== FUNÇÕES DO RASTREAMENTO MANUAL ==========
 
   // Adicionar ponto manual com snapping
   const addManualPoint = async () => {
-    if (currentPosition && tracking && !paused && trackingMode === 'manual') {
+    if (currentPosition && tracking && !paused) {
       let finalPosition = currentPosition;
       
       if (snappingEnabled) {
@@ -2340,7 +2180,8 @@ const recalculateTotalDistance = (points) => {
       const updatedPoints = [...prev, newPoint]
       
       // Recalcula a distância total
-      recalculateTotalDistance(updatedPoints);
+      const newTotalDistance = calculateTotalDistance(updatedPoints);
+      setTotalDistance(newTotalDistance);
       
       return updatedPoints
     })
@@ -2399,9 +2240,6 @@ const recalculateTotalDistance = (points) => {
       setPositionHistory([]);
       setGpsAccuracy(null);
       setSpeed(0);
-      setLastAutoPointTime(0);
-      setSelectingContinuePoint(false);
-      setSelectedContinuePoint(null);
       
       console.log('✅ Rastreamento parado e estados resetados');
     }
@@ -2412,9 +2250,6 @@ const recalculateTotalDistance = (points) => {
     setManualPoints([])
     setTotalDistance(0)
     setCurrentProject(null)
-    setLastAutoPointTime(0)
-    setSelectingContinuePoint(false)
-    setSelectedContinuePoint(null)
   }
 
   // Função para remover pontos de um projeto carregado
@@ -2425,8 +2260,6 @@ const recalculateTotalDistance = (points) => {
       setCurrentProject(null);
       setShowProjectDetails(false);
       setProjectName('');
-      setSelectingContinuePoint(false);
-      setSelectedContinuePoint(null);
       console.log('✅ Projeto removido após limpeza de pontos');
     }
   };
@@ -2480,7 +2313,7 @@ const recalculateTotalDistance = (points) => {
 <kml xmlns="http://www.opengis.net/kml/2.2">
   <Document>
     <name>${escapeXml(project.name)}</name>
-    <description>Traçado criado no Jamaaw App - Distância total: ${safeToFixed((project.totalDistance || 0) / 1000, 2)} km - Modo: ${project.trackingMode || 'manual'}</description>
+    <description>Traçado criado no Jamaaw App - Distância total: ${safeToFixed((project.totalDistance || 0) / 1000, 2)} km - Modo: manual</description>
     <Style id="trailStyle">
       <LineStyle>
         <color>ff1e3a8a</color>
@@ -2591,27 +2424,6 @@ const recalculateTotalDistance = (points) => {
     }
   }, [])
 
-  // Debug do estado das ramificações
-  useEffect(() => {
-    console.log('🔍 DEBUG - Estado atual:', {
-      pontos: manualPoints.length,
-      ramificacaoAtiva: !!selectedContinuePoint,
-      pontoSelecionado: selectedContinuePoint?.id,
-      branchId: selectedContinuePoint ? `branch_${selectedContinuePoint.id}` : 'Nenhum',
-      distancia: totalDistance
-    });
-
-    // Log detalhado dos pontos
-    manualPoints.forEach((point, index) => {
-      console.log(`Ponto ${index + 1}:`, {
-        id: point.id,
-        branchId: point.branchId,
-        parentId: point.parentPointId,
-        isBranch: point.isBranch
-      });
-    });
-  }, [manualPoints, selectedContinuePoint, totalDistance]);
-
   // Renderizar tela de autenticação se não estiver logado
   if (authLoading) {
     return (
@@ -2643,29 +2455,7 @@ const recalculateTotalDistance = (points) => {
           mapStyle={mapStyles[mapStyle].url}
           mapboxAccessToken={mapboxToken}
           onClick={(e) => {
-            // Se estiver no modo seleção de ponto para continuar
-            if (selectingContinuePoint) {
-              const { lng, lat } = e.lngLat;
-              
-              // Encontrar o ponto mais próximo do clique
-              const clickedPoint = manualPoints.find(point => 
-                calculateDistance(lat, lng, point.lat, point.lng) < 10 // 10 metros de tolerância
-              );
-              
-              if (clickedPoint) {
-                continueFromSelectedPoint(clickedPoint);
-              } else {
-                // Se clicou longe de um ponto, cancelar seleção
-                setSelectingContinuePoint(false);
-              }
-              return;
-            }
-            
-            // Se estiver no modo régua e rastreando, adiciona ponto
-            if (tracking && trackingMode === 'ruler' && !paused) {
-              const { lng, lat } = e.lngLat
-              addRulerPoint(lat, lng)
-            }
+            // Apenas evento de clique básico, sem função régua
           }}
         >
           <NavigationControl position="top-right" />
@@ -2712,101 +2502,48 @@ const recalculateTotalDistance = (points) => {
 
               {/* Pontos do projeto */}
               {project.points.map((point, index) => (
-               <Marker 
-  key={point.id} 
-  longitude={point.lng} 
-  latitude={point.lat}
-  onClick={(e) => {
-    e.originalEvent.stopPropagation();
-    if (selectingContinuePoint) {
-      continueFromSelectedPoint(point);
-    }
-  }}
->
-  <div 
-    className={`ruler-point-marker ${
-      selectedContinuePoint?.id === point.id ? 'ruler-point-selected' : ''
-    } ${point.branchId ? 'ruler-point-branch' : ''} ${
-      point.id === selectedContinuePoint?.id ? 'ruler-point-origin' : ''
-    }`}
-    style={{ 
-      cursor: selectingContinuePoint ? 'pointer' : 'default',
-      backgroundColor: point.branchId ? '#8B5CF6' : 
-                     point.id === selectedContinuePoint?.id ? '#10B981' : '#4b5563',
-      border: point.id === selectedContinuePoint?.id ? '3px solid #10B981' : '2px solid white'
-    }}
-    title={`Ponto ${index + 1}${point.branchId ? ' (Ramificação)' : ''}${
-      point.id === selectedContinuePoint?.id ? ' (Origem Ramificação)' : ''
-    }`}
-  >
-    {index + 1}
-  </div> </Marker>
+                <Marker 
+                  key={point.id} 
+                  longitude={point.lng} 
+                  latitude={point.lat}
+                >
+                  <div 
+                    className="ruler-point-marker"
+                    style={{ 
+                      backgroundColor: '#4b5563',
+                      border: '2px solid white'
+                    }}
+                    title={`Ponto ${index + 1}`}
+                  >
+                    {index + 1}
+                  </div>
+                </Marker>
               ))}
             </React.Fragment>
           ))}
 
-          {/* Traçado manual atual - COM LÓGICA CORRIGIDA DE RAMIFICAÇÃO */}
+          {/* Traçado manual atual - APENAS LINHA CONTÍNUA */}
           {manualPoints.length > 0 && (
-            <>
-              {/* Renderizar todos os pontos */}
-             {/* Renderizar APENAS conexões válidas - LÓGICA COMPLETAMENTE CORRIGIDA */}
-{manualPoints.map((point, index) => {
-  if (index < manualPoints.length - 1) {
-    const nextPoint = manualPoints[index + 1];
-    
-    // LÓGICA COMPLETAMENTE CORRIGIDA:
-    const shouldConnect = !(
-      // Pula apenas se forem ramificações DIFERENTES
-      point.branchId && 
-      nextPoint.branchId && 
-      point.branchId !== nextPoint.branchId
-    ) || (
-      // MAS CONECTA se for a primeira conexão de uma ramificação
-      nextPoint.branchId && 
-      nextPoint.parentPointId === point.id
-    );
-    
-    if (!shouldConnect) {
-      return null;
-    }
-    
-    // COR CORRIGIDA: 
-    // - Roxo para pontos de ramificação
-    // - Verde para a primeira conexão da ramificação  
-    // - Azul para linha principal
-    const lineColor = 
-      (nextPoint.branchId && nextPoint.parentPointId === point.id) ? '#10B981' : // Verde para primeira conexão
-      point.branchId ? '#8B5CF6' : '#1e3a8a'; // Roxo para ramificação, Azul para principal
-    
-    return (
-      <Source 
-        key={`line-${point.id}-${nextPoint.id}`} 
-        type="geojson" 
-        data={{
-          type: 'Feature',
-          geometry: {
-            type: 'LineString',
-            coordinates: [
-              [point.lng, point.lat],
-              [nextPoint.lng, nextPoint.lat]
-            ]
-          }
-        }}
-      >
-        <Layer
-          type="line"
-          paint={{
-            'line-color': lineColor,
-            'line-width': 4,
-            'line-opacity': 0.8
-          }}
-        />
-      </Source>
-    );
-  }
-  return null;
-})}
-            </>
+            <Source 
+              id="manual-route" 
+              type="geojson" 
+              data={{
+                type: 'Feature',
+                geometry: {
+                  type: 'LineString',
+                  coordinates: manualPoints.map(point => [point.lng, point.lat])
+                }
+              }}
+            >
+              <Layer
+                type="line"
+                paint={{
+                  'line-color': '#1e3a8a',
+                  'line-width': 4,
+                  'line-opacity': 0.8
+                }}
+              />
+            </Source>
           )}
 
           {/* Rota calculada */}
@@ -2874,29 +2611,6 @@ const recalculateTotalDistance = (points) => {
                 </button>
               </div>
             </Popup>
-          )}
-          
-          {/* Overlay de instrução quando estiver selecionando ponto para ramificação */}
-          {selectedContinuePoint && (
-            <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 bg-purple-600 text-white px-4 py-3 rounded-lg shadow-lg animate-pulse border border-purple-400">
-              <div className="flex items-center gap-2">
-                <MousePointer className="w-4 h-4" />
-                <div>
-                  <span className="text-sm font-medium">Modo Ramificação Ativo</span>
-                  <p className="text-xs opacity-90">Clique no mapa para criar uma ramificação do ponto selecionado</p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Overlay de instrução quando estiver selecionando ponto */}
-          {selectingContinuePoint && !selectedContinuePoint && (
-            <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 bg-cyan-500 text-white px-4 py-2 rounded-lg shadow-lg animate-pulse">
-              <div className="flex items-center gap-2">
-                <MousePointer className="w-4 h-4" />
-                <span className="text-sm font-medium">Clique em qualquer ponto do traçado para continuar a partir dele</span>
-              </div>
-            </div>
           )}
         </Map>
       </div>
@@ -3174,9 +2888,6 @@ const recalculateTotalDistance = (points) => {
             {tracking && (
               <span className="text-xs text-green-400 ml-2 bg-green-500/20 px-2 py-0.5 rounded-full">Rastreando</span>
             )}
-            {selectingContinuePoint && (
-              <span className="text-xs text-purple-400 ml-2 bg-purple-500/20 px-2 py-0.5 rounded-full">Selecionando Ponto</span>
-            )}
           </div>
         </div>
 
@@ -3231,7 +2942,7 @@ const recalculateTotalDistance = (points) => {
         bairros={bairros}
       />
 
-      {/* Popup da Régua Manual */}
+      {/* Popup de Ferramentas de Medição */}
       {!tracking && showRulerPopup && (
         <div className="absolute top-20 right-4 z-10">
           <Card className="bg-gradient-to-br from-slate-800/95 to-slate-700/95 backdrop-blur-sm border-slate-600/50 shadow-2xl text-white w-80">
@@ -3250,7 +2961,7 @@ const recalculateTotalDistance = (points) => {
                   <X className="w-3 h-3" />
                 </Button>
               </div>
-              <p className="text-xs text-gray-400 mt-1">Escolha o modo de medição</p>
+              <p className="text-xs text-gray-400 mt-1">Ferramentas profissionais de medição</p>
             </CardHeader>
             <CardContent className="space-y-4">
               <Button
@@ -3261,107 +2972,29 @@ const recalculateTotalDistance = (points) => {
                 Realidade Aumentada
               </Button>
 
-              <div className="space-y-3">
-                <span className="text-gray-300 font-medium text-sm">Modo de Rastreamento</span>
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    variant={trackingMode === 'manual' ? 'default' : 'outline'}
-                    className={`flex-1 font-medium ${
-                      trackingMode === 'manual' 
-                        ? 'bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white' 
-                        : 'border-slate-600 bg-slate-700/50 hover:bg-slate-700 text-gray-300'
-                    }`}
-                    onClick={() => setTrackingMode('manual')}
-                  >
-                    <MapPin className="w-3 h-3 mr-1" />
-                    Manual
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant={trackingMode === 'ruler' ? 'default' : 'outline'}
-                    className={`flex-1 font-medium ${
-                      trackingMode === 'ruler' 
-                        ? 'bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white' 
-                        : 'border-slate-600 bg-slate-700/50 hover:bg-slate-700 text-gray-300'
-                    }`}
-                    onClick={activateRulerMode}
-                  >
-                    <Ruler className="w-3 h-3 mr-1" />
-                    Régua
-                  </Button>
-                </div>
-              </div>
-
               {/* Informações do Modo */}
               <div className="bg-slate-700/30 rounded-lg p-3 border border-slate-600/50">
                 <div className="space-y-2">
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-gray-400">Modo Ativo:</span>
                     <span className="font-medium text-cyan-400">
-                      {trackingMode === 'manual' ? 'Manual (GPS)' : 'Régua (Clique)'}
+                      Manual (GPS)
                     </span>
                   </div>
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-gray-400">Precisão:</span>
                     <span className="font-medium text-cyan-400">
-                      {trackingMode === 'manual' ? 'Alta (GPS)' : 'Máxima (Clique)'}
+                      Alta (GPS)
                     </span>
                   </div>
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-gray-400">Melhor para:</span>
                     <span className="font-medium text-cyan-400">
-                      {trackingMode === 'manual' ? 'Pontos exatos' : 'Medições precisas'}
+                      Pontos exatos em campo
                     </span>
                   </div>
                 </div>
               </div>
-
-              {/* Ações Específicas do Modo Régua */}
-              {trackingMode === 'ruler' && manualPoints.length > 0 && (
-                <div className="space-y-2">
-                  <div className="flex gap-2">
-                    <Button
-                      onClick={undoLastPoint}
-                      disabled={manualPoints.length === 0}
-                      className="flex-1 bg-orange-500 hover:bg-orange-600 text-white text-sm"
-                    >
-                      <Undo className="w-4 h-4 mr-1" />
-                      Voltar Ponto
-                    </Button>
-                    <Button
-                      onClick={() => {
-                        setSelectingContinuePoint(true);
-                        setShowRulerPopup(false);
-                      }}
-                      className="flex-1 bg-purple-500 hover:bg-purple-600 text-white text-sm"
-                    >
-                      <MousePointer className="w-4 h-4 mr-1" />
-                      Selecionar Ponto
-                    </Button>
-                  </div>
-                  {selectedContinuePoint && (
-                    <div className="p-2 bg-purple-500/20 border border-purple-500/40 rounded-lg">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-purple-300 font-medium">
-                          ⚡ Ramificação Ativa
-                        </span>
-                        <Button
-                          size="sm"
-                          onClick={cancelBranchMode}
-                          className="h-5 text-xs bg-purple-500 hover:bg-purple-600 text-white"
-                          title="Cancelar ramificação"
-                        >
-                          <X className="w-3 h-3" />
-                        </Button>
-                      </div>
-                      <p className="text-purple-200 text-[10px] mt-1">
-                        Clique no mapa para adicionar pontos à ramificação
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
 
               {/* CORREÇÃO: Botão Iniciar/Continuar simplificado */}
               <Button
@@ -3452,7 +3085,7 @@ const recalculateTotalDistance = (points) => {
               <div className="text-center">
                 <p className="text-white font-medium truncate text-sm mb-1">{currentProject.name}</p>
                 <p className="text-cyan-400 text-xs">
-                  {currentProject.trackingMode === 'manual' ? 'Modo Manual' : 'Modo Régua'}
+                  Modo Manual
                 </p>
               </div>
 
@@ -3571,7 +3204,7 @@ const recalculateTotalDistance = (points) => {
                         <span className="text-cyan-400 font-medium">{safeToFixed(((project.totalDistance || project.total_distance) || 0) / 1000, 2)}</span> km
                       </div>
                       <div>
-                        <span className="text-cyan-400 font-medium">{project.trackingMode || project.tracking_mode || 'manual'}</span>
+                        <span className="text-cyan-400 font-medium">manual</span>
                       </div>
                     </div>
                     <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
@@ -3607,7 +3240,6 @@ const recalculateTotalDistance = (points) => {
                         setProjectName(project.name);
                         setManualPoints(project.points);
                         setTotalDistance(project.totalDistance || project.total_distance || 0);
-                        setTrackingMode(project.trackingMode || project.tracking_mode || 'manual');
                         setShowProjectDialog(true);
                         setShowProjectsList(false);
                       }}
@@ -3643,7 +3275,7 @@ const recalculateTotalDistance = (points) => {
                   <FolderOpen className="w-16 h-16 text-gray-600 mx-auto mb-4" />
                   <h3 className="text-lg font-semibold text-gray-400 mb-2">Nenhum projeto encontrado</h3>
                   <p className="text-gray-500 text-sm">
-                    Use a régua manual para criar seu primeiro projeto de medição
+                    Use o rastreamento manual para criar seu primeiro projeto de medição
                   </p>
                 </div>
               )}
@@ -3709,7 +3341,7 @@ const recalculateTotalDistance = (points) => {
                         <div className="flex items-center gap-2 text-sm text-gray-400">
                           <span>{project.points.length} pontos</span>
                           <span>•</span>
-                          <span>{project.trackingMode || project.tracking_mode || 'manual'}</span>
+                          <span>manual</span>
                         </div>
                       </div>
                       
@@ -4110,7 +3742,7 @@ const recalculateTotalDistance = (points) => {
               manualPoints={manualPoints}
               totalDistance={totalDistance || 0}
               selectedBairro={selectedBairro}
-              trackingMode={trackingMode}
+              trackingMode="manual"
             />
 
             <div className="flex gap-2 pt-2">
@@ -4139,37 +3771,31 @@ const recalculateTotalDistance = (points) => {
       </Dialog>
 
       {/* Controles de Rastreamento */}
-     {tracking && showTrackingControls && (
-  <ControlesRastreamento
-    tracking={tracking}
-    paused={paused}
-    pauseTracking={pauseTracking}
-    addManualPoint={addManualPoint}
-    stopTracking={stopTracking}
-    setShowProjectDialog={setShowProjectDialog}
-    setShowProjectDetails={setShowProjectDetails}
-    manualPoints={manualPoints}
-    totalDistance={totalDistance}
-    trackingMode={trackingMode}
-    currentPosition={currentPosition}
-    currentProject={currentProject}
-    snappingEnabled={snappingEnabled}
-    onToggleSnapping={toggleSnapping}
-    gpsAccuracy={gpsAccuracy}
-    speed={speed}
-    handleRemovePoints={handleRemovePoints}
-    showProjectDialog={showProjectDialog}
-    selectedMarkers={selectedMarkers}
-    setSelectedMarkers={setSelectedMarkers}
-    undoLastPoint={undoLastPoint}
-    formatDistanceDetailed={formatDistanceDetailed}
-    selectingContinuePoint={selectingContinuePoint}
-    setSelectingContinuePoint={setSelectingContinuePoint}
-    selectedContinuePoint={selectedContinuePoint}
-    cancelContinueSelection={cancelContinueSelection}
-    cancelBranchMode={cancelBranchMode}
-  />
-)}
+      {tracking && showTrackingControls && (
+        <ControlesRastreamento
+          tracking={tracking}
+          paused={paused}
+          pauseTracking={pauseTracking}
+          addManualPoint={addManualPoint}
+          stopTracking={stopTracking}
+          setShowProjectDialog={setShowProjectDialog}
+          setShowProjectDetails={setShowProjectDetails}
+          manualPoints={manualPoints}
+          totalDistance={totalDistance}
+          trackingMode="manual"
+          currentPosition={currentPosition}
+          currentProject={currentProject}
+          snappingEnabled={snappingEnabled}
+          onToggleSnapping={toggleSnapping}
+          gpsAccuracy={gpsAccuracy}
+          speed={speed}
+          handleRemovePoints={handleRemovePoints}
+          showProjectDialog={showProjectDialog}
+          selectedMarkers={selectedMarkers}
+          setSelectedMarkers={setSelectedMarkers}
+          formatDistanceDetailed={formatDistanceDetailed}
+        />
+      )}
 
       {/* Popup Moderno para Marcadores */}
       {popupMarker && (
