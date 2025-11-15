@@ -2912,4 +2912,17 @@ body {
   color: #EF4444;
 }
 
+/* Estilo para a primeira conexão de ramificação */
+.ruler-point-connection-branch {
+  stroke: #10B981;
+  stroke-width: 4;
+  stroke-dasharray: 5, 5;
+  animation: pulse-connection 2s infinite;
+}
+
+@keyframes pulse-connection {
+  0%, 100% { opacity: 0.8; }
+  50% { opacity: 1; }
+}
+
 /* ========== FIM DO ARQUIVO APP.CSS ========== */

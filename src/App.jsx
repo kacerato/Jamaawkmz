@@ -327,85 +327,91 @@ function App() {
   // ========== FUNÇÕES CORRIGIDAS PARA RAMIFICAÇÕES ==========
 
   // FUNÇÃO CORRIGIDA: addRulerPoint para ramificações
-  const addRulerPoint = (lat, lng) => {
-    if (!tracking || paused || trackingMode !== 'ruler') return;
-    
-    // CRÍTICO: Gerar um branchId ÚNICO para TODA a ramificação
-    const branchId = selectedContinuePoint ? `branch_${selectedContinuePoint.id}` : null;
-    
-    const newPoint = {
-      lat,
-      lng,
-      id: Date.now(),
-      timestamp: Date.now(),
-      // TODOS os pontos da mesma ramificação usam o MESMO branchId
-      branchId: branchId,
-      parentPointId: selectedContinuePoint ? selectedContinuePoint.id : null,
-      isBranch: !!selectedContinuePoint
-    };
-    
-    setManualPoints(prev => {
-      const updatedPoints = [...prev, newPoint];
-      
-      console.log('📍 Novo ponto:', {
-        ponto: newPoint.id,
-        branchId: newPoint.branchId,
-        parentId: newPoint.parentPointId,
-        totalPontos: updatedPoints.length
-      });
-      
-      // Recalcula a distância
-      recalculateTotalDistance(updatedPoints);
-      
-      return updatedPoints;
-    });
+const addRulerPoint = (lat, lng) => {
+  if (!tracking || paused || trackingMode !== 'ruler') return;
+  
+  // CRÍTICO: Gerar um branchId ÚNICO para TODA a ramificação
+  const branchId = selectedContinuePoint ? `branch_${selectedContinuePoint.id}` : null;
+  
+  const newPoint = {
+    lat,
+    lng,
+    id: Date.now(),
+    timestamp: Date.now(),
+    // TODOS os pontos da mesma ramificação usam o MESMO branchId
+    branchId: branchId,
+    parentPointId: selectedContinuePoint ? selectedContinuePoint.id : null,
+    isBranch: !!selectedContinuePoint
   };
+  
+  setManualPoints(prev => {
+    const updatedPoints = [...prev, newPoint];
+    
+    console.log('📍 Novo ponto:', {
+      ponto: newPoint.id,
+      branchId: newPoint.branchId,
+      parentId: newPoint.parentPointId,
+      totalPontos: updatedPoints.length
+    });
+    
+    // Recalcula a distância
+    recalculateTotalDistance(updatedPoints);
+    
+    return updatedPoints;
+  });
+};
 
   // FUNÇÃO COMPLETAMENTE CORRIGIDA: Recalcular distância
-  const recalculateTotalDistance = (points) => {
-    if (points.length < 2) {
-      setTotalDistance(0);
-      return;
-    }
+const recalculateTotalDistance = (points) => {
+  if (points.length < 2) {
+    setTotalDistance(0);
+    return;
+  }
+  
+  let totalDistance = 0;
+  
+  // LÓGICA CORRIGIDA: Conexões especiais para ramificações
+  for (let i = 0; i < points.length - 1; i++) {
+    const currentPoint = points[i];
+    const nextPoint = points[i + 1];
     
-    let totalDistance = 0;
-    
-    // LÓGICA SIMPLIFICADA E CORRIGIDA
-    for (let i = 0; i < points.length - 1; i++) {
-      const currentPoint = points[i];
-      const nextPoint = points[i + 1];
+    if (currentPoint && nextPoint) {
+      // CONECTA SEMPRE, EXCETO quando são ramificações DIFERENTES
+      const shouldSkip = 
+        currentPoint.branchId && 
+        nextPoint.branchId && 
+        currentPoint.branchId !== nextPoint.branchId;
       
-      if (currentPoint && nextPoint) {
-        // CONECTA SEMPRE, EXCETO quando são ramificações DIFERENTES
-        const shouldSkip = 
-          currentPoint.branchId && 
-          nextPoint.branchId && 
-          currentPoint.branchId !== nextPoint.branchId;
+      // CONEXÃO ESPECIAL: Primeiro ponto da ramificação com seu ponto pai
+      const isFirstBranchPoint = 
+        nextPoint.branchId && 
+        nextPoint.parentPointId === currentPoint.id;
+      
+      if (!shouldSkip || isFirstBranchPoint) {
+        const segmentDistance = calculateDistance(
+          currentPoint.lat, currentPoint.lng,
+          nextPoint.lat, nextPoint.lng
+        );
         
-        if (!shouldSkip) {
-          const segmentDistance = calculateDistance(
-            currentPoint.lat, currentPoint.lng,
-            nextPoint.lat, nextPoint.lng
-          );
-          
-          totalDistance += segmentDistance;
-          
-          console.log(`📏 Segmento ${i}-${i+1}: ${segmentDistance.toFixed(2)}m`, {
-            de: currentPoint.id,
-            para: nextPoint.id,
-            branchAtual: currentPoint.branchId,
-            branchProximo: nextPoint.branchId,
-            tipo: currentPoint.branchId ? 'Ramificação' : 'Principal'
-          });
-        } else {
-          console.log(`⏩ PULANDO conexão ${i}-${i+1}: Ramos diferentes`);
-        }
+        totalDistance += segmentDistance;
+        
+        console.log(`📏 Segmento ${i}-${i+1}: ${segmentDistance.toFixed(2)}m`, {
+          de: currentPoint.id,
+          para: nextPoint.id,
+          branchAtual: currentPoint.branchId,
+          branchProximo: nextPoint.branchId,
+          tipo: isFirstBranchPoint ? 'Primeira Conexão Ramificação' : 
+                currentPoint.branchId ? 'Ramificação' : 'Principal'
+        });
+      } else {
+        console.log(`⏩ PULANDO conexão ${i}-${i+1}: Ramos diferentes`);
       }
     }
-    
-    setTotalDistance(totalDistance);
-    console.log(`📐 DISTÂNCIA TOTAL: ${totalDistance.toFixed(2)}m`);
-  };
+  }
+  
+  setTotalDistance(totalDistance);
+  console.log(`📐 DISTÂNCIA TOTAL: ${totalDistance.toFixed(2)}m`);
+};
 
   // FUNÇÃO CORRIGIDA: continueFromSelectedPoint
   const continueFromSelectedPoint = (point) => {
@@ -2706,31 +2712,35 @@ function App() {
 
               {/* Pontos do projeto */}
               {project.points.map((point, index) => (
-                <Marker
-                  key={`${project.id}-${point.id}`}
-                  longitude={point.lng}
-                  latitude={point.lat}
-                  onClick={(e) => {
-                    e.originalEvent.stopPropagation();
-                    setPointPopupInfo({ 
-                      point, 
-                      projectName: project.name,
-                      pointNumber: index + 1,
-                      totalPoints: project.points.length,
-                      color: project.color
-                    });
-                  }}
-                >
-                  <div 
-                    className="ruler-point-marker"
-                    style={{ 
-                      backgroundColor: project.color,
-                      borderColor: '#ffffff'
-                    }}
-                  >
-                    {index + 1}
-                  </div>
-                </Marker>
+               <Marker 
+  key={point.id} 
+  longitude={point.lng} 
+  latitude={point.lat}
+  onClick={(e) => {
+    e.originalEvent.stopPropagation();
+    if (selectingContinuePoint) {
+      continueFromSelectedPoint(point);
+    }
+  }}
+>
+  <div 
+    className={`ruler-point-marker ${
+      selectedContinuePoint?.id === point.id ? 'ruler-point-selected' : ''
+    } ${point.branchId ? 'ruler-point-branch' : ''} ${
+      point.id === selectedContinuePoint?.id ? 'ruler-point-origin' : ''
+    }`}
+    style={{ 
+      cursor: selectingContinuePoint ? 'pointer' : 'default',
+      backgroundColor: point.branchId ? '#8B5CF6' : 
+                     point.id === selectedContinuePoint?.id ? '#10B981' : '#4b5563',
+      border: point.id === selectedContinuePoint?.id ? '3px solid #10B981' : '2px solid white'
+    }}
+    title={`Ponto ${index + 1}${point.branchId ? ' (Ramificação)' : ''}${
+      point.id === selectedContinuePoint?.id ? ' (Origem Ramificação)' : ''
+    }`}
+  >
+    {index + 1}
+  </div> </Marker>
               ))}
             </React.Fragment>
           ))}
@@ -2739,80 +2749,63 @@ function App() {
           {manualPoints.length > 0 && (
             <>
               {/* Renderizar todos os pontos */}
-              {manualPoints.map((point, index) => (
-                <Marker 
-                  key={point.id} 
-                  longitude={point.lng} 
-                  latitude={point.lat}
-                  onClick={(e) => {
-                    e.originalEvent.stopPropagation();
-                    if (selectingContinuePoint) {
-                      continueFromSelectedPoint(point);
-                    }
-                  }}
-                >
-                  <div 
-                    className={`ruler-point-marker ${
-                      selectedContinuePoint?.id === point.id ? 'ruler-point-selected' : ''
-                    } ${point.branchId ? 'ruler-point-branch' : ''}`}
-                    style={{ 
-                      cursor: selectingContinuePoint ? 'pointer' : 'default',
-                      backgroundColor: point.branchId ? '#8B5CF6' : '#4b5563'
-                    }}
-                    title={`Ponto ${index + 1}${point.branchId ? ' (Ramificação)' : ''}`}
-                  >
-                    {index + 1}
-                  </div>
-                </Marker>
-              ))}
-
-              {/* Renderizar APENAS conexões válidas - LÓGICA CORRIGIDA */}
-              {manualPoints.map((point, index) => {
-                if (index < manualPoints.length - 1) {
-                  const nextPoint = manualPoints[index + 1];
-                  
-                  // LÓGICA CORRIGIDA: Conecta todos, exceto ramificações diferentes
-                  const shouldConnect = !(
-                    point.branchId && 
-                    nextPoint.branchId && 
-                    point.branchId !== nextPoint.branchId
-                  );
-                  
-                  if (!shouldConnect) {
-                    return null;
-                  }
-                  
-                  // COR CORRIGIDA: Roxo para ramificações, Azul para principal
-                  const lineColor = point.branchId ? '#8B5CF6' : '#1e3a8a';
-                  
-                  return (
-                    <Source 
-                      key={`line-${point.id}-${nextPoint.id}`} 
-                      type="geojson" 
-                      data={{
-                        type: 'Feature',
-                        geometry: {
-                          type: 'LineString',
-                          coordinates: [
-                            [point.lng, point.lat],
-                            [nextPoint.lng, nextPoint.lat]
-                          ]
-                        }
-                      }}
-                    >
-                      <Layer
-                        type="line"
-                        paint={{
-                          'line-color': lineColor,
-                          'line-width': 4,
-                          'line-opacity': 0.8
-                        }}
-                      />
-                    </Source>
-                  );
-                }
-                return null;
-              })}
+             {/* Renderizar APENAS conexões válidas - LÓGICA COMPLETAMENTE CORRIGIDA */}
+{manualPoints.map((point, index) => {
+  if (index < manualPoints.length - 1) {
+    const nextPoint = manualPoints[index + 1];
+    
+    // LÓGICA COMPLETAMENTE CORRIGIDA:
+    const shouldConnect = !(
+      // Pula apenas se forem ramificações DIFERENTES
+      point.branchId && 
+      nextPoint.branchId && 
+      point.branchId !== nextPoint.branchId
+    ) || (
+      // MAS CONECTA se for a primeira conexão de uma ramificação
+      nextPoint.branchId && 
+      nextPoint.parentPointId === point.id
+    );
+    
+    if (!shouldConnect) {
+      return null;
+    }
+    
+    // COR CORRIGIDA: 
+    // - Roxo para pontos de ramificação
+    // - Verde para a primeira conexão da ramificação  
+    // - Azul para linha principal
+    const lineColor = 
+      (nextPoint.branchId && nextPoint.parentPointId === point.id) ? '#10B981' : // Verde para primeira conexão
+      point.branchId ? '#8B5CF6' : '#1e3a8a'; // Roxo para ramificação, Azul para principal
+    
+    return (
+      <Source 
+        key={`line-${point.id}-${nextPoint.id}`} 
+        type="geojson" 
+        data={{
+          type: 'Feature',
+          geometry: {
+            type: 'LineString',
+            coordinates: [
+              [point.lng, point.lat],
+              [nextPoint.lng, nextPoint.lat]
+            ]
+          }
+        }}
+      >
+        <Layer
+          type="line"
+          paint={{
+            'line-color': lineColor,
+            'line-width': 4,
+            'line-opacity': 0.8
+          }}
+        />
+      </Source>
+    );
+  }
+  return null;
+})}
             </>
           )}
 
