@@ -326,116 +326,86 @@ function App() {
 
   // ========== FUNÇÕES CORRIGIDAS PARA RAMIFICAÇÕES ==========
 
-  // FUNÇÃO CORRIGIDA: addRulerPoint para ramificações individuais
-  const addRulerPoint = (lat, lng) => {
-    if (!tracking || paused || trackingMode !== 'ruler') return;
-    
-    const newPoint = {
-      lat,
-      lng,
-      id: Date.now(),
-      timestamp: Date.now(),
-      // Marca como ponto de ramificação se estiver continuando de um ponto específico
-      isBranch: !!selectedContinuePoint,
-      parentPointId: selectedContinuePoint ? selectedContinuePoint.id : null,
-      // CRÍTICO: Mantém o branchId para todos os pontos da ramificação
-      branchId: selectedContinuePoint ? selectedContinuePoint.id : null
-    };
-    
-    setManualPoints(prev => {
-      let updatedPoints;
-      
-      if (selectedContinuePoint) {
-        // MODO RAMIFICAÇÃO: Cria uma sequência independente
-        console.log('🌿 Criando ramificação do ponto:', selectedContinuePoint.id);
-        
-        // Encontra o índice do ponto pai
-        const parentIndex = prev.findIndex(p => p.id === selectedContinuePoint.id);
-        
-        if (parentIndex !== -1) {
-          // IMPORTANTE: Adiciona à sequência existente, mas marca como ramificação
-          updatedPoints = [...prev, newPoint];
-          
-          console.log('📍 Ramificação criada:', {
-            pontoPai: selectedContinuePoint.id,
-            novoPonto: newPoint.id,
-            branchId: newPoint.branchId
-          });
-          
-          // NÃO limpa a seleção - mantém no modo ramificação
-          // O usuário deve explicitamente cancelar ou voltar ao modo normal
-          
-        } else {
-          // Fallback: adiciona ao final se não encontrar o pai
-          updatedPoints = [...prev, newPoint];
-          setSelectedContinuePoint(null);
-        }
-      } else {
-        // MODO NORMAL: Adiciona ao final da sequência principal
-        updatedPoints = [...prev, newPoint];
-      }
-      
-      // Recalcula a distância total COM A NOVA LÓGICA
-      recalculateTotalDistance(updatedPoints);
-      
-      return updatedPoints;
-    });
+  // FUNÇÃO CORRIGIDA: addRulerPoint para ramificações
+const addRulerPoint = (lat, lng) => {
+  if (!tracking || paused || trackingMode !== 'ruler') return;
+  
+  const newPoint = {
+    lat,
+    lng,
+    id: Date.now(),
+    timestamp: Date.now(),
+    // CRÍTICO: Para ramificações, criamos um branchId ÚNICO para toda a sequência
+    branchId: selectedContinuePoint ? `branch_${selectedContinuePoint.id}_${Date.now()}` : null,
+    parentPointId: selectedContinuePoint ? selectedContinuePoint.id : null,
+    isBranch: !!selectedContinuePoint
   };
+  
+  setManualPoints(prev => {
+    const updatedPoints = [...prev, newPoint];
+    
+    if (selectedContinuePoint) {
+      console.log('🌿 Ramificação criada:', {
+        pontoPai: selectedContinuePoint.id,
+        novoPonto: newPoint.id,
+        branchId: newPoint.branchId,
+        totalPontos: updatedPoints.length
+      });
+    }
+    
+    // Recalcula a distância COM A LÓGICA CORRIGIDA
+    recalculateTotalDistance(updatedPoints);
+    
+    return updatedPoints;
+  });
+};
 
-  // FUNÇÃO MELHORADA: Recalcular distância total considerando ramificações
-  const recalculateTotalDistance = (points) => {
-    if (points.length < 2) {
-      setTotalDistance(0);
-      return;
-    }
+  // FUNÇÃO CORRIGIDA: Recalcular distância considerando ramificações
+const recalculateTotalDistance = (points) => {
+  if (points.length < 2) {
+    setTotalDistance(0);
+    return;
+  }
+  
+  let totalDistance = 0;
+  const connections = [];
+  
+  // LÓGICA MELHORADA: Conecta pontos que compartilham o mesmo branchId OU são da linha principal
+  for (let i = 0; i < points.length - 1; i++) {
+    const currentPoint = points[i];
+    const nextPoint = points[i + 1];
     
-    let totalDistance = 0;
-    
-    // Calcula distância considerando ramificações independentes
-    for (let i = 0; i < points.length - 1; i++) {
-      const currentPoint = points[i];
-      const nextPoint = points[i + 1];
+    if (currentPoint && nextPoint) {
+      // CRITÉRIOS DE CONEXÃO CORRIGIDOS:
+      const shouldConnect =
+        // 1. Ambos na linha principal (sem branchId)
+        (!currentPoint.branchId && !nextPoint.branchId) ||
+        // 2. Ambos na MESMA ramificação (mesmo branchId)
+        (currentPoint.branchId && nextPoint.branchId && currentPoint.branchId === nextPoint.branchId) ||
+        // 3. Transição de linha principal para início de ramificação
+        (!currentPoint.branchId && nextPoint.branchId && nextPoint.parentPointId === currentPoint.id);
       
-      // Verifica se ambos pontos existem
-      if (currentPoint && nextPoint) {
-        // Conecta apenas se:
-        // 1. Ambos são da linha principal (sem branchId)
-        // 2. Ambos são da mesma ramificação
-        // 3. É uma transição de linha principal para ramificação (pai -> filho)
-        const shouldConnect = 
-          // Conexão na linha principal
-          (!currentPoint.branchId && !nextPoint.branchId) ||
-          // Conexão na mesma ramificação
-          (currentPoint.branchId && nextPoint.branchId && currentPoint.branchId === nextPoint.branchId) ||
-          // Conexão pai -> filho (início da ramificação)
-          (!currentPoint.branchId && nextPoint.branchId && nextPoint.parentPointId === currentPoint.id);
+      if (shouldConnect) {
+        const segmentDistance = calculateDistance(
+          currentPoint.lat, currentPoint.lng,
+          nextPoint.lat, nextPoint.lng
+        );
         
-        if (shouldConnect) {
-          const segmentDistance = calculateDistance(
-            currentPoint.lat, currentPoint.lng,
-            nextPoint.lat, nextPoint.lng
-          );
-          
-          totalDistance += segmentDistance;
-          
-          console.log(`📏 Segmento ${i}-${i + 1}: ${segmentDistance.toFixed(2)}m`, {
-            de: currentPoint.id,
-            para: nextPoint.id,
-            tipo: currentPoint.branchId ? 'Ramificação' : 'Principal'
-          });
-        } else {
-          console.log(`⏩ Pulando conexão ${i}-${i + 1}:`, {
-            de: currentPoint.id,
-            para: nextPoint.id,
-            motivo: 'Ramos independentes'
-          });
-        }
+        totalDistance += segmentDistance;
+        connections.push(`${i}-${i + 1}`);
+        
+        console.log(`📏 Conexão ${i}-${i + 1}: ${segmentDistance.toFixed(2)}m`, {
+          de: currentPoint.id,
+          para: nextPoint.id,
+          tipo: currentPoint.branchId ? 'Ramificação' : 'Principal'
+        });
       }
     }
-    
-    setTotalDistance(totalDistance);
-    console.log(`📐 Distância total recalculada: ${totalDistance.toFixed(2)}m`);
-  };
+  }
+  
+  setTotalDistance(totalDistance);
+  console.log(`📐 Distância total: ${totalDistance.toFixed(2)}m, Conexões: [${connections.join(', ')}]`);
+};
 
   // FUNÇÃO CORRIGIDA: continueFromSelectedPoint
   const continueFromSelectedPoint = (point) => {
@@ -2772,51 +2742,49 @@ function App() {
               ))}
 
               {/* Renderizar APENAS conexões válidas */}
-              {manualPoints.map((point, index) => {
-                if (index < manualPoints.length - 1) {
-                  const nextPoint = manualPoints[index + 1];
-                  
-                  // LÓGICA CORRIGIDA: Conecta apenas se:
-                  const shouldConnect = 
-                    // Ambos na linha principal
-                    (!point.branchId && !nextPoint.branchId) ||
-                    // Ambos na mesma ramificação
-                    (point.branchId && nextPoint.branchId && point.branchId === nextPoint.branchId) ||
-                    // Início de ramificação (pai -> primeiro filho)
-                    (!point.branchId && nextPoint.branchId && nextPoint.parentPointId === point.id);
-                  
-                  if (!shouldConnect) {
-                    return null;
-                  }
-                  
-                  return (
-                    <Source 
-                      key={`line-${point.id}-${nextPoint.id}`} 
-                      type="geojson" 
-                      data={{
-                        type: 'Feature',
-                        geometry: {
-                          type: 'LineString',
-                          coordinates: [
-                            [point.lng, point.lat],
-                            [nextPoint.lng, nextPoint.lat]
-                          ]
-                        }
-                      }}
-                    >
-                      <Layer
-                        type="line"
-                        paint={{
-                          'line-color': point.branchId ? '#8B5CF6' : '#1e3a8a',
-                          'line-width': 4,
-                          'line-opacity': 0.8
-                        }}
-                      />
-                    </Source>
-                  );
-                }
-                return null;
-              })}
+             // NA RENDERIZAÇÃO DO MAPA - Substitua a lógica de renderização de linhas:
+{manualPoints.map((point, index) => {
+  if (index < manualPoints.length - 1) {
+    const nextPoint = manualPoints[index + 1];
+    
+    // LÓGICA IDÊNTICA À DO CÁLCULO DE DISTÂNCIA
+    const shouldConnect = 
+      (!point.branchId && !nextPoint.branchId) ||
+      (point.branchId && nextPoint.branchId && point.branchId === nextPoint.branchId) ||
+      (!point.branchId && nextPoint.branchId && nextPoint.parentPointId === point.id);
+    
+    if (!shouldConnect) {
+      return null;
+    }
+    
+    return (
+      <Source 
+        key={`line-${point.id}-${nextPoint.id}`} 
+        type="geojson" 
+        data={{
+          type: 'Feature',
+          geometry: {
+            type: 'LineString',
+            coordinates: [
+              [point.lng, point.lat],
+              [nextPoint.lng, nextPoint.lat]
+            ]
+          }
+        }}
+      >
+        <Layer
+          type="line"
+          paint={{
+            'line-color': point.branchId ? '#8B5CF6' : '#1e3a8a',
+            'line-width': 4,
+            'line-opacity': 0.8
+          }}
+        />
+      </Source>
+    );
+  }
+  return null;
+})}
             </>
           )}
 

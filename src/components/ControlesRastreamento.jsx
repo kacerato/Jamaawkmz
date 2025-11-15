@@ -29,7 +29,6 @@ const ControlesRastreamento = ({
     setSelectingContinuePoint,
     selectedContinuePoint,
     cancelContinueSelection,
-    // ADICIONE ESTA LINHA:
     cancelBranchMode
   }) => {
   const safeManualPoints = manualPoints || [];
@@ -258,27 +257,28 @@ const ControlesRastreamento = ({
           </div>
         )}
 
-    {selectedContinuePoint && (
-  <div className="mt-2 p-2 bg-purple-500/20 border border-purple-500/40 rounded-lg">
-    <div className="flex items-center justify-between text-xs">
-      <span className="text-purple-300 font-medium">
-        ⚡ Ramificação Ativa (Ponto {getSelectedPointPosition()})
-      </span>
-      <Button
-        size="sm"
-        onClick={cancelBranchMode}
-        className="h-5 text-xs bg-purple-500 hover:bg-purple-600 text-white"
-        title="Cancelar ramificação"
-      >
-        <X className="w-3 h-3" />
-      </Button>
-    </div>
-    <p className="text-purple-200 text-[10px] mt-1">
-      Clique no mapa para adicionar pontos à ramificação. 
-      Esta sequência será INDEPENDENTE da linha principal.
-    </p>
-  </div>
-)}
+        {/* Seção de ramificação ativa - CORRIGIDA */}
+        {selectedContinuePoint && (
+          <div className="mt-2 p-2 bg-purple-500/20 border border-purple-500/40 rounded-lg">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-purple-300 font-medium">
+                ⚡ Ramificação Ativa (Ponto {selectedPointPosition})
+              </span>
+              <Button
+                size="sm"
+                onClick={cancelBranchMode}
+                className="h-5 text-xs bg-purple-500 hover:bg-purple-600 text-white"
+                title="Cancelar ramificação"
+              >
+                <X className="w-3 h-3" />
+              </Button>
+            </div>
+            <p className="text-purple-200 text-[10px] mt-1">
+              Clique no mapa para adicionar pontos à ramificação. 
+              Esta sequência será INDEPENDENTE da linha principal.
+            </p>
+          </div>
+        )}
 
         {/* Ações rápidas para projetos carregados */}
         {currentProject && safeManualPoints.length > 0 && (
