@@ -258,30 +258,31 @@ const ControlesRastreamento = ({
           </div>
         )}
 
-        {/* Indicador de modo ramificação ativo */}
-        {selectedContinuePoint && selectedPointPosition && (
-          <div className="mt-2 p-2 bg-purple-500/20 border border-purple-500/40 rounded-lg">
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-purple-300 font-medium">
-                ⚡ Modo Ramificação Ativo
-              </span>
-              <Button
-                size="sm"
-                onClick={() => {
-                  setSelectedContinuePoint && setSelectedContinuePoint(null);
-                  setSelectingContinuePoint && setSelectingContinuePoint(false);
-                }}
-                className="h-5 text-xs bg-purple-500 hover:bg-purple-600 text-white"
-                title="Cancelar ramificação"
-              >
-                <X className="w-3 h-3" />
-              </Button>
-            </div>
-            <p className="text-purple-200 text-[10px] mt-1">
-              O PRÓXIMO ponto criará uma ramificação do ponto {selectedPointPosition}. Depois voltará ao normal.
-            </p>
-          </div>
-        )}
+       // No ControlesRastreamento.jsx, modifique o indicador de ramificação:
+{selectedContinuePoint && selectedPointPosition && (
+  <div className="mt-2 p-2 bg-purple-500/20 border border-purple-500/40 rounded-lg">
+    <div className="flex items-center justify-between text-xs">
+      <span className="text-purple-300 font-medium">
+        ⚡ Modo Ramificação Ativo
+      </span>
+      <Button
+        size="sm"
+        onClick={() => {
+          setSelectedContinuePoint && setSelectedContinuePoint(null);
+          setSelectingContinuePoint && setSelectingContinuePoint(false);
+        }}
+        className="h-5 text-xs bg-purple-500 hover:bg-purple-600 text-white"
+        title="Cancelar ramificação"
+      >
+        <X className="w-3 h-3" />
+      </Button>
+    </div>
+    <p className="text-purple-200 text-[10px] mt-1">
+      O PRÓXIMO ponto criará uma ramificação INDIVIDUAL do ponto {selectedPointPosition}.
+      Após isso, a régua continuará normalmente a partir da ramificação.
+    </p>
+  </div>
+)}
 
         {/* Ações rápidas para projetos carregados */}
         {currentProject && safeManualPoints.length > 0 && (

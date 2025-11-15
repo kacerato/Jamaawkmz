@@ -2420,10 +2420,24 @@ body {
   }
 }
 
-/* GARANTIR QUE TODOS OS PONTOS TENHAM A MESMA APARÊNCIA */
-.ruler-point-marker,
-.ruler-point-branch,
-.ruler-point-snapped {
+/* Estilos para pontos de ramificação */
+.ruler-point-branch {
+  background: linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%) !important;
+  border: 2px solid #ffffff !important;
+  animation: pulse 2s infinite !important;
+}
+
+.ruler-point-branch::before {
+  content: "🌿";
+  position: absolute;
+  top: -20px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 12px;
+}
+
+/* Manter a mesma aparência para todos os pontos base */
+.ruler-point-marker {
   background: linear-gradient(135deg, #4b5563 0%, #374151 100%) !important;
   border: 2px solid #ffffff !important;
   border-radius: 2px 2px 8px 8px !important;
@@ -2432,12 +2446,4 @@ body {
   color: white !important;
   font-size: 9px !important;
   font-weight: bold !important;
-}
-
-/* Apenas o ponto selecionado tem aparência diferente */
-.ruler-point-selected {
-  background: linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%) !important;
-  border: 3px solid #ffffff !important;
-  box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.4) !important;
-  animation: pulse 1.5s infinite !important;
 }
