@@ -4150,40 +4150,38 @@ function App() {
       </Dialog>
 
       {/* Controles de Rastreamento */}
-      {tracking && showTrackingControls && (
-        <ControlesRastreamento
-          tracking={tracking}
-          paused={paused}
-          pauseTracking={pauseTracking}
-          addManualPoint={addManualPoint}
-          stopTracking={stopTracking}
-          setShowProjectDialog={setShowProjectDialog}
-          setShowProjectDetails={setShowProjectDetails}
-          manualPoints={manualPoints}
-          totalDistance={totalDistance}
-          trackingMode={trackingMode}
-          currentPosition={currentPosition}
-          currentProject={currentProject}
-          snappingEnabled={snappingEnabled}
-          onToggleSnapping={toggleSnapping}
-          gpsAccuracy={gpsAccuracy}
-          speed={speed}
-          handleRemovePoints={handleRemovePoints}
-          showProjectDialog={showProjectDialog}
-          selectedMarkers={selectedMarkers}
-          setSelectedMarkers={setSelectedMarkers}
-          // Novas props para o modo régua
-          undoLastPoint={undoLastPoint}
-          formatDistanceDetailed={formatDistanceDetailed}
-          // Novas props para seleção de ponto
-          selectingContinuePoint={selectingContinuePoint}
-          setSelectingContinuePoint={setSelectingContinuePoint}
-          selectedContinuePoint={selectedContinuePoint}
-          cancelContinueSelection={cancelContinueSelection}
-          // Nova prop para cancelar modo ramificação
-          cancelBranchMode={cancelBranchMode}
-        />
-      )}
+     {tracking && showTrackingControls && (
+  <ControlesRastreamento
+    tracking={tracking}
+    paused={paused}
+    pauseTracking={pauseTracking}
+    addManualPoint={addManualPoint}
+    stopTracking={stopTracking}
+    setShowProjectDialog={setShowProjectDialog}
+    setShowProjectDetails={setShowProjectDetails}
+    manualPoints={manualPoints}
+    totalDistance={totalDistance}
+    trackingMode={trackingMode}
+    currentPosition={currentPosition}
+    currentProject={currentProject}
+    snappingEnabled={snappingEnabled}
+    onToggleSnapping={toggleSnapping}
+    gpsAccuracy={gpsAccuracy}
+    speed={speed}
+    handleRemovePoints={handleRemovePoints}
+    showProjectDialog={showProjectDialog}
+    selectedMarkers={selectedMarkers}
+    setSelectedMarkers={setSelectedMarkers}
+    undoLastPoint={undoLastPoint}
+    formatDistanceDetailed={formatDistanceDetailed}
+    selectingContinuePoint={selectingContinuePoint}
+    setSelectingContinuePoint={setSelectingContinuePoint}
+    selectedContinuePoint={selectedContinuePoint}
+    cancelContinueSelection={cancelContinueSelection}
+    // ADICIONE ESTA LINHA:
+    cancelBranchMode={cancelBranchMode}
+  />
+)}
 
       {/* Popup Moderno para Marcadores */}
       {popupMarker && (

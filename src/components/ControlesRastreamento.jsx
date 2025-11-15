@@ -3,35 +3,35 @@ import { Button } from '@/components/ui/button';
 import { Play, Pause, Square, MapPin, Save, Navigation, Layers, Undo, MousePointer, X } from 'lucide-react';
 
 const ControlesRastreamento = ({
-  tracking,
-  paused,
-  pauseTracking,
-  addManualPoint,
-  stopTracking,
-  setShowProjectDialog,
-  setShowProjectDetails,
-  manualPoints,
-  totalDistance,
-  trackingMode,
-  currentPosition,
-  currentProject,
-  snappingEnabled,
-  onToggleSnapping,
-  gpsAccuracy,
-  speed,
-  handleRemovePoints,
-  showProjectDialog,
-  selectedMarkers = [],
-  setSelectedMarkers,
-  // Novas props para o modo régua
-  undoLastPoint,
-  formatDistanceDetailed,
-  // Novas props para seleção de ponto
-  selectingContinuePoint,
-  setSelectingContinuePoint,
-  selectedContinuePoint,
-  cancelContinueSelection
-}) => {
+    tracking,
+    paused,
+    pauseTracking,
+    addManualPoint,
+    stopTracking,
+    setShowProjectDialog,
+    setShowProjectDetails,
+    manualPoints,
+    totalDistance,
+    trackingMode,
+    currentPosition,
+    currentProject,
+    snappingEnabled,
+    onToggleSnapping,
+    gpsAccuracy,
+    speed,
+    handleRemovePoints,
+    showProjectDialog,
+    selectedMarkers = [],
+    setSelectedMarkers,
+    undoLastPoint,
+    formatDistanceDetailed,
+    selectingContinuePoint,
+    setSelectingContinuePoint,
+    selectedContinuePoint,
+    cancelContinueSelection,
+    // ADICIONE ESTA LINHA:
+    cancelBranchMode
+  }) => {
   const safeManualPoints = manualPoints || [];
   const safeTotalDistance = totalDistance || 0;
   const safeTrackingMode = trackingMode || 'manual';
