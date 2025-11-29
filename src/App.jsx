@@ -27,9 +27,6 @@ import ModernPopup from './components/ModernPopup'
 import ImportProgressPopup from './components/ImportProgressPopup'
 import MultipleSelectionPopup from './components/MultipleSelectionPopup'
 import BairroDetectionService from './components/BairroDetectionService'
-import TeamDashboard from './components/TeamDashboard';
-import JoinProjectDialog from './components/JoinProjectDialog';
-import { Haptics, ImpactStyle } from '@capacitor/haptics'; // ADICIONADO
 import 'mapbox-gl/dist/mapbox-gl.css'
 import './App.css'
 
@@ -276,7 +273,7 @@ const PoleMarker = React.memo(({ point, index, color, onClick, isActive }) => {
 });
 
 // Novo componente otimizado para o Card do Projeto
-const ProjectCard = React.memo(({ project, isSelected, onToggle, onLoad, onEdit, onExport, onDelete, tracking, onTeamDashboard }) => {
+const ProjectCard = React.memo(({ project, isSelected, onToggle, onLoad, onEdit, onExport, onDelete, tracking }) => {
   const distance = safeToFixed(((project.totalDistance || project.total_distance) || 0) / 1000, 2);
   const date = new Date(project.created_at || project.createdAt || Date.now()).toLocaleDateString('pt-BR');
 
@@ -329,19 +326,6 @@ const ProjectCard = React.memo(({ project, isSelected, onToggle, onLoad, onEdit,
         </Button>
 
         <div className="flex gap-1">
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={(e) => {
-              e.stopPropagation();
-              onTeamDashboard(project);
-            }}
-            className="action-btn-mini w-8 px-0 text-cyan-400 hover:bg-cyan-500/10 hover:text-cyan-300"
-            title="Equipe e Código"
-          >
-            <Users className="w-3.5 h-3.5" />
-          </Button>
-
           <Button
             size="sm"
             variant="ghost"
@@ -512,7 +496,6 @@ const TrackingPointPopupContent = ({ pointInfo, onClose, onSelectStart, selected
 };
 
 function App() {
-  // ... resto do componente App ...
   const mapboxToken = 'pk.eyJ1Ijoia2FjZXJhdG8iLCJhIjoiY21oZG1nNnViMDRybjJub2VvZHV1aHh3aiJ9.l7tCaIPEYqcqDI8_aScm7Q';
   const mapRef = useRef();
   const fileInputRef = useRef(null);
@@ -592,110 +575,30 @@ function App() {
   // Novo estado para modo de entrada do rastreamento
   const [trackingInputMode, setTrackingInputMode] = useState('gps');
 
-  // Novos estados para funcionalidade de equipe
-  const [teamDashboardProject, setTeamDashboardProject] = useState(null);
-  const [showJoinDialog, setShowJoinDialog] = useState(false);
-
-  // NOVOS ESTADOS PARA CONTROLE DE LOCK
-  const [isProjectLocked, setIsProjectLocked] = useState(false);
-  const [lockOwner, setLockOwner] = useState(null);
-
   const kalmanLatRef = useRef(new KalmanFilter(0.1, 0.1));
   const kalmanLngRef = useRef(new KalmanFilter(0.1, 0.1));
 
   const totalDistanceAllProjects = calculateTotalDistanceAllProjects(projects);
 
-  // NOVA FUNÇÃO: Carregar projetos do Supabase (atualizada)
+  // FUNÇÃO ATUALIZADA: Carregar projetos do Supabase (filtrado por usuário)
   const loadProjectsFromSupabase = async () => {
     if (!user) return [];
     
     try {
-      // REMOVIDO: .eq('user_id', user.id) 
-      // O RLS do banco já filtra automaticamente o que é seu e o que é compartilhado
+      // FILTRO POR USUÁRIO RESTAURADO
       const { data, error } = await supabase
         .from('projetos')
         .select('*')
-        .order('updated_at', { ascending: false }); // Ordena pelo mais recente modificado
+        .eq('user_id', user.id) // <-- FILTRO CRUCIAL
+        .order('updated_at', { ascending: false });
 
       if (error) throw error;
       return data || [];
     } catch (error) {
-      console.error('Erro ao carregar:', error);
-      return [];
+      console.error('Erro ao carregar projetos:', error);
+      const localProjects = localStorage.getItem('jamaaw_projects');
+      return localProjects ? JSON.parse(localProjects) : [];
     }
-  };
-
-  // NOVA FUNÇÃO: Tentar adquirir lock
-  const tryAcquireLock = async (project) => {
-    const { data, error } = await supabase.rpc('acquire_project_lock', {
-      target_project_id: project.id
-    });
-
-    if (error || !data.success) {
-      Haptics.notification({ type: 'error' }); // Vibração de erro nativa
-      alert(`Projeto em uso por outro usuário.`); // Substituir por Toast bonito depois
-      return false;
-    }
-    
-    // Renovação automática do lock a cada 4 minutos enquanto edita
-    // (Adicione lógica de intervalo aqui se quiser complexidade máxima)
-    return true;
-  };
-
-  // NOVA FUNÇÃO: Liberar lock
-  const releaseLock = async () => {
-    if (currentProject) {
-      await supabase.rpc('release_project_lock', { target_project_id: currentProject.id });
-    }
-  };
-
-  // NOVO EFEITO: Escutar mudanças em tempo real (Automação Visual)
-  useEffect(() => {
-    if (!currentProject) return;
-
-    const channel = supabase
-      .channel(`project_lock_${currentProject.id}`)
-      .on('postgres_changes', { 
-        event: 'UPDATE', 
-        schema: 'public', 
-        table: 'projetos', 
-        filter: `id=eq.${currentProject.id}` 
-      }, (payload) => {
-        // Se alguém mexeu no lock, atualiza a UI instantaneamente
-        const newData = payload.new;
-        if (newData.locked_by && newData.locked_by !== user.id) {
-          setIsProjectLocked(true);
-          setLockOwner(newData.last_editor_email);
-          // Feedback Nativo: Vibração de aviso
-          Haptics.impact({ style: ImpactStyle.Heavy });
-        } else {
-          setIsProjectLocked(false);
-          setLockOwner(null);
-        }
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [currentProject]);
-
-  // NOVA FUNÇÃO: Handler para edição de projeto com verificação de lock
-  const handleEditProject = async (project) => {
-    // 1. Tenta pegar o lock no banco
-    const acquired = await tryAcquireLock(project);
-
-    if (!acquired) {
-      // Mostra Toast de erro (implementar estado para o NativeToast)
-      // setToast({ show: true, msg: 'Projeto sendo editado por outro usuário.', type: 'locked' });
-      alert('Projeto sendo editado por outro usuário.');
-      return;
-    }
-
-    // 2. Se conseguiu, segue com a edição
-    setEditingProject(project);
-    setProjectName(project.name);
-    setShowProjectDialog(true);
   };
 
   // Função para detectar bairros de projetos que ainda estão como "Vários"
@@ -1071,9 +974,6 @@ function App() {
         setProjectName('');
         setShowProjectDialog(false);
         
-        // LIBERA O LOCK AO SALVAR
-        releaseLock();
-        
         if (!editingProject) {
           setTracking(false);
           setPaused(false);
@@ -1097,15 +997,6 @@ function App() {
   };
 
   const startTracking = async (mode = 'gps') => {
-    // Verifica lock se estiver continuando um projeto existente
-    if ((loadedProjects.length === 1 || (currentProject && manualPoints.length > 0)) && isOnline) {
-      const projectToCheck = loadedProjects.length === 1 ? loadedProjects[0] : currentProject;
-      const acquired = await tryAcquireLock(projectToCheck);
-      if (!acquired) {
-        return;
-      }
-    }
-    
     if (loadedProjects.length === 1 && loadedProjects[0].points.length > 0) {
       const project = loadedProjects[0];
       setCurrentProject(project);
@@ -2708,8 +2599,6 @@ const undoLastPoint = () => {
       setPositionHistory([]);
       setGpsAccuracy(null);
       setSpeed(0);
-      // LIBERA O LOCK AO PARAR O RASTREAMENTO
-      releaseLock();
     }
   };
 
@@ -3635,21 +3524,13 @@ const exportProjectAsKML = (project = currentProject) => {
                 </div>
               </div>
 
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => setShowJoinDialog(true)}
-                  className="flex-1 border-dashed border-slate-600 text-slate-400 hover:text-white hover:bg-slate-800"
-                >
-                  <Hash className="w-4 h-4 mr-2" />
-                  Entrar com Código
-                </Button>
-
+              <div className="pt-2 border-t border-white/5 mt-2">
                 <Button
                   onClick={startNewProject}
-                  className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white font-medium py-3 text-base"
+                  variant="outline"
+                  className="w-full h-10 border-slate-700 bg-slate-800/50 hover:bg-slate-700 text-cyan-400 hover:text-cyan-300 flex items-center justify-center gap-2"
                 >
-                  <Plus className="w-4 h-4 mr-2" />
+                  <Plus className="w-4 h-4" />
                   Novo Projeto
                 </Button>
               </div>
@@ -3745,7 +3626,7 @@ const exportProjectAsKML = (project = currentProject) => {
                   <X className="w-3 h-3" />
                 </Button>
               </div>
-            </CardHeader>
+            </CardContent>
             <CardContent className="space-y-3">
               <div className="text-center">
                 <p className="text-white font-medium truncate text-sm mb-1">{currentProject.name}</p>
@@ -3880,10 +3761,10 @@ const exportProjectAsKML = (project = currentProject) => {
                 loadProject(p);
                 setShowProjectsList(false); // Fecha o modal imediatamente
               }}
-              onEdit={handleEditProject} // ATUALIZADO: Usa a nova função com verificação de lock
-              onTeamDashboard={(p) => {
-                setTeamDashboardProject(p);
-                setShowProjectsList(false);
+              onEdit={(p) => {
+                setEditingProject(p);
+                setProjectName(p.name);
+                setShowProjectDialog(true);
               }}
               onExport={exportProjectAsKML}
               onDelete={deleteProject}
@@ -4310,8 +4191,6 @@ const exportProjectAsKML = (project = currentProject) => {
       <Dialog open={showProjectDialog} onOpenChange={(open) => {
         setShowProjectDialog(open);
         if (!open) {
-          // LIBERA O LOCK AO CANCELAR
-          releaseLock();
           setEditingProject(null);
           setProjectName('');
         }
@@ -4351,8 +4230,6 @@ const exportProjectAsKML = (project = currentProject) => {
               <Button 
                 onClick={() => {
                   setShowProjectDialog(false);
-                  // LIBERA O LOCK AO CANCELAR
-                  releaseLock();
                   setEditingProject(null);
                   setProjectName('');
                 }}
@@ -4443,23 +4320,6 @@ const exportProjectAsKML = (project = currentProject) => {
         onClose={() => {
           setShowImportProgress(false);
           setImportError(null);
-        }}
-      />
-
-      {/* Painel de Equipe/Código */}
-      <TeamDashboard
-        isOpen={!!teamDashboardProject}
-        onClose={() => setTeamDashboardProject(null)}
-        project={teamDashboardProject}
-        isOwner={teamDashboardProject?.user_id === user?.id}
-      />
-
-      {/* Modal de Entrar com Código */}
-      <JoinProjectDialog
-        isOpen={showJoinDialog}
-        onClose={() => setShowJoinDialog(false)}
-        onJoinSuccess={() => {
-          loadProjectsFromSupabase().then(data => setProjects(data));
         }}
       />
 
