@@ -3626,7 +3626,7 @@ const exportProjectAsKML = (project = currentProject) => {
                   <X className="w-3 h-3" />
                 </Button>
               </div>
-            </CardContent>
+            </CardHeader>
             <CardContent className="space-y-3">
               <div className="text-center">
                 <p className="text-white font-medium truncate text-sm mb-1">{currentProject.name}</p>
