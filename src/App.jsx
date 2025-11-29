@@ -597,16 +597,17 @@ function App() {
 
   const totalDistanceAllProjects = calculateTotalDistanceAllProjects(projects);
 
-  // FUNÇÃO ATUALIZADA: Carregar projetos do Supabase (filtrado por usuário)
+  // FUNÇÃO ATUALIZADA: Carregar projetos do Supabase (com colaboração)
   const loadProjectsFromSupabase = async () => {
     if (!user) return [];
     
     try {
-      // FILTRO POR USUÁRIO RESTAURADO
+      // REMOVIDO: .eq('user_id', user.id)
+      // O RLS do Supabase já vai filtrar automaticamente o que o usuário pode ver
+      // (Projetos dele + Projetos onde ele é colaborador)
       const { data, error } = await supabase
         .from('projetos')
         .select('*')
-        .eq('user_id', user.id) // <-- FILTRO CRUCIAL
         .order('updated_at', { ascending: false });
 
       if (error) throw error;
@@ -878,20 +879,32 @@ function App() {
         console.log('🔄 Atualizando projeto em edição:', editingProject.name);
         
         if (isOnline && user) {
+          // ATENÇÃO AQUI: Removemos o .eq('user_id', user.id)
           const { data, error } = await supabase
             .from('projetos')
             .update(projectData)
             .eq('id', editingProject.id)
-            .eq('user_id', user.id)
+            // .eq('user_id', user.id)  <-- REMOVIDO PARA PERMITIR COLABORAÇÃO
             .select();
           
           if (error) throw error;
+          
+          // Verificação de segurança: Se o RLS falhar ou usuário não tiver permissão, data vem vazio
+          if (!data || data.length === 0) {
+            throw new Error("Permissão negada ou projeto não encontrado para atualização.");
+          }
+          
           savedProject = data[0];
+
+          // LOG DA AÇÃO (Adicione isso para o histórico funcionar)
+          await SharedProjectService.logAction(
+            savedProject.id, 
+            'UPDATE', 
+            `Atualizou o projeto. ${savedProject.points.length} pontos.`
+          );
+
         } else {
-          savedProject = {
-            ...editingProject,
-            ...projectData
-          };
+          savedProject = { ...editingProject, ...projectData };
         }
         
         const updatedProjects = projects.map(p =>
@@ -927,16 +940,26 @@ function App() {
             .from('projetos')
             .update(projectData)
             .eq('id', currentProject.id)
-            .eq('user_id', user.id)
+            // .eq('user_id', user.id) <-- REMOVIDO
             .select();
           
           if (error) throw error;
+          
+          if (!data || data.length === 0) {
+            throw new Error("Erro ao salvar: Retorno vazio do banco.");
+          }
+
           savedProject = data[0];
+
+          // LOG DA AÇÃO
+          await SharedProjectService.logAction(
+            savedProject.id, 
+            'UPDATE', 
+            `Atualizou trajeto. Total: ${formatDistanceDetailed(savedProject.total_distance)}`
+          );
+
         } else {
-          savedProject = {
-            ...currentProject,
-            ...projectData
-          };
+          savedProject = { ...currentProject, ...projectData };
         }
         
         const updatedProjects = projects.map(p =>
@@ -981,16 +1004,6 @@ function App() {
         const updatedProjects = [...projects, savedProject];
         setProjects(updatedProjects);
         localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
-      }
-      
-      // LOG DA AÇÃO COLABORATIVA
-      if (isOnline && user && savedProject.id) {
-        const actionDetails = editingProject 
-          ? `Atualizou o projeto. ${savedProject.points.length} pontos, ${formatDistanceDetailed(savedProject.total_distance)}.` 
-          : `Criou o projeto inicial.`;
-        
-        // Executa em background para não travar a UI
-        SharedProjectService.logAction(savedProject.id, editingProject ? 'UPDATE' : 'CREATE', actionDetails);
       }
       
       if (!autoSave && !editingProject) {
@@ -1350,6 +1363,7 @@ function App() {
     if (!user) return false;
     
     try {
+      // Mantém o .eq('user_id', user.id) para que apenas o dono possa deletar
       const { error } = await supabase
         .from('projetos')
         .delete()
