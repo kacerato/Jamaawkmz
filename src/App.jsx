@@ -27,6 +27,8 @@ import ModernPopup from './components/ModernPopup'
 import ImportProgressPopup from './components/ImportProgressPopup'
 import MultipleSelectionPopup from './components/MultipleSelectionPopup'
 import BairroDetectionService from './components/BairroDetectionService'
+import { SharedProjectService } from './services/SharedProjectService'
+import ShareModal from './components/ShareModal'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import './App.css'
 
@@ -273,7 +275,7 @@ const PoleMarker = React.memo(({ point, index, color, onClick, isActive }) => {
 });
 
 // Novo componente otimizado para o Card do Projeto
-const ProjectCard = React.memo(({ project, isSelected, onToggle, onLoad, onEdit, onExport, onDelete, tracking }) => {
+const ProjectCard = React.memo(({ project, isSelected, onToggle, onLoad, onEdit, onExport, onDelete, onShare, tracking }) => {
   const distance = safeToFixed(((project.totalDistance || project.total_distance) || 0) / 1000, 2);
   const date = new Date(project.created_at || project.createdAt || Date.now()).toLocaleDateString('pt-BR');
 
@@ -336,6 +338,16 @@ const ProjectCard = React.memo(({ project, isSelected, onToggle, onLoad, onEdit,
             className="action-btn-mini w-8 px-0 text-blue-400 hover:bg-blue-500/10 hover:text-blue-300"
           >
             <Edit2 className="w-3.5 h-3.5" />
+          </Button>
+          
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => onShare(project)}
+            className="action-btn-mini w-8 px-0 text-purple-400 hover:bg-purple-500/10 hover:text-purple-300"
+            title="Compartilhar / Histórico"
+          >
+            <Share2 className="w-3.5 h-3.5" />
           </Button>
           
           <Button
@@ -574,6 +586,11 @@ function App() {
 
   // Novo estado para modo de entrada do rastreamento
   const [trackingInputMode, setTrackingInputMode] = useState('gps');
+
+  // Estados para compartilhamento
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [projectToShare, setProjectToShare] = useState(null);
+  const [joinCode, setJoinCode] = useState('');
 
   const kalmanLatRef = useRef(new KalmanFilter(0.1, 0.1));
   const kalmanLngRef = useRef(new KalmanFilter(0.1, 0.1));
@@ -966,6 +983,16 @@ function App() {
         localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
       }
       
+      // LOG DA AÇÃO COLABORATIVA
+      if (isOnline && user && savedProject.id) {
+        const actionDetails = editingProject 
+          ? `Atualizou o projeto. ${savedProject.points.length} pontos, ${formatDistanceDetailed(savedProject.total_distance)}.` 
+          : `Criou o projeto inicial.`;
+        
+        // Executa em background para não travar a UI
+        SharedProjectService.logAction(savedProject.id, editingProject ? 'UPDATE' : 'CREATE', actionDetails);
+      }
+      
       if (!autoSave && !editingProject) {
         setCurrentProject(savedProject);
       }
@@ -1174,6 +1201,43 @@ function App() {
       );
     }
     return total;
+  };
+
+  const handleJoinProject = async () => {
+    if (!joinCode.trim()) return alert('Digite um código válido');
+    
+    setLoading(true);
+    try {
+      const result = await SharedProjectService.joinProject(joinCode.toUpperCase().trim());
+      
+      if (result.success && result.project) {
+        const project = result.project;
+        
+        // Converte pontos se necessário (depende de como o Supabase retorna o JSON)
+        if (typeof project.points === 'string') {
+          project.points = JSON.parse(project.points);
+        }
+        
+        // Adiciona à lista local
+        setProjects(prev => {
+          const exists = prev.find(p => p.id === project.id);
+          if (exists) return prev.map(p => p.id === project.id ? project : p);
+          return [project, ...prev];
+        });
+        
+        // Feedback Visual
+        alert(`Você entrou no projeto "${project.name}" com sucesso!`);
+        setJoinCode('');
+        setShowProjectsList(true); // Abre a lista para mostrar o novo projeto
+      } else {
+        alert('Falha ao entrar: ' + (result.message || 'Código não encontrado'));
+      }
+    } catch (error) {
+      console.error(error);
+      alert('Erro ao processar código');
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -3729,6 +3793,24 @@ const exportProjectAsKML = (project = currentProject) => {
       )}
     </div>
     
+    {/* Input para entrar em projeto compartilhado */}
+    <div className="p-4 bg-slate-900/80 border-b border-slate-800 flex gap-2">
+      <Input
+        placeholder="Tem um código de projeto? Cole aqui (ex: JMW-X92Z)"
+        value={joinCode}
+        onChange={(e) => setJoinCode(e.target.value)}
+        className="bg-slate-800 border-slate-700 text-white focus:ring-cyan-500"
+      />
+      <Button 
+        onClick={handleJoinProject}
+        disabled={loading || !joinCode}
+        className="bg-purple-600 hover:bg-purple-700 text-white"
+      >
+        <Users className="w-4 h-4 mr-2" />
+        Entrar
+      </Button>
+    </div>
+
     <div className="flex-1 overflow-y-auto custom-scrollbar bg-slate-950/30">
       {projects.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-64 text-center p-6">
@@ -3768,6 +3850,10 @@ const exportProjectAsKML = (project = currentProject) => {
               }}
               onExport={exportProjectAsKML}
               onDelete={deleteProject}
+              onShare={(p) => {
+                setProjectToShare(p);
+                setShowShareModal(true);
+              }}
               tracking={tracking}
             />
           ))}
@@ -4321,6 +4407,13 @@ const exportProjectAsKML = (project = currentProject) => {
           setShowImportProgress(false);
           setImportError(null);
         }}
+      />
+
+      <ShareModal 
+        isOpen={showShareModal}
+        onClose={() => setShowShareModal(false)}
+        project={projectToShare}
+        user={user}
       />
 
       <input
