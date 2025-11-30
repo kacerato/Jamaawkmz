@@ -272,23 +272,11 @@ const PoleMarker = React.memo(({ point, index, color, onClick, isActive }) => {
   );
 });
 
-// Componente otimizado para o Card do Projeto - CORRIGIDO
-const ProjectCard = React.memo(({
-  project,
-  isSelected,
-  onToggle,
-  onLoad,
-  onEdit,
-  onExport,
-  onDelete,
-  tracking,
-  onShare,
-  onHistory,
-  user // ← ADICIONE ESTA PROP
-}) => {
+// Novo componente otimizado para o Card do Projeto
+const ProjectCard = React.memo(({ project, isSelected, onToggle, onLoad, onEdit, onExport, onDelete, tracking }) => {
   const distance = safeToFixed(((project.totalDistance || project.total_distance) || 0) / 1000, 2);
   const date = new Date(project.created_at || project.createdAt || Date.now()).toLocaleDateString('pt-BR');
-  
+
   return (
     <div className={`modern-project-card ${isSelected ? 'selected' : ''}`}>
       <div className="card-header-row">
@@ -338,37 +326,6 @@ const ProjectCard = React.memo(({
         </Button>
 
         <div className="flex gap-1">
-          {/* CORREÇÃO: Use props.user em vez de user */}
-          {project.user_id === user?.id && (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={(e) => {
-                e.stopPropagation();
-                onShare(project);
-              }}
-              className="action-btn-mini w-8 px-0 text-purple-400 hover:bg-purple-500/10 hover:text-purple-300"
-              title="Compartilhar Projeto"
-            >
-              <Share2 className="w-3.5 h-3.5" />
-            </Button>
-          )}
-
-          {project.is_shared && (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={(e) => {
-                e.stopPropagation();
-                onHistory(project);
-              }}
-              className="action-btn-mini w-8 px-0 text-cyan-400 hover:bg-cyan-500/10 hover:text-cyan-300"
-              title="Ver Histórico"
-            >
-              <Clock className="w-3.5 h-3.5" />
-            </Button>
-          )}
-
           <Button
             size="sm"
             variant="ghost"
@@ -403,13 +360,12 @@ const ProjectCard = React.memo(({
     </div>
   );
 }, (prevProps, nextProps) => {
-  // Atualize a função de comparação para incluir a prop user
+  // Esta função diz ao React quando NÃO re-renderizar
   return (
     prevProps.isSelected === nextProps.isSelected &&
     prevProps.project.id === nextProps.project.id &&
     prevProps.project.name === nextProps.project.name &&
-    prevProps.tracking === nextProps.tracking &&
-    prevProps.user?.id === nextProps.user?.id // ← ADICIONE ESTA COMPARAÇÃO
+    prevProps.tracking === nextProps.tracking
   );
 });
 
@@ -619,15 +575,6 @@ function App() {
   // Novo estado para modo de entrada do rastreamento
   const [trackingInputMode, setTrackingInputMode] = useState('gps');
 
-  // Estados para projetos compartilhados
-  const [sharedProjects, setSharedProjects] = useState([]);
-  const [showShareDialog, setShowShareDialog] = useState(false);
-  const [projectToShare, setProjectToShare] = useState(null);
-  const [showJoinProjectDialog, setShowJoinProjectDialog] = useState(false);
-  const [shareCode, setShareCode] = useState('');
-  const [projectHistory, setProjectHistory] = useState([]);
-  const [showHistoryDialog, setShowHistoryDialog] = useState(false);
-
   const kalmanLatRef = useRef(new KalmanFilter(0.1, 0.1));
   const kalmanLngRef = useRef(new KalmanFilter(0.1, 0.1));
 
@@ -808,246 +755,6 @@ const loadProjectsFromSupabase = async () => {
     return total;
   };
 
-  // ========== SISTEMA DE PROJETOS COMPARTILHADOS ==========
-
-  // Função para gerar código de compartilhamento
-  const generateShareCode = () => {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let result = '';
-    for (let i = 0; i < 8; i++) {
-      result += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return result;
-  };
-
-  // Compartilhar projeto
-  const shareProject = async (project) => {
-    if (!project) return;
-    
-    try {
-      const shareCode = generateShareCode();
-      const sharedProject = {
-        ...project,
-        share_code: shareCode,
-        is_shared: true,
-        owner_id: user.id,
-        owner_email: user.email,
-        created_at: new Date().toISOString(),
-        shared_at: new Date().toISOString(),
-        collaborators: [user.id]
-      };
-
-      if (isOnline && user) {
-        const { data, error } = await supabase
-          .from('shared_projects')
-          .upsert([sharedProject], { onConflict: 'id' })
-          .select();
-
-        if (error) throw error;
-      }
-
-      setProjectToShare({ ...project, share_code: shareCode });
-      setShowShareDialog(true);
-      
-      // Feedback visual
-      alert(`Projeto "${project.name}" compartilhado com sucesso! Código: ${shareCode}`);
-      
-    } catch (error) {
-      console.error('Erro ao compartilhar projeto:', error);
-      alert('Erro ao compartilhar projeto. Tente novamente.');
-    }
-  };
-
-  // Entrar em projeto compartilhado
-  const joinSharedProject = async () => {
-    if (!shareCode.trim()) {
-      alert('Digite um código de compartilhamento válido.');
-      return;
-    }
-
-    try {
-      let sharedProject;
-      
-      if (isOnline) {
-        const { data, error } = await supabase
-          .from('shared_projects')
-          .select('*')
-          .eq('share_code', shareCode.trim().toUpperCase())
-          .single();
-
-        if (error) throw error;
-        sharedProject = data;
-      } else {
-        alert('É necessário estar online para entrar em projetos compartilhados.');
-        return;
-      }
-
-      if (!sharedProject) {
-        alert('Código de compartilhamento inválido ou projeto não encontrado.');
-        return;
-      }
-
-      // Verificar se já está na lista de projetos compartilhados
-      const alreadyJoined = sharedProjects.find(p => p.id === sharedProject.id);
-      if (alreadyJoined) {
-        alert('Você já entrou neste projeto compartilhado.');
-        return;
-      }
-
-      // Adicionar usuário como colaborador
-      const updatedCollaborators = [...(sharedProject.collaborators || []), user.id];
-      
-      const updatedProject = {
-        ...sharedProject,
-        collaborators: updatedCollaborators
-      };
-
-      if (isOnline) {
-        const { error } = await supabase
-          .from('shared_projects')
-          .update({ collaborators: updatedCollaborators })
-          .eq('id', sharedProject.id);
-
-        if (error) throw error;
-      }
-
-      // Adicionar à lista de projetos compartilhados
-      setSharedProjects(prev => [...prev, updatedProject]);
-      
-      // Carregar o projeto
-      loadProject(updatedProject);
-      
-      setShareCode('');
-      setShowJoinProjectDialog(false);
-      
-      alert(`Você entrou no projeto compartilhado: "${sharedProject.name}"`);
-      
-    } catch (error) {
-      console.error('Erro ao entrar no projeto compartilhado:', error);
-      alert('Erro ao entrar no projeto compartilhado. Verifique o código e tente novamente.');
-    }
-  };
-
-  // Sincronizar projeto compartilhado
-  const syncSharedProject = async (project) => {
-    if (!isOnline || !user) return;
-
-    try {
-      const { data, error } = await supabase
-        .from('shared_projects')
-        .update({
-          ...project,
-          updated_at: new Date().toISOString(),
-          last_updated_by: user.email
-        })
-        .eq('id', project.id)
-        .select();
-
-      if (error) throw error;
-
-      if (data && data[0]) {
-        // Atualizar lista local
-        setSharedProjects(prev => 
-          prev.map(p => p.id === project.id ? data[0] : p)
-        );
-        
-        // Atualizar também nos projetos carregados se estiver carregado
-        setLoadedProjects(prev => 
-          prev.map(p => p.id === project.id ? { ...data[0], color: p.color } : p)
-        );
-      }
-    } catch (error) {
-      console.error('Erro ao sincronizar projeto compartilhado:', error);
-    }
-  };
-
-  // Carregar histórico do projeto
-  const loadProjectHistory = async (projectId) => {
-    if (!isOnline) return;
-
-    try {
-      const { data, error } = await supabase
-        .from('project_history')
-        .select('*')
-        .eq('project_id', projectId)
-        .order('created_at', { ascending: false })
-        .limit(50);
-
-      if (error) throw error;
-      setProjectHistory(data || []);
-      setShowHistoryDialog(true);
-    } catch (error) {
-      console.error('Erro ao carregar histórico:', error);
-    }
-  };
-
-  // Registrar ação no histórico
-  const logProjectAction = async (projectId, action, details = {}) => {
-    if (!isOnline || !user) return;
-
-    try {
-      const historyEntry = {
-        project_id: projectId,
-        user_id: user.id,
-        user_email: user.email,
-        action: action,
-        details: details,
-        created_at: new Date().toISOString()
-      };
-
-      const { error } = await supabase
-        .from('project_history')
-        .insert([historyEntry]);
-
-      if (error) throw error;
-    } catch (error) {
-      console.error('Erro ao registrar ação no histórico:', error);
-    }
-  };
-
-  // Sair do projeto compartilhado
-  const leaveSharedProject = async (project) => {
-    if (!confirm(`Deseja sair do projeto compartilhado "${project.name}"?`)) {
-      return;
-    }
-
-    try {
-      const updatedCollaborators = (project.collaborators || []).filter(id => id !== user.id);
-      
-      if (isOnline) {
-        const { error } = await supabase
-          .from('shared_projects')
-          .update({ collaborators: updatedCollaborators })
-          .eq('id', project.id);
-
-        if (error) throw error;
-      }
-
-      // Remover da lista local
-      setSharedProjects(prev => prev.filter(p => p.id !== project.id));
-      setLoadedProjects(prev => prev.filter(p => p.id !== project.id));
-      
-      alert(`Você saiu do projeto "${project.name}"`);
-      
-    } catch (error) {
-      console.error('Erro ao sair do projeto compartilhado:', error);
-      alert('Erro ao sair do projeto compartilhado.');
-    }
-  };
-
-  // Função auxiliar para texto das ações
-  const getActionText = (action) => {
-    const actions = {
-      'project_created': 'Criou o projeto',
-      'project_updated': 'Atualizou o projeto',
-      'points_added': 'Adicionou pontos',
-      'points_removed': 'Removeu pontos',
-      'project_shared': 'Compartilhou o projeto',
-      'project_joined': 'Entrou no projeto'
-    };
-    return actions[action] || action;
-  };
-
   const handleLogout = async () => {
     try {
       localStorage.removeItem('supabase.auth.token');
@@ -1075,7 +782,6 @@ const loadProjectsFromSupabase = async () => {
       setCurrentProject(null);
       setSelectedMarkers([]);
       setSelectedStartPoint(null);
-      setSharedProjects([]);
       
     } catch (error) {
       console.error('Erro durante logout:', error);
@@ -1084,7 +790,6 @@ const loadProjectsFromSupabase = async () => {
       setProjects([]);
       setSelectedMarkers([]);
       setSelectedStartPoint(null);
-      setSharedProjects([]);
     }
   };
 
@@ -1270,22 +975,6 @@ const loadProjectsFromSupabase = async () => {
         const updatedProjects = [...projects, savedProject];
         setProjects(updatedProjects);
         localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
-      }
-      
-      // Se é um projeto compartilhado, sincronizar
-      if (savedProject && savedProject.is_shared) {
-        await syncSharedProject(savedProject);
-        
-        // Registrar no histórico
-        await logProjectAction(
-          savedProject.id, 
-          editingProject ? 'project_updated' : 'project_created',
-          { 
-            points_count: savedProject.points.length,
-            distance: savedProject.total_distance,
-            user: user.email
-          }
-        );
       }
       
       if (!autoSave && !editingProject) {
@@ -1542,7 +1231,6 @@ const loadProjectsFromSupabase = async () => {
           setLoadedProjects([])
           setSelectedMarkers([])
           setSelectedStartPoint(null)
-          setSharedProjects([])
         }
       } else if (event === 'SIGNED_IN') {
         setUser(session.user)
@@ -3559,15 +3247,6 @@ const exportProjectAsKML = (project = currentProject) => {
                   <Button
                     variant="ghost"
                     className="w-full justify-start text-white hover:bg-slate-700 h-12 menu-button"
-                    onClick={() => setShowJoinProjectDialog(true)}
-                  >
-                    <Users className="w-5 h-5 mr-3 text-green-400" />
-                    Entrar em Projeto Compartilhado
-                  </Button>
-
-                  <Button
-                    variant="ghost"
-                    className="w-full justify-start text-white hover:bg-slate-700 h-12 menu-button"
                     onClick={handleARMode}
                   >
                     <Camera className="w-5 h-5 mr-3 text-purple-400" />
@@ -3633,34 +3312,6 @@ const exportProjectAsKML = (project = currentProject) => {
                       >
                         Limpar Seleção
                       </Button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Seção de Projetos Compartilhados */}
-                {sharedProjects.length > 0 && (
-                  <div className="menu-section">
-                    <h3 className="menu-section-title">Projetos Compartilhados</h3>
-                    <div className="space-y-2 max-h-40 overflow-y-auto">
-                      {sharedProjects.map(project => (
-                        <div key={project.id} className="flex items-center justify-between p-2 bg-slate-700/30 rounded-lg">
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-white truncate">{project.name}</p>
-                            <p className="text-xs text-gray-400">
-                              Por: {project.owner_email}
-                            </p>
-                          </div>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => leaveSharedProject(project)}
-                            className="h-6 w-6 p-0 text-red-400 hover:text-red-300"
-                            title="Sair do projeto"
-                          >
-                            <X className="w-3 h-3" />
-                          </Button>
-                        </div>
-                      ))}
                     </div>
                   </div>
                 )}
@@ -3830,170 +3481,6 @@ const exportProjectAsKML = (project = currentProject) => {
         onBatchBairroUpdate={handleBatchBairroUpdate}
         bairros={bairros}
       />
-
-      {/* Dialog de Compartilhamento */}
-      <Dialog open={showShareDialog} onOpenChange={setShowShareDialog}>
-        <DialogContent className="bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white border-purple-500/30 w-[95vw] max-w-md mx-auto shadow-2xl z-[10000] backdrop-blur-xl">
-          <div className="relative">
-            {/* Efeito Glow */}
-            <div className="absolute -inset-1 bg-gradient-to-r from-purple-600 to-pink-600 rounded-lg blur opacity-30 group-hover:opacity-100 transition duration-1000 group-hover:duration-200 animate-tilt"></div>
-            
-            <div className="relative p-6 bg-slate-900/90 rounded-lg border border-white/10">
-              <DialogHeader>
-                <DialogTitle className="text-cyan-400 text-xl font-bold flex items-center gap-2">
-                  <Share2 className="w-5 h-5" />
-                  Projeto Compartilhado!
-                </DialogTitle>
-                <DialogDescription className="text-gray-300 mt-2">
-                  Compartilhe este código com outras pessoas para colaboração em tempo real.
-                </DialogDescription>
-              </DialogHeader>
-
-              <div className="mt-6 space-y-4">
-                <div className="text-center">
-                  <div className="text-sm text-gray-400 mb-2">Código de Compartilhamento</div>
-                  <div className="text-3xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent font-mono tracking-wider">
-                    {projectToShare?.share_code}
-                  </div>
-                </div>
-
-                <div className="bg-slate-800/50 p-4 rounded-lg border border-slate-700/50">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center">
-                      <FolderOpen className="w-5 h-5 text-white" />
-                    </div>
-                    <div className="flex-1">
-                      <div className="font-semibold text-white text-sm truncate">
-                        {projectToShare?.name}
-                      </div>
-                      <div className="text-xs text-gray-400">
-                        {projectToShare?.points?.length || 0} pontos • {formatDistanceDetailed(projectToShare?.total_distance || 0)}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex gap-2 pt-4">
-                  <Button
-                    onClick={() => {
-                      navigator.clipboard.writeText(projectToShare?.share_code || '');
-                      alert('Código copiado!');
-                    }}
-                    className="flex-1 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white border-0 shadow-lg shadow-purple-500/25"
-                  >
-                    <Share2 className="w-4 h-4 mr-2" />
-                    Copiar Código
-                  </Button>
-                  <Button
-                    onClick={() => setShowShareDialog(false)}
-                    className="flex-1 bg-slate-700 hover:bg-slate-600 text-white border-slate-600"
-                  >
-                    Fechar
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Dialog de Entrar em Projeto Compartilhado */}
-      <Dialog open={showJoinProjectDialog} onOpenChange={setShowJoinProjectDialog}>
-        <DialogContent className="bg-gradient-to-br from-slate-900 via-cyan-900 to-slate-900 text-white border-cyan-500/30 w-[95vw] max-w-md mx-auto shadow-2xl z-[10000] backdrop-blur-xl">
-          <div className="relative">
-            <div className="absolute -inset-1 bg-gradient-to-r from-cyan-600 to-blue-600 rounded-lg blur opacity-30 group-hover:opacity-100 transition duration-1000 group-hover:duration-200 animate-tilt"></div>
-            
-            <div className="relative p-6 bg-slate-900/90 rounded-lg border border-white/10">
-              <DialogHeader>
-                <DialogTitle className="text-cyan-400 text-xl font-bold flex items-center gap-2">
-                  <Users className="w-5 h-5" />
-                  Entrar em Projeto Compartilhado
-                </DialogTitle>
-                <DialogDescription className="text-gray-300 mt-2">
-                  Digite o código de compartilhamento para colaborar em tempo real.
-                </DialogDescription>
-              </DialogHeader>
-
-              <div className="mt-6 space-y-4">
-                <div>
-                  <Label className="text-gray-300 font-medium">Código de Compartilhamento</Label>
-                  <Input
-                    value={shareCode}
-                    onChange={(e) => setShareCode(e.target.value.toUpperCase())}
-                    placeholder="Digite o código (ex: A1B2C3D4)"
-                    className="bg-slate-800/50 border-slate-700 text-white font-mono text-center text-lg tracking-wider mt-2 focus:border-cyan-500 focus:ring-cyan-500/20"
-                    maxLength={8}
-                  />
-                </div>
-
-                <div className="flex gap-2 pt-4">
-                  <Button
-                    onClick={joinSharedProject}
-                    disabled={!shareCode.trim()}
-                    className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white border-0 shadow-lg shadow-cyan-500/25 disabled:opacity-50"
-                  >
-                    <Users className="w-4 h-4 mr-2" />
-                    Entrar no Projeto
-                  </Button>
-                  <Button
-                    onClick={() => setShowJoinProjectDialog(false)}
-                    className="flex-1 bg-slate-700 hover:bg-slate-600 text-white border-slate-600"
-                  >
-                    Cancelar
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Dialog de Histórico */}
-      <Dialog open={showHistoryDialog} onOpenChange={setShowHistoryDialog}>
-        <DialogContent className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white border-slate-700/50 w-[95vw] max-w-2xl mx-auto shadow-2xl max-h-[80vh] overflow-hidden">
-          <DialogHeader>
-            <DialogTitle className="text-cyan-400 text-xl font-bold flex items-center gap-2">
-              <Clock className="w-5 h-5" />
-              Histórico do Projeto
-            </DialogTitle>
-          </DialogHeader>
-
-          <div className="max-h-[60vh] overflow-y-auto custom-scrollbar">
-            {projectHistory.length === 0 ? (
-              <div className="text-center py-8 text-gray-400">
-                Nenhum registro no histórico.
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {projectHistory.map((entry, index) => (
-                  <div key={entry.id} className="bg-slate-800/50 p-4 rounded-lg border border-slate-700/50">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-cyan-400 text-sm font-medium">
-                            {entry.user_email}
-                          </span>
-                          <span className="text-gray-500 text-xs">
-                            {new Date(entry.created_at).toLocaleString('pt-BR')}
-                          </span>
-                        </div>
-                        <div className="text-white text-sm">
-                          {getActionText(entry.action)}
-                        </div>
-                        {entry.details && (
-                          <div className="text-gray-400 text-xs mt-1">
-                            {JSON.stringify(entry.details)}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
 
       {!tracking && showRulerPopup && (
         <div className="absolute top-20 right-4 z-10">
@@ -4276,29 +3763,26 @@ const exportProjectAsKML = (project = currentProject) => {
         </div>
       ) : (
         <div className="projects-grid-container">
-{projects.map(project => (
-  <ProjectCard
-    key={project.id}
-    project={project}
-    isSelected={selectedProjects.some(p => p.id === project.id)}
-    onToggle={toggleProjectSelection}
-    onLoad={(p) => {
-      loadProject(p);
-      setShowProjectsList(false);
-    }}
-    onEdit={(p) => {
-      setEditingProject(p);
-      setProjectName(p.name);
-      setShowProjectDialog(true);
-    }}
-    onExport={exportProjectAsKML}
-    onDelete={deleteProject}
-    onShare={shareProject}
-    onHistory={(p) => loadProjectHistory(p.id)}
-    tracking={tracking}
-    user={user} // ← ADICIONE ESTA LINHA
-  />
-))}
+          {projects.map(project => (
+            <ProjectCard
+              key={project.id}
+              project={project}
+              isSelected={selectedProjects.some(p => p.id === project.id)}
+              onToggle={toggleProjectSelection}
+              onLoad={(p) => {
+                loadProject(p);
+                setShowProjectsList(false); // Fecha o modal imediatamente
+              }}
+              onEdit={(p) => {
+                setEditingProject(p);
+                setProjectName(p.name);
+                setShowProjectDialog(true);
+              }}
+              onExport={exportProjectAsKML}
+              onDelete={deleteProject}
+              tracking={tracking}
+            />
+          ))}
         </div>
       )}
     </div>
