@@ -634,50 +634,52 @@ function App() {
     }
   };
 
-  // 2. Entrar em um Projeto
-  const handleJoinProject = async () => {
-    if (!joinCode.trim()) return;
-    const code = joinCode.trim().toUpperCase();
+// Dentro de App.jsx
 
-    try {
-      setLoading(true);
-      
-      // Buscar projeto pelo código
-      const { data: projectsData, error: findError } = await supabase
-        .from('projetos')
-        .select('*')
-        .eq('share_code', code)
-        .single();
-
-      if (findError || !projectsData) throw new Error('Projeto não encontrado.');
-
-      // Verificar se já é membro ou dono
-      if (projectsData.user_id === user.id) {
-         showToast('info', 'Você já é o dono deste projeto.');
-         setLoading(false);
-         return;
+const handleJoinProject = async () => {
+  if (!joinCode.trim()) return;
+  
+  // Feedback visual imediato (Otimização UX)
+  setLoading(true);
+  const code = joinCode.trim().toUpperCase();
+  
+  try {
+    // Chama a função RPC segura que criamos no SQL
+    const { data, error } = await supabase.rpc('join_project_via_code', {
+      input_code: code
+    });
+    
+    if (error) throw error;
+    
+    // A função SQL retorna um JSON com success true/false
+    if (!data.success) {
+      // Se for apenas um aviso (ex: já é dono), mostramos info, senão erro
+      if (data.message.includes('criador')) {
+        showToast('info', data.message);
+      } else {
+        showToast('error', data.message);
       }
-
-      // Adicionar na tabela de membros (se já existir, o SQL ignora ou tratamos aqui)
-      const { error: joinError } = await supabase
-        .from('projeto_membros')
-        .upsert({ project_id: projectsData.id, user_id: user.id }, { onConflict: 'project_id,user_id' });
-
-      if (joinError) throw joinError;
-
-      showToast('success', `Você entrou em "${projectsData.name}"!`);
+    } else {
+      // Sucesso!
+      Haptics.notification({ type: 'success' }); // Vibração de sucesso
+      showToast('success', `Conectado a "${data.project_name || 'Projeto'}"`);
+      
       setJoinCode('');
       setShowJoinDialog(false);
       
-      // Recarregar projetos para aparecer na lista
-      loadProjectsFromSupabase().then(data => setProjects(data));
-
-    } catch (error) {
-      showToast('error', error.message || 'Erro ao entrar.');
-    } finally {
-      setLoading(false);
+      // Recarrega a lista para mostrar o novo projeto
+      const projects = await loadProjectsFromSupabase();
+      setProjects(projects);
     }
-  };
+    
+  } catch (error) {
+    console.error(error);
+    Haptics.notification({ type: 'error' });
+    showToast('error', 'Erro de conexão ao entrar no projeto.');
+  } finally {
+    setLoading(false);
+  }
+};
 
   // 3. REALTIME: Subscrever a mudanças quando um projeto é carregado
   useEffect(() => {
