@@ -2985,3 +2985,26 @@ input::placeholder {
   50% { transform: translateX(-50%) translateY(-3px); }
 }
 
+/* Adicione no final do App.css */
+@keyframes flash-border-anim {
+  0% { box-shadow: inset 0 0 0 0 transparent; }
+  50% { box-shadow: inset 0 0 0 4px rgba(34, 211, 238, 0.5); } /* Ciano */
+  100% { box-shadow: inset 0 0 0 0 transparent; }
+}
+
+.flash-border {
+  animation: flash-border-anim 0.5s ease-out;
+}
+
+/* Indicador de Projeto Compartilhado no Card */
+.shared-badge {
+  background: linear-gradient(135deg, #ec4899 0%, #db2777 100%);
+  color: white;
+  font-size: 0.65rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
