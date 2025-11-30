@@ -272,11 +272,23 @@ const PoleMarker = React.memo(({ point, index, color, onClick, isActive }) => {
   );
 });
 
-// Novo componente otimizado para o Card do Projeto
-const ProjectCard = React.memo(({ project, isSelected, onToggle, onLoad, onEdit, onExport, onDelete, tracking, onShare, onHistory }) => {
+// Componente otimizado para o Card do Projeto - CORRIGIDO
+const ProjectCard = React.memo(({
+  project,
+  isSelected,
+  onToggle,
+  onLoad,
+  onEdit,
+  onExport,
+  onDelete,
+  tracking,
+  onShare,
+  onHistory,
+  user // ← ADICIONE ESTA PROP
+}) => {
   const distance = safeToFixed(((project.totalDistance || project.total_distance) || 0) / 1000, 2);
   const date = new Date(project.created_at || project.createdAt || Date.now()).toLocaleDateString('pt-BR');
-
+  
   return (
     <div className={`modern-project-card ${isSelected ? 'selected' : ''}`}>
       <div className="card-header-row">
@@ -326,6 +338,7 @@ const ProjectCard = React.memo(({ project, isSelected, onToggle, onLoad, onEdit,
         </Button>
 
         <div className="flex gap-1">
+          {/* CORREÇÃO: Use props.user em vez de user */}
           {project.user_id === user?.id && (
             <Button
               size="sm"
@@ -390,12 +403,13 @@ const ProjectCard = React.memo(({ project, isSelected, onToggle, onLoad, onEdit,
     </div>
   );
 }, (prevProps, nextProps) => {
-  // Esta função diz ao React quando NÃO re-renderizar
+  // Atualize a função de comparação para incluir a prop user
   return (
     prevProps.isSelected === nextProps.isSelected &&
     prevProps.project.id === nextProps.project.id &&
     prevProps.project.name === nextProps.project.name &&
-    prevProps.tracking === nextProps.tracking
+    prevProps.tracking === nextProps.tracking &&
+    prevProps.user?.id === nextProps.user?.id // ← ADICIONE ESTA COMPARAÇÃO
   );
 });
 
@@ -4262,28 +4276,30 @@ const exportProjectAsKML = (project = currentProject) => {
         </div>
       ) : (
         <div className="projects-grid-container">
-          {projects.map(project => (
-            <ProjectCard
-              key={project.id}
-              project={project}
-              isSelected={selectedProjects.some(p => p.id === project.id)}
-              onToggle={toggleProjectSelection}
-              onLoad={(p) => {
-                loadProject(p);
-                setShowProjectsList(false); // Fecha o modal imediatamente
-              }}
-              onEdit={(p) => {
-                setEditingProject(p);
-                setProjectName(p.name);
-                setShowProjectDialog(true);
-              }}
-              onExport={exportProjectAsKML}
-              onDelete={deleteProject}
-              onShare={shareProject}
-              onHistory={(p) => loadProjectHistory(p.id)}
-              tracking={tracking}
-            />
-          ))}
+          // No Dialog de projetos - procure esta parte no código e adicione a prop user
+{projects.map(project => (
+  <ProjectCard
+    key={project.id}
+    project={project}
+    isSelected={selectedProjects.some(p => p.id === project.id)}
+    onToggle={toggleProjectSelection}
+    onLoad={(p) => {
+      loadProject(p);
+      setShowProjectsList(false);
+    }}
+    onEdit={(p) => {
+      setEditingProject(p);
+      setProjectName(p.name);
+      setShowProjectDialog(true);
+    }}
+    onExport={exportProjectAsKML}
+    onDelete={deleteProject}
+    onShare={shareProject}
+    onHistory={(p) => loadProjectHistory(p.id)}
+    tracking={tracking}
+    user={user} // ← ADICIONE ESTA LINHA
+  />
+))}
         </div>
       )}
     </div>
