@@ -597,30 +597,32 @@ function App() {
 
   const totalDistanceAllProjects = calculateTotalDistanceAllProjects(projects);
 
-  // FUNÇÃO ATUALIZADA: Carregar projetos do Supabase (com colaboração)
-  const loadProjectsFromSupabase = async () => {
-    if (!user) return [];
+  // FUNÇÃO ATUALIZADA: Carregar projetos do Supabase (incluindo compartilhados)
+const loadProjectsFromSupabase = async () => {
+  if (!user) return [];
+  
+  try {
+    const { data, error } = await supabase
+      .from('projetos')
+      .select('*')
+      .or(`user_id.eq.${user.id},shared_from_project_id.is.not.null`)
+      .order('updated_at', { ascending: false });
     
-    try {
-      const { data, error } = await supabase
-        .from('projetos')
-        .select('*')
-        .order('updated_at', { ascending: false });
-
-      if (error) throw error;
-      
-      // Salva também no localStorage como backup
-      if (data && data.length > 0) {
-        localStorage.setItem('jamaaw_projects', JSON.stringify(data));
-      }
-      
-      return data || [];
-    } catch (error) {
-      console.error('Erro ao carregar projetos:', error);
-      const localProjects = localStorage.getItem('jamaaw_projects');
-      return localProjects ? JSON.parse(localProjects) : [];
+    if (error) throw error;
+    
+    // Salva também no localStorage como backup
+    if (data && data.length > 0) {
+      localStorage.setItem('jamaaw_projects', JSON.stringify(data));
     }
-  };
+    
+    return data || [];
+  } catch (error) {
+    console.error('Erro ao carregar projetos:', error);
+    // Fallback para localStorage
+    const localProjects = localStorage.getItem('jamaaw_projects');
+    return localProjects ? JSON.parse(localProjects) : [];
+  }
+};
 
   // Função para detectar bairros de projetos que ainda estão como "Vários"
   const refreshProjectNeighborhoods = async () => {
@@ -1219,60 +1221,86 @@ function App() {
     return total;
   };
 
-  // FUNÇÃO CORRIGIDA: Entrar em projeto compartilhado
-  const handleJoinProject = async () => {
-    if (!joinCode.trim()) return alert('Digite um código válido');
+// FUNÇÃO ATUALIZADA: Entrar em projeto compartilhado
+const handleJoinProject = async () => {
+  if (!joinCode.trim()) return alert('Digite um código válido');
+  
+  setLoading(true);
+  try {
+    const result = await SharedProjectService.joinProject(
+      joinCode.toUpperCase().trim(),
+      user.id
+    );
     
-    setLoading(true);
-    try {
-      const result = await SharedProjectService.joinProject(joinCode.toUpperCase().trim());
+    if (result.success && result.project) {
+      const project = result.project;
       
-      if (result.success && result.project) {
-        const project = result.project;
-        
-        // Converte pontos se necessário
-        if (typeof project.points === 'string') {
+      // Converte pontos se necessário
+      if (typeof project.points === 'string') {
+        try {
           project.points = JSON.parse(project.points);
+        } catch (e) {
+          console.error('Erro ao converter pontos:', e);
+          project.points = [];
+        }
+      }
+      
+      // Garante que o projeto tenha todos os campos necessários
+      const completeProject = {
+        ...project,
+        id: project.id || `shared_${Date.now()}`,
+        name: project.name || `Projeto Compartilhado ${new Date().toLocaleDateString('pt-BR')}`,
+        points: project.points || [],
+        total_distance: project.total_distance || 0,
+        bairro: project.bairro || 'Vários',
+        tracking_mode: project.tracking_mode || 'manual',
+        created_at: project.created_at || new Date().toISOString(),
+        updated_at: project.updated_at || new Date().toISOString(),
+        user_id: project.user_id || user.id
+      };
+      
+      // Adiciona à lista local e salva no localStorage
+      setProjects(prev => {
+        const exists = prev.find(p => p.id === completeProject.id);
+        let updatedProjects;
+        
+        if (exists) {
+          // Se já existe, atualiza
+          updatedProjects = prev.map(p =>
+            p.id === completeProject.id ? completeProject : p
+          );
+        } else {
+          // Se é novo, adiciona no início
+          updatedProjects = [completeProject, ...prev];
         }
         
-        // Adiciona à lista local e salva no localStorage
-        setProjects(prev => {
-          const exists = prev.find(p => p.id === project.id);
-          if (exists) {
-            // Se já existe, atualiza
-            const updated = prev.map(p => p.id === project.id ? project : p);
-            localStorage.setItem('jamaaw_projects', JSON.stringify(updated));
-            return updated;
-          } else {
-            // Se é novo, adiciona
-            const updated = [project, ...prev];
-            localStorage.setItem('jamaaw_projects', JSON.stringify(updated));
-            return updated;
-          }
-        });
-        
-        // Feedback Visual
-        alert(`Você entrou no projeto "${project.name}" com sucesso!`);
-        setJoinCode('');
-        setShowProjectsList(true);
-        
-        // Log da ação de entrada no projeto
-        await SharedProjectService.logAction(
-          project.id, 
-          'JOIN', 
-          `Entrou no projeto via código compartilhado`
-        );
-        
-      } else {
-        alert('Falha ao entrar: ' + (result.message || 'Código não encontrado'));
-      }
-    } catch (error) {
-      console.error(error);
-      alert('Erro ao processar código');
-    } finally {
-      setLoading(false);
+        // Salva no localStorage
+        localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
+        return updatedProjects;
+      });
+      
+      // Feedback Visual
+      alert(`Você entrou no projeto "${completeProject.name}" com sucesso!`);
+      setJoinCode('');
+      setShowProjectsList(true);
+      
+      // Log da ação de entrada no projeto
+      await SharedProjectService.logAction(
+        completeProject.id,
+        'JOIN',
+        `Entrou no projeto via código compartilhado: ${joinCode}`
+      );
+      
+    } else {
+      alert('Falha ao entrar: ' + (result.message || 'Código não encontrado'));
     }
-  };
+  } catch (error) {
+    console.error('Erro ao processar código:', error);
+    alert('Erro ao processar código. Tente novamente.');
+  } finally {
+    setLoading(false);
+  }
+};
 
   useEffect(() => {
     const checkAuth = async () => {

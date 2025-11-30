@@ -43,18 +43,35 @@ export const SharedProjectService = {
     }
   },
   
-  // Entra em um projeto usando a função SQL segura
-  async joinProject(shareCode) {
+  // ATUALIZADA: Entra em um projeto usando a função SQL segura
+  async joinProject(shareCode, userId) {
     try {
       const { data, error } = await supabase.rpc('join_project_via_code', {
-        code_input: shareCode
+        code_input: shareCode,
+        user_id_input: userId
       });
       
       if (error) throw error;
-      return data; // { success: true, project: {...} }
+      
+      // Se a RPC retornou o projeto, retorna sucesso
+      if (data && data.id) {
+        return {
+          success: true,
+          project: data,
+          message: 'Projeto adicionado com sucesso!'
+        };
+      } else {
+        return {
+          success: false,
+          message: 'Projeto não encontrado ou código inválido'
+        };
+      }
     } catch (error) {
       console.error('Erro ao entrar no projeto:', error);
-      return { success: false, message: error.message };
+      return {
+        success: false,
+        message: error.message || 'Erro ao processar código'
+      };
     }
   },
   
