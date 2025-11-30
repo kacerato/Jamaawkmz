@@ -273,7 +273,7 @@ const PoleMarker = React.memo(({ point, index, color, onClick, isActive }) => {
 });
 
 // Novo componente otimizado para o Card do Projeto
-const ProjectCard = React.memo(({ project, isSelected, onToggle, onLoad, onEdit, onExport, onDelete, tracking }) => {
+const ProjectCard = React.memo(({ project, isSelected, onToggle, onLoad, onEdit, onExport, onDelete, onCopyShare, tracking }) => {
   const distance = safeToFixed(((project.totalDistance || project.total_distance) || 0) / 1000, 2);
   const date = new Date(project.created_at || project.createdAt || Date.now()).toLocaleDateString('pt-BR');
 
@@ -326,6 +326,27 @@ const ProjectCard = React.memo(({ project, isSelected, onToggle, onLoad, onEdit,
         </Button>
 
         <div className="flex gap-1">
+          {/* NOVO BOTÃO DE COMPARTILHAR/COPIAR */}
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={(e) => {
+              e.stopPropagation();
+              // Se já tem código, copia. Se não, abre o modal para gerar.
+              if (project.share_code) {
+                onCopyShare(project.share_code);
+              } else {
+                // Aqui você precisaria passar uma função para abrir o modal de geração
+                // Para simplificar neste contexto, vamos focar em quem JÁ TEM código
+                alert("Abra o projeto para gerar um código primeiro.");
+              }
+            }}
+            className={`action-btn-mini w-8 px-0 ${project.share_code ? 'text-cyan-400 hover:bg-cyan-500/10' : 'text-gray-600'}`}
+            title={project.share_code ? "Copiar Código de Acesso" : "Sem código gerado"}
+          >
+            {project.share_code ? <Share2 className="w-3.5 h-3.5" /> : <Share2 className="w-3.5 h-3.5 opacity-30" />}
+          </Button>
+
           <Button
             size="sm"
             variant="ghost"
@@ -584,10 +605,27 @@ function App() {
   const [isSharedSession, setIsSharedSession] = useState(false);
   const [realtimeChannel, setRealtimeChannel] = useState(null);
 
+  // Novo estado para animação de cópia
+  const [isCopied, setIsCopied] = useState(false); // Para animação de "Copiado!"
+
   const kalmanLatRef = useRef(new KalmanFilter(0.1, 0.1));
   const kalmanLngRef = useRef(new KalmanFilter(0.1, 0.1));
 
   const totalDistanceAllProjects = calculateTotalDistanceAllProjects(projects);
+
+  // Função para copiar para área de transferência
+  const copyToClipboard = async (text) => {
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setIsCopied(true);
+      // Feedback tátil (vibração) se estiver no mobile
+      if (navigator.vibrate) navigator.vibrate(50);
+      setTimeout(() => setIsCopied(false), 2000);
+    } catch (err) {
+      alert('Código: ' + text); // Fallback
+    }
+  };
 
   // FUNÇÃO ATUALIZADA: Carregar projetos do Supabase (incluindo compartilhados)
   const loadProjectsFromSupabase = async () => {
@@ -3657,6 +3695,25 @@ const exportProjectAsKML = (project = currentProject) => {
               <span className="text-xs text-purple-400 ml-2 bg-purple-500/20 px-2 py-0.5 rounded-full">Galho Ativo</span>
             )}
           </div>
+
+          {/* ADICIONE ISTO AQUI: Badge de Código Rápido */}
+          {currentProject?.share_code && (
+            <button
+              onClick={() => copyToClipboard(currentProject.share_code)}
+              className="hidden sm:flex items-center gap-2 ml-auto bg-slate-900/50 hover:bg-cyan-500/20 border border-slate-600 hover:border-cyan-500/50 rounded px-2 py-1 transition-all group"
+              title="Copiar código de compartilhamento"
+            >
+              <span className="text-[10px] text-gray-400 group-hover:text-cyan-300 uppercase">CODE:</span>
+              <span className="text-xs font-mono font-bold text-white group-hover:text-cyan-400">
+                {currentProject.share_code}
+              </span>
+              {isCopied ? (
+                <CheckCircle className="w-3 h-3 text-green-400" />
+              ) : (
+                <Copy className="w-3 h-3 text-gray-500 group-hover:text-white" />
+              )}
+            </button>
+          )}
         </div>
 
         <Button
@@ -4005,6 +4062,7 @@ const exportProjectAsKML = (project = currentProject) => {
               }}
               onExport={exportProjectAsKML}
               onDelete={deleteProject}
+              onCopyShare={copyToClipboard}
               tracking={tracking}
             />
           ))}
@@ -4206,50 +4264,71 @@ const exportProjectAsKML = (project = currentProject) => {
         </DialogContent>
       </Dialog>
 
-      {/* Diálogos de Colaboração */}
+      {/* NOVO Diálogo de Compartilhamento */}
       <Dialog open={showShareDialog} onOpenChange={setShowShareDialog}>
-        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-cyan-400">
-              <Share2 className="w-5 h-5" /> Compartilhar Projeto
-            </DialogTitle>
-            <DialogDescription className="text-gray-400">
-              Convide membros para editar este projeto em tempo real.
+        <DialogContent className="bg-slate-900 border border-slate-700 text-white max-w-sm p-0 overflow-hidden shadow-2xl rounded-2xl">
+          {/* Cabeçalho com Gradiente */}
+          <div className="bg-gradient-to-r from-cyan-600 to-blue-600 p-6 text-center">
+            <div className="w-16 h-16 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center mx-auto mb-3 shadow-lg">
+              <Share2 className="w-8 h-8 text-white" />
+            </div>
+            <DialogTitle className="text-xl font-bold text-white">Colaboração em Tempo Real</DialogTitle>
+            <DialogDescription className="text-cyan-100 text-xs mt-1">
+              Convide membros para editar o projeto <strong>{currentProject?.name}</strong>.
             </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4 py-4">
+          </div>
+
+          <div className="p-6 space-y-6 bg-slate-900">
             {currentProject?.share_code ? (
-              <div className="bg-slate-800 p-4 rounded-lg text-center border border-cyan-500/30 relative overflow-hidden group">
-                <p className="text-xs text-gray-400 uppercase tracking-widest mb-2">Código de Acesso</p>
-                <div className="text-3xl font-mono font-bold text-white tracking-wider">
-                  {currentProject.share_code}
-                </div>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
-                  onClick={() => {
-                    navigator.clipboard.writeText(currentProject.share_code);
-                    alert('Copiado!');
-                  }}
+              <div className="space-y-4">
+                {/* O Cartão do Código */}
+                <div 
+                  className="relative group cursor-pointer"
+                  onClick={() => copyToClipboard(currentProject.share_code)}
                 >
-                  <Copy className="w-4 h-4 text-cyan-400" />
-                </Button>
+                  <div className="absolute -inset-0.5 bg-gradient-to-r from-cyan-500 to-purple-600 rounded-xl blur opacity-30 group-hover:opacity-75 transition duration-500"></div>
+                  <div className="relative bg-slate-800 border border-slate-700 rounded-xl p-6 flex flex-col items-center justify-center gap-2">
+                    <span className="text-xs text-gray-400 uppercase tracking-[0.2em]">Chave de Acesso</span>
+                    
+                    <div className="flex items-center gap-3">
+                      <span className="text-4xl font-mono font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-white tracking-widest select-all">
+                        {currentProject.share_code}
+                      </span>
+                    </div>
+                    
+                    <div className={`text-xs flex items-center gap-1 transition-colors ${isCopied ? 'text-green-400' : 'text-gray-500'}`}>
+                      {isCopied ? <CheckCircle className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                      {isCopied ? 'Copiado para área de transferência!' : 'Toque para copiar'}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-slate-800/50 p-3 rounded-lg border border-slate-700/50">
+                  <h4 className="text-xs font-semibold text-gray-300 mb-2 flex items-center gap-2">
+                    <Users className="w-3 h-3 text-cyan-400" /> Como usar:
+                  </h4>
+                  <ol className="text-[10px] text-gray-400 space-y-1 list-decimal list-inside">
+                    <li>Envie este código para seu colega.</li>
+                    <li>Ele deve clicar em <strong>"Entrar (Código)"</strong> no menu.</li>
+                    <li>Vocês dois verão as edições um do outro instantaneamente.</li>
+                  </ol>
+                </div>
               </div>
             ) : (
-              <div className="text-center">
-                <p className="text-sm text-gray-400 mb-4">Nenhum código gerado ainda.</p>
-                <Button onClick={handleGenerateShareCode} className="bg-cyan-600 hover:bg-cyan-700 w-full">
-                  Gerar Código Único
+              <div className="text-center space-y-4">
+                <div className="bg-slate-800/50 p-4 rounded-lg border border-dashed border-slate-700">
+                  <p className="text-sm text-gray-400">
+                    Este projeto ainda é privado. Gere um código para permitir que outros acessem.
+                  </p>
+                </div>
+                <Button 
+                  onClick={handleGenerateShareCode} 
+                  className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold py-6 shadow-lg shadow-cyan-900/20"
+                >
+                  Gerar Chave de Acesso
                 </Button>
               </div>
             )}
-
-            <div className="bg-slate-800/50 p-3 rounded text-xs text-gray-400 flex gap-2 items-start">
-              <Info className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
-              <p>Qualquer pessoa com este código terá acesso total de edição e poderá ver atualizações em tempo real.</p>
-            </div>
           </div>
         </DialogContent>
       </Dialog>
