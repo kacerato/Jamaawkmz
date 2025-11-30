@@ -1,7 +1,7 @@
 import React from 'react';
 import { useState, useEffect, useRef, useCallback } from 'react'
 import Map, { Marker, Popup, Source, Layer, NavigationControl } from 'react-map-gl'
-import { Upload, MapPin, Ruler, X, Download, Share2, Edit2, Menu, LogOut, Heart, MapPinned, Layers, Play, Pause, Square, FolderOpen, Save, Navigation, Clock, Cloud, CloudOff, Archive, Camera, Plus, Star, LocateFixed, Info, Undo, FileText, MousePointerClick, CheckCircle, Users, Hash, Copy, RefreshCw } from 'lucide-react'
+import { Upload, MapPin, Ruler, X, Download, Share2, Edit2, Menu, LogOut, Heart, MapPinned, Layers, Play, Pause, Square, FolderOpen, Save, Navigation, Clock, Cloud, CloudOff, Archive, Camera, Plus, Star, LocateFixed, Info, Undo, FileText, MousePointerClick, CheckCircle, Users, Hash } from 'lucide-react'
 import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.jsx'
 import { Input } from '@/components/ui/input.jsx'
@@ -273,7 +273,7 @@ const PoleMarker = React.memo(({ point, index, color, onClick, isActive }) => {
 });
 
 // Novo componente otimizado para o Card do Projeto
-const ProjectCard = React.memo(({ project, isSelected, onToggle, onLoad, onEdit, onExport, onDelete, onCopyShare, tracking }) => {
+const ProjectCard = React.memo(({ project, isSelected, onToggle, onLoad, onEdit, onExport, onDelete, tracking }) => {
   const distance = safeToFixed(((project.totalDistance || project.total_distance) || 0) / 1000, 2);
   const date = new Date(project.created_at || project.createdAt || Date.now()).toLocaleDateString('pt-BR');
 
@@ -326,27 +326,6 @@ const ProjectCard = React.memo(({ project, isSelected, onToggle, onLoad, onEdit,
         </Button>
 
         <div className="flex gap-1">
-          {/* NOVO BOTÃO DE COMPARTILHAR/COPIAR */}
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={(e) => {
-              e.stopPropagation();
-              // Se já tem código, copia. Se não, abre o modal para gerar.
-              if (project.share_code) {
-                onCopyShare(project.share_code);
-              } else {
-                // Aqui você precisaria passar uma função para abrir o modal de geração
-                // Para simplificar neste contexto, vamos focar em quem JÁ TEM código
-                alert("Abra o projeto para gerar um código primeiro.");
-              }
-            }}
-            className={`action-btn-mini w-8 px-0 ${project.share_code ? 'text-cyan-400 hover:bg-cyan-500/10' : 'text-gray-600'}`}
-            title={project.share_code ? "Copiar Código de Acesso" : "Sem código gerado"}
-          >
-            {project.share_code ? <Share2 className="w-3.5 h-3.5" /> : <Share2 className="w-3.5 h-3.5 opacity-30" />}
-          </Button>
-
           <Button
             size="sm"
             variant="ghost"
@@ -596,233 +575,37 @@ function App() {
   // Novo estado para modo de entrada do rastreamento
   const [trackingInputMode, setTrackingInputMode] = useState('gps');
 
-  // Estados para colaboração
-  const [showShareDialog, setShowShareDialog] = useState(false);
-  const [showJoinDialog, setShowJoinDialog] = useState(false);
-  const [showHistoryDialog, setShowHistoryDialog] = useState(false);
-  const [joinCode, setJoinCode] = useState('');
-  const [projectHistory, setProjectHistory] = useState([]);
-  const [isSharedSession, setIsSharedSession] = useState(false);
-  const [realtimeChannel, setRealtimeChannel] = useState(null);
-
-  // Novo estado para animação de cópia
-  const [isCopied, setIsCopied] = useState(false); // Para animação de "Copiado!"
-
   const kalmanLatRef = useRef(new KalmanFilter(0.1, 0.1));
   const kalmanLngRef = useRef(new KalmanFilter(0.1, 0.1));
 
   const totalDistanceAllProjects = calculateTotalDistanceAllProjects(projects);
 
-  // Função para copiar para área de transferência
-  const copyToClipboard = async (text) => {
-    if (!text) return;
-    try {
-      await navigator.clipboard.writeText(text);
-      setIsCopied(true);
-      // Feedback tátil (vibração) se estiver no mobile
-      if (navigator.vibrate) navigator.vibrate(50);
-      setTimeout(() => setIsCopied(false), 2000);
-    } catch (err) {
-      alert('Código: ' + text); // Fallback
-    }
-  };
-
-  // FUNÇÃO ATUALIZADA: Carregar projetos do Supabase (incluindo compartilhados)
-  const loadProjectsFromSupabase = async () => {
-    if (!user) return [];
-    
-    try {
-      // 1. Projetos que sou dono
-      const { data: ownedProjects, error: errorOwned } = await supabase
-        .from('projetos')
-        .select('*')
-        .eq('user_id', user.id);
-
-      if (errorOwned) throw errorOwned;
-
-      // 2. Projetos que sou membro
-      const { data: memberData, error: errorMember } = await supabase
-        .from('project_members')
-        .select('project_id')
-        .eq('user_id', user.id);
-
-      let sharedProjects = [];
-      if (memberData && memberData.length > 0) {
-        const ids = memberData.map(m => m.project_id);
-        const { data: shared, error: errorShared } = await supabase
-          .from('projetos')
-          .select('*')
-          .in('id', ids);
-        
-        if (!errorShared) sharedProjects = shared;
-      }
-
-      const allProjects = [...(ownedProjects || []), ...sharedProjects];
-      
-      // Ordenar e salvar
-      const uniqueProjects = Array.from(new Map(allProjects.map(item => [item.id, item])).values())
-        .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
-
-      localStorage.setItem('jamaaw_projects', JSON.stringify(uniqueProjects));
-      return uniqueProjects;
-    } catch (error) {
-      console.error('Erro ao carregar projetos:', error);
-      const localProjects = localStorage.getItem('jamaaw_projects');
-      return localProjects ? JSON.parse(localProjects) : [];
-    }
-  };
-
-  // Gerar código de compartilhamento
-  const handleGenerateShareCode = async () => {
-    if (!currentProject || !currentProject.id || String(currentProject.id).startsWith('offline')) {
-      alert('Salve o projeto online primeiro para compartilhar.');
-      return;
-    }
-
-    // Gera código aleatório de 6 chars
-    const code = Math.random().toString(36).substring(2, 8).toUpperCase();
-    
-    try {
-      const { error } = await supabase
-        .from('projetos')
-        .update({ 
-          share_code: code,
-          owner_email: user.email 
-        })
-        .eq('id', currentProject.id);
-
-      if (error) throw error;
-
-      setCurrentProject(prev => ({ ...prev, share_code: code }));
-      await logHistory('Compartilhamento', `Gerou código de acesso: ${code}`);
-      alert(`Código gerado: ${code}`);
-    } catch (error) {
-      console.error('Erro ao gerar código:', error);
-      alert('Erro ao gerar código de compartilhamento.');
-    }
-  };
-
-  // Entrar em projeto via código
-  const handleJoinProject = async () => {
-    if (!joinCode.trim()) return;
-
-    try {
-      // 1. Achar projeto
-      const { data: projects, error: findError } = await supabase
-        .from('projetos')
-        .select('*')
-        .eq('share_code', joinCode.toUpperCase())
-        .single();
-
-      if (findError || !projects) {
-        alert('Projeto não encontrado ou código inválido.');
-        return;
-      }
-
-      // 2. Adicionar como membro
-      const { error: joinError } = await supabase
-        .from('project_members')
-        .insert({
-          project_id: projects.id,
-          user_id: user.id
-        });
-
-      if (joinError && !joinError.message.includes('duplicate')) throw joinError;
-
-      await loadProjectsFromSupabase().then(data => setProjects(data));
-      
-      // Logar entrada
-      await supabase.from('project_history').insert({
-        project_id: projects.id,
-        user_email: user.email,
-        action: 'Novo Membro',
-        details: 'Entrou no projeto via código'
-      });
-
-      setShowJoinDialog(false);
-      setJoinCode('');
-      alert(`Você entrou no projeto "${projects.name}" com sucesso!`);
-      
-      // Carregar imediatamente
-      loadProject(projects);
-
-    } catch (error) {
-      console.error('Erro ao entrar:', error);
-      alert('Erro ao entrar no projeto.');
-    }
-  };
-
-  // Logar ações no histórico
-  const logHistory = async (action, details) => {
-    if (!currentProject || !user || !isOnline) return;
-    if (String(currentProject.id).startsWith('offline')) return;
-
-    try {
-      await supabase.from('project_history').insert({
-        project_id: currentProject.id,
-        user_email: user.email,
-        action: action,
-        details: details
-      });
-    } catch (e) {
-      console.error('Erro silent log:', e);
-    }
-  };
-
-  // Buscar histórico para exibir
-  const fetchHistory = async () => {
-    if (!currentProject) return;
-    const { data } = await supabase
-      .from('project_history')
+  // FUNÇÃO ATUALIZADA: Carregar projetos do Supabase (sem compartilhados)
+const loadProjectsFromSupabase = async () => {
+  if (!user) return [];
+  
+  try {
+    const { data, error } = await supabase
+      .from('projetos')
       .select('*')
-      .eq('project_id', currentProject.id)
-      .order('created_at', { ascending: false })
-      .limit(50);
+      .eq('user_id', user.id)
+      .order('updated_at', { ascending: false });
     
-    if (data) setProjectHistory(data);
-  };
-
-  // Adicione este useEffect para gerenciar Realtime
-  useEffect(() => {
-    if (!currentProject || !isOnline || String(currentProject.id).startsWith('offline')) return;
-
-    // Inscrever no canal do projeto
-    const channel = supabase
-      .channel(`project-${currentProject.id}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'projetos', filter: `id=eq.${currentProject.id}` },
-        (payload) => {
-          // Se alguém atualizou o projeto (pontos, nome, etc)
-          console.log('Atualização Realtime recebida:', payload);
-          if (payload.new) {
-            // Atualiza estado local suavemente
-            const updatedProj = payload.new;
-            setCurrentProject(prev => ({
-              ...prev, 
-              points: updatedProj.points,
-              name: updatedProj.name,
-              total_distance: updatedProj.total_distance
-            }));
-            setManualPoints(updatedProj.points); // Atualiza visualização no mapa
-            
-            // Feedback visual
-            const toast = document.createElement('div');
-            toast.className = 'notification info';
-            toast.innerText = 'Projeto atualizado remotamente';
-            document.body.appendChild(toast);
-            setTimeout(() => toast.remove(), 3000);
-          }
-        }
-      )
-      .subscribe();
-
-    setRealtimeChannel(channel);
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [currentProject?.id]); // Recria apenas se mudar o ID do projeto
+    if (error) throw error;
+    
+    // Salva também no localStorage como backup
+    if (data && data.length > 0) {
+      localStorage.setItem('jamaaw_projects', JSON.stringify(data));
+    }
+    
+    return data || [];
+  } catch (error) {
+    console.error('Erro ao carregar projetos:', error);
+    // Fallback para localStorage
+    const localProjects = localStorage.getItem('jamaaw_projects');
+    return localProjects ? JSON.parse(localProjects) : [];
+  }
+};
 
   // Função para detectar bairros de projetos que ainda estão como "Vários"
   const refreshProjectNeighborhoods = async () => {
@@ -1193,9 +976,6 @@ function App() {
         setProjects(updatedProjects);
         localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
       }
-      
-      // Logar a ação de salvamento
-      await logHistory(editingProject ? 'Edição' : 'Criação', `Salvou ${finalPoints.length} pontos`);
       
       if (!autoSave && !editingProject) {
         setCurrentProject(savedProject);
@@ -3474,49 +3254,6 @@ const exportProjectAsKML = (project = currentProject) => {
                   </Button>
                 </div>
 
-                {/* Seção de Colaboração */}
-                <div className="space-y-2">
-                  <h3 className="menu-section-title text-cyan-400">Colaboração</h3>
-                  
-                  <div className="grid grid-cols-2 gap-2">
-                    <Button
-                      variant="outline"
-                      className="bg-slate-800 border-dashed border-slate-600 hover:bg-slate-700 text-xs h-10"
-                      onClick={() => setShowJoinDialog(true)}
-                    >
-                      <Users className="w-4 h-4 mr-2 text-green-400" />
-                      Entrar (Código)
-                    </Button>
-
-                    <Button
-                      variant="outline"
-                      className="bg-slate-800 border-slate-600 hover:bg-slate-700 text-xs h-10"
-                      onClick={() => {
-                        if(!currentProject) return alert('Carregue um projeto primeiro');
-                        setShowShareDialog(true);
-                      }}
-                      disabled={!currentProject}
-                    >
-                      <Share2 className="w-4 h-4 mr-2 text-cyan-400" />
-                      Compartilhar
-                    </Button>
-                  </div>
-
-                  <Button
-                    variant="ghost"
-                    className="w-full justify-start text-white hover:bg-slate-700 h-10 menu-button text-xs"
-                    onClick={() => {
-                        if(!currentProject) return alert('Carregue um projeto primeiro');
-                        fetchHistory();
-                        setShowHistoryDialog(true);
-                    }}
-                    disabled={!currentProject}
-                  >
-                    <Clock className="w-4 h-4 mr-3 text-purple-400" />
-                    Ver Histórico de Edição
-                  </Button>
-                </div>
-
                 <div className="space-y-2">
                   <h3 className="menu-section-title">Ações Rápidas</h3>
                   
@@ -3695,25 +3432,6 @@ const exportProjectAsKML = (project = currentProject) => {
               <span className="text-xs text-purple-400 ml-2 bg-purple-500/20 px-2 py-0.5 rounded-full">Galho Ativo</span>
             )}
           </div>
-
-          {/* ADICIONE ISTO AQUI: Badge de Código Rápido */}
-          {currentProject?.share_code && (
-            <button
-              onClick={() => copyToClipboard(currentProject.share_code)}
-              className="hidden sm:flex items-center gap-2 ml-auto bg-slate-900/50 hover:bg-cyan-500/20 border border-slate-600 hover:border-cyan-500/50 rounded px-2 py-1 transition-all group"
-              title="Copiar código de compartilhamento"
-            >
-              <span className="text-[10px] text-gray-400 group-hover:text-cyan-300 uppercase">CODE:</span>
-              <span className="text-xs font-mono font-bold text-white group-hover:text-cyan-400">
-                {currentProject.share_code}
-              </span>
-              {isCopied ? (
-                <CheckCircle className="w-3 h-3 text-green-400" />
-              ) : (
-                <Copy className="w-3 h-3 text-gray-500 group-hover:text-white" />
-              )}
-            </button>
-          )}
         </div>
 
         <Button
@@ -4062,7 +3780,6 @@ const exportProjectAsKML = (project = currentProject) => {
               }}
               onExport={exportProjectAsKML}
               onDelete={deleteProject}
-              onCopyShare={copyToClipboard}
               tracking={tracking}
             />
           ))}
@@ -4260,129 +3977,6 @@ const exportProjectAsKML = (project = currentProject) => {
                 Aplicar
               </Button>
             </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* NOVO Diálogo de Compartilhamento */}
-      <Dialog open={showShareDialog} onOpenChange={setShowShareDialog}>
-        <DialogContent className="bg-slate-900 border border-slate-700 text-white max-w-sm p-0 overflow-hidden shadow-2xl rounded-2xl">
-          {/* Cabeçalho com Gradiente */}
-          <div className="bg-gradient-to-r from-cyan-600 to-blue-600 p-6 text-center">
-            <div className="w-16 h-16 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center mx-auto mb-3 shadow-lg">
-              <Share2 className="w-8 h-8 text-white" />
-            </div>
-            <DialogTitle className="text-xl font-bold text-white">Colaboração em Tempo Real</DialogTitle>
-            <DialogDescription className="text-cyan-100 text-xs mt-1">
-              Convide membros para editar o projeto <strong>{currentProject?.name}</strong>.
-            </DialogDescription>
-          </div>
-
-          <div className="p-6 space-y-6 bg-slate-900">
-            {currentProject?.share_code ? (
-              <div className="space-y-4">
-                {/* O Cartão do Código */}
-                <div 
-                  className="relative group cursor-pointer"
-                  onClick={() => copyToClipboard(currentProject.share_code)}
-                >
-                  <div className="absolute -inset-0.5 bg-gradient-to-r from-cyan-500 to-purple-600 rounded-xl blur opacity-30 group-hover:opacity-75 transition duration-500"></div>
-                  <div className="relative bg-slate-800 border border-slate-700 rounded-xl p-6 flex flex-col items-center justify-center gap-2">
-                    <span className="text-xs text-gray-400 uppercase tracking-[0.2em]">Chave de Acesso</span>
-                    
-                    <div className="flex items-center gap-3">
-                      <span className="text-4xl font-mono font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-white tracking-widest select-all">
-                        {currentProject.share_code}
-                      </span>
-                    </div>
-                    
-                    <div className={`text-xs flex items-center gap-1 transition-colors ${isCopied ? 'text-green-400' : 'text-gray-500'}`}>
-                      {isCopied ? <CheckCircle className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                      {isCopied ? 'Copiado para área de transferência!' : 'Toque para copiar'}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="bg-slate-800/50 p-3 rounded-lg border border-slate-700/50">
-                  <h4 className="text-xs font-semibold text-gray-300 mb-2 flex items-center gap-2">
-                    <Users className="w-3 h-3 text-cyan-400" /> Como usar:
-                  </h4>
-                  <ol className="text-[10px] text-gray-400 space-y-1 list-decimal list-inside">
-                    <li>Envie este código para seu colega.</li>
-                    <li>Ele deve clicar em <strong>"Entrar (Código)"</strong> no menu.</li>
-                    <li>Vocês dois verão as edições um do outro instantaneamente.</li>
-                  </ol>
-                </div>
-              </div>
-            ) : (
-              <div className="text-center space-y-4">
-                <div className="bg-slate-800/50 p-4 rounded-lg border border-dashed border-slate-700">
-                  <p className="text-sm text-gray-400">
-                    Este projeto ainda é privado. Gere um código para permitir que outros acessem.
-                  </p>
-                </div>
-                <Button 
-                  onClick={handleGenerateShareCode} 
-                  className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold py-6 shadow-lg shadow-cyan-900/20"
-                >
-                  Gerar Chave de Acesso
-                </Button>
-              </div>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={showJoinDialog} onOpenChange={setShowJoinDialog}>
-        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-green-400">
-              <Users className="w-5 h-5" /> Entrar em Projeto
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <Input
-              placeholder="Cole o código aqui (ex: X7K9P2)"
-              value={joinCode}
-              onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-              className="bg-slate-800 border-slate-700 text-center text-lg font-mono tracking-widest uppercase"
-              maxLength={6}
-            />
-            <Button onClick={handleJoinProject} className="w-full bg-green-600 hover:bg-green-700">
-              Entrar e Sincronizar
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={showHistoryDialog} onOpenChange={setShowHistoryDialog}>
-        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-md max-h-[80vh] flex flex-col">
-          <DialogHeader>
-            <DialogTitle className="flex items-center justify-between text-cyan-400">
-              <div className="flex items-center gap-2">
-                <Clock className="w-5 h-5" /> Histórico de Alterações
-              </div>
-              <Button size="sm" variant="ghost" onClick={fetchHistory}>
-                <RefreshCw className="w-4 h-4" />
-              </Button>
-            </DialogTitle>
-          </DialogHeader>
-          
-          <div className="flex-1 overflow-y-auto custom-scrollbar space-y-3 pr-2 mt-2">
-            {projectHistory.length === 0 ? (
-              <div className="text-center text-gray-500 py-8">Nenhum registro encontrado.</div>
-            ) : (
-              projectHistory.map((log) => (
-                <div key={log.id} className="bg-slate-800/50 p-3 rounded border-l-2 border-cyan-500">
-                  <div className="flex justify-between items-start mb-1">
-                    <span className="text-xs font-bold text-white">{log.action}</span>
-                    <span className="text-[10px] text-gray-500">{new Date(log.created_at).toLocaleString()}</span>
-                  </div>
-                  <p className="text-sm text-gray-300 mb-1">{log.details}</p>
-                  <p className="text-[10px] text-cyan-400 font-mono">{log.user_email}</p>
-                </div>
-              ))
-            )}
           </div>
         </DialogContent>
       </Dialog>
