@@ -2597,10 +2597,7 @@ body {
 
 .dev-stat-value.error {
   color: #EF4444;
-
 }
-
-/* ADICIONE AO App.css - APENAS ISSO */
 
 /* ========== ESTILOS NOVOS: MEUS PROJETOS ========== */
 
@@ -2872,8 +2869,6 @@ input::placeholder {
   z-index: 50;
 }
 
-/* App.css - Adicione ao final do arquivo */
-
 /* ========== CORREÇÃO DO POPUP MAPBOX (Fundo Branco) ========== */
 /* Isso garante que o container padrão do Mapbox seja transparente 
    quando usamos a classe 'modern-popup', removendo o quadrado branco de fundo. */
@@ -2996,3 +2991,36 @@ input::placeholder {
   animation: flash-border-anim 0.5s ease-out;
 }
 
+/* ========== NOVOS ESTILOS ADICIONADOS ========== */
+
+/* Remover highlight de toque em mobile */
+* {
+  -webkit-tap-highlight-color: transparent;
+  user-select: none; /* Impede seleção de texto acidental */
+}
+
+/* Permitir seleção apenas em inputs */
+input, textarea {
+  user-select: text;
+}
+
+/* Scroll suave e oculto */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;  
+  scrollbar-width: none;  
+}
+
+/* Inputs com estilo Glass */
+.glass-input {
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: white;
+}
+.glass-input:focus {
+  border-color: #06b6d4;
+  box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.2);
+}
