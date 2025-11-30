@@ -4276,7 +4276,6 @@ const exportProjectAsKML = (project = currentProject) => {
         </div>
       ) : (
         <div className="projects-grid-container">
-          // No Dialog de projetos - procure esta parte no código e adicione a prop user
 {projects.map(project => (
   <ProjectCard
     key={project.id}
