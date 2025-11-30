@@ -602,15 +602,18 @@ function App() {
     if (!user) return [];
     
     try {
-      // REMOVIDO: .eq('user_id', user.id)
-      // O RLS do Supabase já vai filtrar automaticamente o que o usuário pode ver
-      // (Projetos dele + Projetos onde ele é colaborador)
       const { data, error } = await supabase
         .from('projetos')
         .select('*')
         .order('updated_at', { ascending: false });
 
       if (error) throw error;
+      
+      // Salva também no localStorage como backup
+      if (data && data.length > 0) {
+        localStorage.setItem('jamaaw_projects', JSON.stringify(data));
+      }
+      
       return data || [];
     } catch (error) {
       console.error('Erro ao carregar projetos:', error);
@@ -1216,6 +1219,7 @@ function App() {
     return total;
   };
 
+  // FUNÇÃO CORRIGIDA: Entrar em projeto compartilhado
   const handleJoinProject = async () => {
     if (!joinCode.trim()) return alert('Digite um código válido');
     
@@ -1226,22 +1230,39 @@ function App() {
       if (result.success && result.project) {
         const project = result.project;
         
-        // Converte pontos se necessário (depende de como o Supabase retorna o JSON)
+        // Converte pontos se necessário
         if (typeof project.points === 'string') {
           project.points = JSON.parse(project.points);
         }
         
-        // Adiciona à lista local
+        // Adiciona à lista local e salva no localStorage
         setProjects(prev => {
           const exists = prev.find(p => p.id === project.id);
-          if (exists) return prev.map(p => p.id === project.id ? project : p);
-          return [project, ...prev];
+          if (exists) {
+            // Se já existe, atualiza
+            const updated = prev.map(p => p.id === project.id ? project : p);
+            localStorage.setItem('jamaaw_projects', JSON.stringify(updated));
+            return updated;
+          } else {
+            // Se é novo, adiciona
+            const updated = [project, ...prev];
+            localStorage.setItem('jamaaw_projects', JSON.stringify(updated));
+            return updated;
+          }
         });
         
         // Feedback Visual
         alert(`Você entrou no projeto "${project.name}" com sucesso!`);
         setJoinCode('');
-        setShowProjectsList(true); // Abre a lista para mostrar o novo projeto
+        setShowProjectsList(true);
+        
+        // Log da ação de entrada no projeto
+        await SharedProjectService.logAction(
+          project.id, 
+          'JOIN', 
+          `Entrou no projeto via código compartilhado`
+        );
+        
       } else {
         alert('Falha ao entrar: ' + (result.message || 'Código não encontrado'));
       }
@@ -1421,6 +1442,7 @@ function App() {
     }
   };
 
+  // EFEITO ATUALIZADO: Carregar projetos
   useEffect(() => {
     const loadProjects = async () => {
       try {
@@ -1429,12 +1451,11 @@ function App() {
         if (user) {
           if (isOnline) {
             try {
-              // ATUALIZADO: Usa a nova função loadProjectsFromSupabase
               const data = await loadProjectsFromSupabase();
-              
               loadedProjects = data || [];
-              console.log('Projetos carregados do Supabase:', loadedProjects.length);
+              console.log('Projetos carregados:', loadedProjects.length);
               
+              // Garante que o localStorage está atualizado
               localStorage.setItem('jamaaw_projects', JSON.stringify(loadedProjects));
               
             } catch (supabaseError) {
