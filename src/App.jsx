@@ -1,7 +1,7 @@
 import React from 'react';
 import { useState, useEffect, useRef, useCallback } from 'react'
 import Map, { Marker, Popup, Source, Layer, NavigationControl } from 'react-map-gl'
-import { Upload, MapPin, Ruler, X, Download, Share2, Edit2, Menu, LogOut, Heart, MapPinned, Layers, Play, Pause, Square, FolderOpen, Save, Navigation, Clock, Cloud, CloudOff, Archive, Camera, Plus, Star, LocateFixed, Info, Undo, FileText, MousePointerClick, CheckCircle, Users, Hash } from 'lucide-react'
+import { Upload, MapPin, Ruler, X, Download, Share2, Edit2, Menu, LogOut, Heart, MapPinned, Layers, Play, Pause, Square, FolderOpen, Save, Navigation, Clock, Cloud, CloudOff, Archive, Camera, Plus, Star, LocateFixed, Info, Undo, FileText, MousePointerClick, CheckCircle, Users, Hash, Copy, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.jsx'
 import { Input } from '@/components/ui/input.jsx'
@@ -575,37 +575,216 @@ function App() {
   // Novo estado para modo de entrada do rastreamento
   const [trackingInputMode, setTrackingInputMode] = useState('gps');
 
+  // Estados para colaboração
+  const [showShareDialog, setShowShareDialog] = useState(false);
+  const [showJoinDialog, setShowJoinDialog] = useState(false);
+  const [showHistoryDialog, setShowHistoryDialog] = useState(false);
+  const [joinCode, setJoinCode] = useState('');
+  const [projectHistory, setProjectHistory] = useState([]);
+  const [isSharedSession, setIsSharedSession] = useState(false);
+  const [realtimeChannel, setRealtimeChannel] = useState(null);
+
   const kalmanLatRef = useRef(new KalmanFilter(0.1, 0.1));
   const kalmanLngRef = useRef(new KalmanFilter(0.1, 0.1));
 
   const totalDistanceAllProjects = calculateTotalDistanceAllProjects(projects);
 
-  // FUNÇÃO ATUALIZADA: Carregar projetos do Supabase (sem compartilhados)
-const loadProjectsFromSupabase = async () => {
-  if (!user) return [];
-  
-  try {
-    const { data, error } = await supabase
-      .from('projetos')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('updated_at', { ascending: false });
+  // FUNÇÃO ATUALIZADA: Carregar projetos do Supabase (incluindo compartilhados)
+  const loadProjectsFromSupabase = async () => {
+    if (!user) return [];
     
-    if (error) throw error;
-    
-    // Salva também no localStorage como backup
-    if (data && data.length > 0) {
-      localStorage.setItem('jamaaw_projects', JSON.stringify(data));
+    try {
+      // 1. Projetos que sou dono
+      const { data: ownedProjects, error: errorOwned } = await supabase
+        .from('projetos')
+        .select('*')
+        .eq('user_id', user.id);
+
+      if (errorOwned) throw errorOwned;
+
+      // 2. Projetos que sou membro
+      const { data: memberData, error: errorMember } = await supabase
+        .from('project_members')
+        .select('project_id')
+        .eq('user_id', user.id);
+
+      let sharedProjects = [];
+      if (memberData && memberData.length > 0) {
+        const ids = memberData.map(m => m.project_id);
+        const { data: shared, error: errorShared } = await supabase
+          .from('projetos')
+          .select('*')
+          .in('id', ids);
+        
+        if (!errorShared) sharedProjects = shared;
+      }
+
+      const allProjects = [...(ownedProjects || []), ...sharedProjects];
+      
+      // Ordenar e salvar
+      const uniqueProjects = Array.from(new Map(allProjects.map(item => [item.id, item])).values())
+        .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+
+      localStorage.setItem('jamaaw_projects', JSON.stringify(uniqueProjects));
+      return uniqueProjects;
+    } catch (error) {
+      console.error('Erro ao carregar projetos:', error);
+      const localProjects = localStorage.getItem('jamaaw_projects');
+      return localProjects ? JSON.parse(localProjects) : [];
     }
+  };
+
+  // Gerar código de compartilhamento
+  const handleGenerateShareCode = async () => {
+    if (!currentProject || !currentProject.id || String(currentProject.id).startsWith('offline')) {
+      alert('Salve o projeto online primeiro para compartilhar.');
+      return;
+    }
+
+    // Gera código aleatório de 6 chars
+    const code = Math.random().toString(36).substring(2, 8).toUpperCase();
     
-    return data || [];
-  } catch (error) {
-    console.error('Erro ao carregar projetos:', error);
-    // Fallback para localStorage
-    const localProjects = localStorage.getItem('jamaaw_projects');
-    return localProjects ? JSON.parse(localProjects) : [];
-  }
-};
+    try {
+      const { error } = await supabase
+        .from('projetos')
+        .update({ 
+          share_code: code,
+          owner_email: user.email 
+        })
+        .eq('id', currentProject.id);
+
+      if (error) throw error;
+
+      setCurrentProject(prev => ({ ...prev, share_code: code }));
+      await logHistory('Compartilhamento', `Gerou código de acesso: ${code}`);
+      alert(`Código gerado: ${code}`);
+    } catch (error) {
+      console.error('Erro ao gerar código:', error);
+      alert('Erro ao gerar código de compartilhamento.');
+    }
+  };
+
+  // Entrar em projeto via código
+  const handleJoinProject = async () => {
+    if (!joinCode.trim()) return;
+
+    try {
+      // 1. Achar projeto
+      const { data: projects, error: findError } = await supabase
+        .from('projetos')
+        .select('*')
+        .eq('share_code', joinCode.toUpperCase())
+        .single();
+
+      if (findError || !projects) {
+        alert('Projeto não encontrado ou código inválido.');
+        return;
+      }
+
+      // 2. Adicionar como membro
+      const { error: joinError } = await supabase
+        .from('project_members')
+        .insert({
+          project_id: projects.id,
+          user_id: user.id
+        });
+
+      if (joinError && !joinError.message.includes('duplicate')) throw joinError;
+
+      await loadProjectsFromSupabase().then(data => setProjects(data));
+      
+      // Logar entrada
+      await supabase.from('project_history').insert({
+        project_id: projects.id,
+        user_email: user.email,
+        action: 'Novo Membro',
+        details: 'Entrou no projeto via código'
+      });
+
+      setShowJoinDialog(false);
+      setJoinCode('');
+      alert(`Você entrou no projeto "${projects.name}" com sucesso!`);
+      
+      // Carregar imediatamente
+      loadProject(projects);
+
+    } catch (error) {
+      console.error('Erro ao entrar:', error);
+      alert('Erro ao entrar no projeto.');
+    }
+  };
+
+  // Logar ações no histórico
+  const logHistory = async (action, details) => {
+    if (!currentProject || !user || !isOnline) return;
+    if (String(currentProject.id).startsWith('offline')) return;
+
+    try {
+      await supabase.from('project_history').insert({
+        project_id: currentProject.id,
+        user_email: user.email,
+        action: action,
+        details: details
+      });
+    } catch (e) {
+      console.error('Erro silent log:', e);
+    }
+  };
+
+  // Buscar histórico para exibir
+  const fetchHistory = async () => {
+    if (!currentProject) return;
+    const { data } = await supabase
+      .from('project_history')
+      .select('*')
+      .eq('project_id', currentProject.id)
+      .order('created_at', { ascending: false })
+      .limit(50);
+    
+    if (data) setProjectHistory(data);
+  };
+
+  // Adicione este useEffect para gerenciar Realtime
+  useEffect(() => {
+    if (!currentProject || !isOnline || String(currentProject.id).startsWith('offline')) return;
+
+    // Inscrever no canal do projeto
+    const channel = supabase
+      .channel(`project-${currentProject.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'projetos', filter: `id=eq.${currentProject.id}` },
+        (payload) => {
+          // Se alguém atualizou o projeto (pontos, nome, etc)
+          console.log('Atualização Realtime recebida:', payload);
+          if (payload.new) {
+            // Atualiza estado local suavemente
+            const updatedProj = payload.new;
+            setCurrentProject(prev => ({
+              ...prev, 
+              points: updatedProj.points,
+              name: updatedProj.name,
+              total_distance: updatedProj.total_distance
+            }));
+            setManualPoints(updatedProj.points); // Atualiza visualização no mapa
+            
+            // Feedback visual
+            const toast = document.createElement('div');
+            toast.className = 'notification info';
+            toast.innerText = 'Projeto atualizado remotamente';
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+          }
+        }
+      )
+      .subscribe();
+
+    setRealtimeChannel(channel);
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentProject?.id]); // Recria apenas se mudar o ID do projeto
 
   // Função para detectar bairros de projetos que ainda estão como "Vários"
   const refreshProjectNeighborhoods = async () => {
@@ -976,6 +1155,9 @@ const loadProjectsFromSupabase = async () => {
         setProjects(updatedProjects);
         localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
       }
+      
+      // Logar a ação de salvamento
+      await logHistory(editingProject ? 'Edição' : 'Criação', `Salvou ${finalPoints.length} pontos`);
       
       if (!autoSave && !editingProject) {
         setCurrentProject(savedProject);
@@ -3254,6 +3436,49 @@ const exportProjectAsKML = (project = currentProject) => {
                   </Button>
                 </div>
 
+                {/* Seção de Colaboração */}
+                <div className="space-y-2">
+                  <h3 className="menu-section-title text-cyan-400">Colaboração</h3>
+                  
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      variant="outline"
+                      className="bg-slate-800 border-dashed border-slate-600 hover:bg-slate-700 text-xs h-10"
+                      onClick={() => setShowJoinDialog(true)}
+                    >
+                      <Users className="w-4 h-4 mr-2 text-green-400" />
+                      Entrar (Código)
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      className="bg-slate-800 border-slate-600 hover:bg-slate-700 text-xs h-10"
+                      onClick={() => {
+                        if(!currentProject) return alert('Carregue um projeto primeiro');
+                        setShowShareDialog(true);
+                      }}
+                      disabled={!currentProject}
+                    >
+                      <Share2 className="w-4 h-4 mr-2 text-cyan-400" />
+                      Compartilhar
+                    </Button>
+                  </div>
+
+                  <Button
+                    variant="ghost"
+                    className="w-full justify-start text-white hover:bg-slate-700 h-10 menu-button text-xs"
+                    onClick={() => {
+                        if(!currentProject) return alert('Carregue um projeto primeiro');
+                        fetchHistory();
+                        setShowHistoryDialog(true);
+                    }}
+                    disabled={!currentProject}
+                  >
+                    <Clock className="w-4 h-4 mr-3 text-purple-400" />
+                    Ver Histórico de Edição
+                  </Button>
+                </div>
+
                 <div className="space-y-2">
                   <h3 className="menu-section-title">Ações Rápidas</h3>
                   
@@ -3977,6 +4202,108 @@ const exportProjectAsKML = (project = currentProject) => {
                 Aplicar
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Diálogos de Colaboração */}
+      <Dialog open={showShareDialog} onOpenChange={setShowShareDialog}>
+        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-cyan-400">
+              <Share2 className="w-5 h-5" /> Compartilhar Projeto
+            </DialogTitle>
+            <DialogDescription className="text-gray-400">
+              Convide membros para editar este projeto em tempo real.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            {currentProject?.share_code ? (
+              <div className="bg-slate-800 p-4 rounded-lg text-center border border-cyan-500/30 relative overflow-hidden group">
+                <p className="text-xs text-gray-400 uppercase tracking-widest mb-2">Código de Acesso</p>
+                <div className="text-3xl font-mono font-bold text-white tracking-wider">
+                  {currentProject.share_code}
+                </div>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                  onClick={() => {
+                    navigator.clipboard.writeText(currentProject.share_code);
+                    alert('Copiado!');
+                  }}
+                >
+                  <Copy className="w-4 h-4 text-cyan-400" />
+                </Button>
+              </div>
+            ) : (
+              <div className="text-center">
+                <p className="text-sm text-gray-400 mb-4">Nenhum código gerado ainda.</p>
+                <Button onClick={handleGenerateShareCode} className="bg-cyan-600 hover:bg-cyan-700 w-full">
+                  Gerar Código Único
+                </Button>
+              </div>
+            )}
+
+            <div className="bg-slate-800/50 p-3 rounded text-xs text-gray-400 flex gap-2 items-start">
+              <Info className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+              <p>Qualquer pessoa com este código terá acesso total de edição e poderá ver atualizações em tempo real.</p>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showJoinDialog} onOpenChange={setShowJoinDialog}>
+        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-green-400">
+              <Users className="w-5 h-5" /> Entrar em Projeto
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <Input
+              placeholder="Cole o código aqui (ex: X7K9P2)"
+              value={joinCode}
+              onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+              className="bg-slate-800 border-slate-700 text-center text-lg font-mono tracking-widest uppercase"
+              maxLength={6}
+            />
+            <Button onClick={handleJoinProject} className="w-full bg-green-600 hover:bg-green-700">
+              Entrar e Sincronizar
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showHistoryDialog} onOpenChange={setShowHistoryDialog}>
+        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-md max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center justify-between text-cyan-400">
+              <div className="flex items-center gap-2">
+                <Clock className="w-5 h-5" /> Histórico de Alterações
+              </div>
+              <Button size="sm" variant="ghost" onClick={fetchHistory}>
+                <RefreshCw className="w-4 h-4" />
+              </Button>
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="flex-1 overflow-y-auto custom-scrollbar space-y-3 pr-2 mt-2">
+            {projectHistory.length === 0 ? (
+              <div className="text-center text-gray-500 py-8">Nenhum registro encontrado.</div>
+            ) : (
+              projectHistory.map((log) => (
+                <div key={log.id} className="bg-slate-800/50 p-3 rounded border-l-2 border-cyan-500">
+                  <div className="flex justify-between items-start mb-1">
+                    <span className="text-xs font-bold text-white">{log.action}</span>
+                    <span className="text-[10px] text-gray-500">{new Date(log.created_at).toLocaleString()}</span>
+                  </div>
+                  <p className="text-sm text-gray-300 mb-1">{log.details}</p>
+                  <p className="text-[10px] text-cyan-400 font-mono">{log.user_email}</p>
+                </div>
+              ))
+            )}
           </div>
         </DialogContent>
       </Dialog>
