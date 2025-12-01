@@ -27,11 +27,6 @@ import ModernPopup from './components/ModernPopup'
 import ImportProgressPopup from './components/ImportProgressPopup'
 import MultipleSelectionPopup from './components/MultipleSelectionPopup'
 import BairroDetectionService from './components/BairroDetectionService'
-// NOVAS IMPORTAÇÕES ADICIONADAS
-import { useSharedProjects } from './hooks/useSharedProjects';
-import ShareProjectDialog from './components/ShareProjectDialog';
-import GlassMenu from './components/GlassMenu';
-import GlowToast from './components/GlowToast';
 import 'mapbox-gl/dist/mapbox-gl.css'
 import './App.css'
 
@@ -524,6 +519,8 @@ function App() {
   const [calculatingRoute, setCalculatingRoute] = useState(false)
   const [isOnline, setIsOnline] = useState(true)
   const [syncPending, setSyncPending] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [showEditDialog, setShowEditDialog] = useState(false)
   const [favorites, setFavorites] = useState([])
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false)
   const [showTrackingControls, setShowTrackingControls] = useState(false);
@@ -575,11 +572,6 @@ function App() {
 
   const [selectedStartPoint, setSelectedStartPoint] = useState(null);
 
-  // NOVOS ESTADOS ADICIONADOS
-  const [showShareDialog, setShowShareDialog] = useState(false);
-  const [selectedProjectForShare, setSelectedProjectForShare] = useState(null);
-  const [toast, setToast] = useState(null);
-
   // Novo estado para modo de entrada do rastreamento
   const [trackingInputMode, setTrackingInputMode] = useState('gps');
 
@@ -587,14 +579,6 @@ function App() {
   const kalmanLngRef = useRef(new KalmanFilter(0.1, 0.1));
 
   const totalDistanceAllProjects = calculateTotalDistanceAllProjects(projects);
-
-  // Hook de projetos compartilhados
-  const { 
-    sharedProjects, 
-    addProjectByCode, 
-    shareProject, 
-    removeAccess 
-  } = useSharedProjects(user);
 
   // FUNÇÃO ATUALIZADA: Carregar projetos do Supabase (sem compartilhados)
 const loadProjectsFromSupabase = async () => {
@@ -817,35 +801,6 @@ const loadProjectsFromSupabase = async () => {
     setImportProgress(progress);
     setImportCurrentStep(step);
     setImportCurrentAction(action);
-  };
-
-  // Função para mostrar toast
-  const showToast = (message, type = 'info') => {
-    setToast({ message, type });
-  };
-
-  // Função de compartilhamento
-  const handleShareProject = async (projectId) => {
-    try {
-      const code = await shareProject(projectId);
-      showToast('Código gerado com sucesso!', 'success');
-      return code;
-    } catch (error) {
-      showToast('Erro ao gerar código', 'error');
-      throw error;
-    }
-  };
-
-  // Função de importação por código
-  const handleAddByCode = async (code) => {
-    try {
-      const project = await addProjectByCode(code);
-      showToast('Projeto importado com sucesso!', 'success');
-      return project;
-    } catch (error) {
-      showToast(error.message, 'error');
-      throw error;
-    }
   };
 
   const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
@@ -2317,7 +2272,7 @@ const downloadKML = async (kmlContent, filename) => {
     }
     
     setCalculatingRoute(false)
-    setSelectedMarkers([])
+    setSidebarOpen(false)
   }
 
   const handleCalculateAllDistances = async () => {
@@ -2376,7 +2331,7 @@ const downloadKML = async (kmlContent, filename) => {
     }
     
     setCalculatingRoute(false)
-    setSelectedMarkers([])
+    setSidebarOpen(false)
   }
 
   const handleClearRoute = () => {
@@ -2807,6 +2762,7 @@ const exportProjectAsKML = (project = currentProject) => {
       
       setArPermission('granted');
       setArMode(true);
+      setSidebarOpen(false);
       
     } catch (error) {
       console.error('Erro ao acessar câmera:', error);
@@ -3205,53 +3161,305 @@ const exportProjectAsKML = (project = currentProject) => {
         </Map>
       </div>
 
-      {/* SUBSTITUIÇÃO DO MENU ANTIGO PELO GLASSMENU */}
-      <GlassMenu
-        onShowTools={() => setShowRulerPopup(true)}
-        onShowProjects={() => {
-          if (tracking) {
-            alert('Não é possível gerenciar projetos durante o rastreamento.');
-            return;
-          }
-          setShowProjectsList(true);
-        }}
-        onShowShare={() => {
-          if (!currentProject) {
-            alert('Nenhum projeto ativo para compartilhar. Primeiro carregue ou crie um projeto.');
-            return;
-          }
-          setSelectedProjectForShare(currentProject);
-          setShowShareDialog(true);
-        }}
-        onARMode={handleARMode}
-        onImport={() => fileInputRef.current?.click()}
-        onExport={handleExport}
-        tracking={tracking}
-        projectsCount={projects.length}
-        sharedProjectsCount={sharedProjects.length}
-        user={user}
-        isOnline={isOnline}
-        onLogout={handleLogout}
-        onMapStyleChange={setMapStyle}
-        currentMapStyle={mapStyle}
-        mapStyles={mapStyles}
-        onCenterMap={centerMapOnUser}
-        onClearMarkers={handleClearAllMarkers}
-        onShowFavorites={() => setShowFavoritesOnly(!showFavoritesOnly)}
-        showFavoritesOnly={showFavoritesOnly}
-        onShowMultipleSelection={() => setShowMultipleSelection(true)}
-        selectedMarkersCount={selectedMarkers.length}
-        onShowBairroManager={() => setShowBairroManager(true)}
-        onShowLoadedProjects={() => {
-          if (tracking) {
-            alert('Não é possível gerenciar projetos durante o rastreamento.');
-            return;
-          }
-          setShowLoadedProjects(true);
-        }}
-        loadedProjectsCount={loadedProjects.length}
-        onShowImportProgress={() => setShowImportProgress(true)}
-      />
+      <div className="absolute top-4 left-4 right-4 z-10 flex items-center gap-2">
+        <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+          <SheetTrigger asChild>
+            <Button
+              size="icon"
+              className="bg-gradient-to-br from-slate-800 to-slate-700 backdrop-blur-sm hover:from-slate-700 hover:to-slate-600 text-white shadow-xl border border-slate-600/50 transition-all-smooth hover-lift"
+            >
+              <Menu className="w-5 h-5" />
+            </Button>
+          </SheetTrigger>
+          <SheetContent side="left" className="w-80 bg-slate-800 border-slate-700 text-white shadow-2xl flex flex-col slide-in-menu">
+            <SheetHeader className="p-6 bg-slate-900 border-b border-slate-700">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg">
+                  <MapPinned className="w-6 h-6 text-white" />
+                </div>
+                <div className="flex-1">
+                  <SheetTitle className="text-white text-lg font-bold">Jamaaw App</SheetTitle>
+                  <p className="text-cyan-400 text-sm">Gerenciador Profissional</p>
+                </div>
+              </div>
+            </SheetHeader>
+            
+            <div className="flex-1 overflow-y-auto">
+              <div className="p-4 space-y-6">
+                
+                <div className="menu-section">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-white">Status do Sistema</span>
+                    <div className={`px-2 py-1 rounded-full text-xs font-medium ${
+                      isOnline ? 'bg-green-500/20 text-green-400' : 'bg-orange-500/20 text-orange-400'
+                    }`}>
+                      {isOnline ? 'Online' : 'Offline'}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4 text-xs text-gray-400">
+                    <span>{projects.length} projetos</span>
+                    <span>{markers.length} marcações</span>
+                    <span>{loadedProjects.length} carregados</span>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <h3 className="menu-section-title">Navegação</h3>
+                  
+                  <Button
+                    variant="ghost"
+                    className="w-full justify-start text-white hover:bg-slate-700 h-12 menu-button"
+                    onClick={() => setShowRulerPopup(true)}
+                  >
+                    <Ruler className="w-5 h-5 mr-3 text-cyan-400" />
+                    Ferramentas de Medição
+                  </Button>
+
+                  <Button
+                    variant="ghost"
+                    className="w-full justify-start text-white hover:bg-slate-700 h-12 menu-button"
+                    onClick={() => {
+                      if (tracking) {
+                        alert('Não é possível gerenciar projetos durante o rastreamento.');
+                        return;
+                      }
+                      setShowProjectsList(true);
+                    }}
+                    disabled={tracking}
+                  >
+                    <FolderOpen className="w-5 h-5 mr-3 text-blue-400" />
+                    Meus Projetos
+                    <span className="ml-auto bg-blue-500/20 text-blue-400 px-2 py-1 rounded-full text-xs">
+                      {projects.length}
+                    </span>
+                  </Button>
+
+                  <Button
+                    variant="ghost"
+                    className="w-full justify-start text-white hover:bg-slate-700 h-12 menu-button"
+                    onClick={() => projectInputRef.current?.click()}
+                    disabled={tracking}
+                  >
+                    <Upload className="w-5 h-5 mr-3 text-green-400" />
+                    Importar Projeto (KML)
+                  </Button>
+
+                  <Button
+                    variant="ghost"
+                    className="w-full justify-start text-white hover:bg-slate-700 h-12 menu-button"
+                    onClick={handleARMode}
+                  >
+                    <Camera className="w-5 h-5 mr-3 text-purple-400" />
+                    Realidade Aumentada
+                  </Button>
+                </div>
+
+                <div className="space-y-2">
+                  <h3 className="menu-section-title">Ações Rápidas</h3>
+                  
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      size="sm"
+                      className="bg-slate-700 hover:bg-slate-600 text-white h-10 text-xs"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      <Upload className="w-4 h-4 mr-1" />
+                      Importar
+                    </Button>
+                    
+                    <Button
+                      size="sm"
+                      className="bg-slate-700 hover:bg-slate-600 text-white h-10 text-xs"
+                      onClick={handleExport}
+                      disabled={markers.length === 0}
+                    >
+                      <Download className="w-4 h-4 mr-1" />
+                      Exportar
+                    </Button>
+                  </div>
+
+                  {markers.length > 0 && (
+                    <Button
+                      size="sm"
+                      className="w-full bg-red-500 hover:bg-red-600 text-white h-10 text-xs"
+                      onClick={handleClearImportedMarkers}
+                    >
+                      <X className="w-4 h-4 mr-1" />
+                      Limpar Marcações
+                    </Button>
+                  )}
+                </div>
+
+                {selectedMarkers.length > 0 && (
+                  <div className="menu-section">
+                    <h3 className="menu-section-title">
+                      {selectedMarkers.length} Marcadores Selecionados
+                    </h3>
+                    <div className="space-y-2">
+                      <Button
+                        size="sm"
+                        className="w-full bg-cyan-500 hover:bg-cyan-600 text-white"
+                        onClick={() => setShowMultipleSelection(true)}
+                      >
+                        <MapPin className="w-4 h-4 mr-2" />
+                        Gerenciar Seleção
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="w-full border-slate-600 text-gray-400 hover:text-white"
+                        onClick={() => setSelectedMarkers([])}
+                      >
+                        Limpar Seleção
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="menu-section-title">Filtros</h3>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setShowBairroManager(true)}
+                      className="h-6 text-xs text-cyan-400"
+                    >
+                      Gerenciar
+                    </Button>
+                  </div>
+
+                  <div className="space-y-2">
+                    <select
+                      value={selectedBairro}
+                      onChange={(e) => setSelectedBairro(e.target.value)}
+                      className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
+                    >
+                      <option value="todos">Todos os bairros</option>
+                      {bairros.map(bairro => (
+                        <option key={bairro} value={bairro}>{bairro}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex items-center justify-between p-3 bg-slate-700 rounded-lg">
+                    <span className="text-sm text-white">Apenas favoritos</span>
+                    <label className="toggle-switch">
+                      <input 
+                        type="checkbox" 
+                        checked={showFavoritesOnly} 
+                        onChange={() => setShowFavoritesOnly(!showFavoritesOnly)}
+                      />
+                      <span className="toggle-slider"></span>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="menu-section">
+                  <h3 className="menu-section-title">Estatísticas</h3>
+                  <div className="stats-grid">
+                    <div className="stat-item">
+                      <div className="stat-value">{markers.length}</div>
+                      <div className="stat-label">Marcações</div>
+                    </div>
+                    <div className="stat-item">
+                      <div className="stat-value">{projects.length}</div>
+                      <div className="stat-label">Projetos</div>
+                    </div>
+                    <div className="stat-item">
+                      <div className="stat-value">{loadedProjects.length}</div>
+                      <div className="stat-label">Carregados</div>
+                    </div>
+                    <div className="stat-item">
+                      <div className="stat-value">
+                        {formatDistanceDetailed(totalDistanceAllProjects)}
+                      </div>
+                      <div className="stat-label">Distância Total</div>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            <div className="border-t border-slate-700 p-4 bg-slate-900">
+              <div className="flex items-center justify-between">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-white truncate">{user?.email}</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-green-500' : 'bg-orange-500'}`}></div>
+                    <p className={`text-xs ${isOnline ? 'text-green-400' : 'text-orange-400'}`}>
+                      {isOnline ? 'Conectado' : 'Modo Offline'}
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={handleLogout}
+                  className="bg-red-500 hover:bg-red-600 text-white px-3 py-2 flex items-center gap-2 logout-button"
+                >
+                  <LogOut className="w-4 h-4" />
+                  <span className="text-sm">Sair</span>
+                </Button>
+              </div>
+            </div>
+          </SheetContent>
+        </Sheet>
+
+        <div className="flex-1 flex items-center gap-3 bg-gradient-to-r from-slate-800 to-slate-700 backdrop-blur-sm rounded-lg px-4 py-2.5 shadow-xl border border-slate-600/50">
+          <div className="w-8 h-8 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-lg flex items-center justify-center shadow-lg">
+            <MapPinned className="w-5 h-5 text-white" />
+          </div>
+          <div className="flex-1">
+            <span className="font-bold text-white text-sm sm:text-base">Jamaaw App</span>
+            {currentProject && manualPoints.length > 0 && (
+              <span className="text-xs text-cyan-400 ml-2 bg-cyan-500/20 px-2 py-0.5 rounded-full">
+                {currentProject.name}
+              </span>
+            )}
+            {loadedProjects.length > 0 && (
+              <span className="text-xs text-green-400 ml-2 bg-green-500/20 px-2 py-0.5 rounded-full">
+                {loadedProjects.length} projetos
+              </span>
+            )}
+            {!isOnline && (
+              <span className="text-xs text-orange-400 ml-2 bg-orange-500/20 px-2 py-0.5 rounded-full">Offline</span>
+            )}
+            {tracking && (
+              <span className="text-xs text-green-400 ml-2 bg-green-500/20 px-2 py-0.5 rounded-full">Rastreando</span>
+            )}
+            {selectedStartPoint && (
+              <span className="text-xs text-purple-400 ml-2 bg-purple-500/20 px-2 py-0.5 rounded-full">Galho Ativo</span>
+            )}
+          </div>
+        </div>
+
+        <Button
+          size="icon"
+          className={`bg-gradient-to-br from-slate-800 to-slate-700 backdrop-blur-sm text-white shadow-xl border border-slate-600/50 transition-all-smooth ${
+            tracking ? 'opacity-50 cursor-not-allowed' : 'hover:from-slate-700 hover:to-slate-600 hover-lift'
+          }`}
+          onClick={() => {
+            if (tracking) {
+              alert('Não é possível gerenciar projetos durante o rastreamento. Pare o rastreamento atual primeiro.');
+              return;
+            }
+            setShowLoadedProjects(true);
+          }}
+          disabled={tracking || loadedProjects.length === 0}
+        >
+          <Layers className="w-5 h-5" />
+        </Button>
+
+        <Button
+          size="icon"
+          className="bg-gradient-to-br from-slate-800 to-slate-700 backdrop-blur-sm hover:from-slate-700 hover:to-slate-600 text-white shadow-xl border border-slate-600/50 transition-all-smooth hover-lift"
+          onClick={() => setShowRulerPopup(!showRulerPopup)}
+          data-testid="tools-button"
+        >
+          <Star className="w-5 h-5" />
+        </Button>
+      </div>
 
       <div className="absolute bottom-40 right-4 z-10">
         <Button
@@ -4126,23 +4334,6 @@ const exportProjectAsKML = (project = currentProject) => {
           setImportError(null);
         }}
       />
-
-      {/* NOVOS COMPONENTES ADICIONADOS */}
-      <ShareProjectDialog
-        isOpen={showShareDialog}
-        onClose={() => setShowShareDialog(false)}
-        project={selectedProjectForShare}
-        onShare={handleShareProject}
-        onAddByCode={handleAddByCode}
-      />
-
-      {toast && (
-        <GlowToast
-          message={toast.message}
-          type={toast.type}
-          onClose={() => setToast(null)}
-        />
-      )}
 
       <input
         ref={fileInputRef}
