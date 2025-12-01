@@ -208,11 +208,13 @@ const getUniqueProjectName = (baseName, existingProjects) => {
   return newName;
 };
 
+// CORREÇÃO: Função com verificações de segurança
 const calculateTotalDistanceAllProjects = (projects) => {
-  if (!projects || projects.length === 0) return 0;
+  if (!projects || !Array.isArray(projects) || projects.length === 0) return 0;
   
   let total = 0;
-  projects.forEach(project => {
+  // FILTRO DE SEGURANÇA: .filter(p => p) remove nulos/undefined
+  projects.filter(p => p).forEach(project => {
     total += project.totalDistance || project.total_distance || 0;
   });
   
@@ -753,7 +755,16 @@ const loadProjectsFromSupabase = async () => {
     console.error('Erro ao carregar projetos:', error);
     // Fallback para localStorage
     const localProjects = localStorage.getItem('jamaaw_projects');
-    return localProjects ? JSON.parse(localProjects) : [];
+    if (localProjects) {
+      try {
+        const parsed = JSON.parse(localProjects);
+        // CORREÇÃO: Filtra nulos imediatamente ao carregar
+        return Array.isArray(parsed) ? parsed.filter(p => p && p.id) : [];
+      } catch (e) {
+        return [];
+      }
+    }
+    return [];
   }
 };
 
@@ -1469,8 +1480,12 @@ const loadProjectsFromSupabase = async () => {
       const savedProjects = localStorage.getItem('jamaaw_projects');
       if (!savedProjects) return;
 
-      const projects = JSON.parse(savedProjects);
-      const offlineProjects = projects.filter(p => p.id && p.id.toString().startsWith('offline_'));
+      const parsedProjects = JSON.parse(savedProjects);
+
+      // CORREÇÃO AQUI: Adicionado verificação 'p && p.id'
+      const offlineProjects = Array.isArray(parsedProjects) 
+        ? parsedProjects.filter(p => p && p.id && p.id.toString().startsWith('offline_'))
+        : [];
 
       for (const project of offlineProjects) {
         try {
