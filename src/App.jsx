@@ -1,5 +1,5 @@
 import React from 'react';
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import Map, { Marker, Popup, Source, Layer, NavigationControl } from 'react-map-gl'
 import {
   Upload,
@@ -35,12 +35,11 @@ import {
   CheckCircle,
   Users,
   Hash,
-  ArrowRight // <--- ADICIONE ESTE AQUI
+  ArrowRight
 } from 'lucide-react'
 import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.jsx'
 import GlowNotification from './components/GlowNotification';
-// No topo do App.jsx
 import ToolsDock from './components/ToolsDock';
 import { Input } from '@/components/ui/input.jsx'
 import { Label } from '@/components/ui/label.jsx'
@@ -50,8 +49,7 @@ import ProjectManager from './components/ProjectManager';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet.jsx'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog.jsx'
 import { supabase } from './lib/supabase'
-// Adicione junto com os outros imports
-import electricPoleIcon from './assets/electric-pole.png'; // Ajuste o caminho conforme sua pasta
+import electricPoleIcon from './assets/electric-pole.png';
 import Auth from './components/Auth'
 import JSZip from 'jszip'
 import { Network } from '@capacitor/network'
@@ -528,8 +526,6 @@ const TrackingPointPopupContent = ({ pointInfo, onClose, onSelectStart, selected
             </>
           )}
         </Button>
-
-        {/* DESCRIÇÃO REMOVIDA DAQUI */}
       </div>
     </div>
   );
@@ -621,6 +617,23 @@ function App() {
   const kalmanLngRef = useRef(new KalmanFilter(0.1, 0.1));
   
   const totalDistanceAllProjects = calculateTotalDistanceAllProjects(projects);
+  
+  // OTIMIZAÇÃO: Converte marcadores para GeoJSON (Processado na GPU)
+  const markersGeoJSON = useMemo(() => ({
+    type: 'FeatureCollection',
+    features: filteredMarkers.map(marker => ({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [marker.lng, marker.lat] },
+      properties: {
+        id: marker.id,
+        name: marker.name,
+        bairro: marker.bairro,
+        descricao: marker.descricao,
+        // Usa a cor definida ou vermelho padrão
+        color: marker.color || '#ef4444' 
+      }
+    }))
+  }), [filteredMarkers]);
   
   // Dentro do componente App
   const loadProjectsFromSupabase = async () => {
@@ -1110,6 +1123,11 @@ function App() {
       return;
     }
     
+    if (!projectName.trim() && !autoSave && !editingProject && !currentProject) {
+      showFeedback('Erro', 'Digite um nome para o projeto.', 'error');
+      return;
+    }
+    
     let projectNameToUse = projectName;
     
     if (editingProject && !projectName.trim()) {
@@ -1118,13 +1136,6 @@ function App() {
       projectNameToUse = currentProject.name;
     } else if (autoSave && !projectName.trim() && !currentProject && !editingProject) {
       projectNameToUse = `Rastreamento ${new Date().toLocaleString('pt-BR')}`;
-    }
-    
-    if (!projectNameToUse.trim() && finalPoints.length === 0) {
-      if (!autoSave) {
-        showFeedback('Erro', 'Digite um nome para o projeto e certifique-se de ter pontos no traçado.', 'error');
-      }
-      return;
     }
     
     // CORREÇÃO AUTOMÁTICA DE IDs: Converte IDs numéricos antigos para UUIDs antes de salvar
@@ -2038,7 +2049,7 @@ if (!autoSave) {
       if (error) throw error;
       
       if (data.success) {
-        showFeedback('Erro', data.message, 'error');
+        showFeedback('Sucesso', data.message, 'success');
         // Atualiza a lista imediatamente
         const updatedList = await loadProjectsFromSupabase();
         setProjects(updatedList);
@@ -2570,7 +2581,21 @@ if (!autoSave) {
   };
   
   const removeLoadedProject = (projectId) => {
+    // 1. Remove da lista visual de projetos carregados
     setLoadedProjects(prev => prev.filter(p => p.id !== projectId));
+
+    // 2. Se esse projeto era o que estava "ativo" ou em "foco" no rastreamento manual, limpa também
+    if (currentProject && currentProject.id === projectId) {
+      setCurrentProject(null);
+      setManualPoints([]); // Limpa o traçado azul de edição
+      setTotalDistance(0);
+      setSelectedStartPoint(null);
+    }
+    
+    // 3. Força uma "limpeza" visual do mapa garantindo que o renderizador atualize
+    if (mapRef.current) {
+      mapRef.current.triggerRepaint();
+    }
   };
   
   const handleEditMarker = useCallback((marker) => {
@@ -2995,7 +3020,25 @@ if (!autoSave) {
           mapboxAccessToken={mapboxToken}
           cursor={tracking && trackingInputMode === 'touch' && !paused ? 'crosshair' : 'auto'} // Muda o cursor para mira
           onClick={async (e) => { // Adicione async aqui
-            // Lógica para adicionar ponto por toque COM SNAPPING
+            // 1. Verifica se clicou em um marcador (Layer)
+            const features = e.target.queryRenderedFeatures(e.point, {
+              layers: ['markers-hit-area', 'markers-layer']
+            });
+
+            if (features.length > 0) {
+              const feature = features[0];
+              const markerData = {
+                ...feature.properties,
+                lat: feature.geometry.coordinates[1],
+                lng: feature.geometry.coordinates[0]
+              };
+              
+              // Abre o popup do marcador
+              setPopupMarker(markerData);
+              return; // Impede que crie ponto de rastreio se clicou em marcador
+            }
+
+            // 2. Lógica de Rastreamento (se não clicou em marcador)
             if (tracking && trackingInputMode === 'touch' && !paused) {
               const { lat, lng } = e.lngLat;
               
@@ -3021,24 +3064,40 @@ if (!autoSave) {
               return;
             }
 
-            // Lógica padrão (fechar popups se clicar fora)
-            // setPopupMarker(null); 
+            // 3. Se clicou fora, fecha o popup do marcador
+            setPopupMarker(null); 
           }}
         >
           <NavigationControl position="top-right" />
 
-          {filteredMarkers.map(marker => (
-            <Marker
-              key={marker.id}
-              longitude={marker.lng}
-              latitude={marker.lat}
-              onClick={(e) => {
-                e.originalEvent.stopPropagation();
-                setPopupMarker(marker);
+          {/* CAMADA DE MARCADORES OTIMIZADA (GPU) */}
+          <Source id="markers-source" type="geojson" data={markersGeoJSON}>
+            <Layer
+              id="markers-layer"
+              type="circle"
+              paint={{
+                'circle-radius': [
+                  'interpolate', ['linear'], ['zoom'],
+                  10, 4, // Zoom longe: raio 4px
+                  15, 8  // Zoom perto: raio 8px
+                ],
+                'circle-color': ['get', 'color'], // Pega a cor das propriedades
+                'circle-stroke-width': 2,
+                'circle-stroke-color': '#ffffff',
+                'circle-opacity': 0.9
               }}
-              color={selectedMarkers.some(m => m.id === marker.id) ? '#06B6D4' : (marker.color || '#FF0000')}
             />
-          ))}
+            {/* Camada invisível para aumentar área de clique (Hit Area) */}
+            <Layer
+              id="markers-hit-area"
+              type="circle"
+              paint={{
+                'circle-radius': 20,
+                'circle-color': 'transparent',
+                'circle-opacity': 0
+              }}
+            />
+          </Source>
 
           {/* 1. Renderização das LINHAS (GeoJSON é rápido, não precisa mudar muito) */}
           {loadedProjects.map(project => (
@@ -3138,8 +3197,8 @@ if (!autoSave) {
                           geometry: {
                             type: 'LineString',
                             coordinates: [
-                              [parentPoint.lng, parentPoint.lat],
-                              [point.lng, point.lat]
+                              [parentPoint.lng, parentPoint.lng],
+                              [point.lng, point.lng]
                             ]
                           }
                         };
