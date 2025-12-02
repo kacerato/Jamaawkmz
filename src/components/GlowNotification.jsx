@@ -1,66 +1,67 @@
+// components/GlowNotification.jsx
 import React, { useEffect, useState } from 'react';
-import { CheckCircle, AlertTriangle, Info, XCircle } from 'lucide-react';
+import { CheckCircle, AlertTriangle, Info, XCircle, X } from 'lucide-react';
 
 const GlowNotification = ({ notification, onClose }) => {
   const [isVisible, setIsVisible] = useState(false);
+  const [shouldRender, setShouldRender] = useState(false);
   
   useEffect(() => {
     if (notification) {
-      setIsVisible(true);
+      setShouldRender(true);
+      // Pequeno delay para permitir que o navegador renderize antes de animar a entrada
+      requestAnimationFrame(() => setIsVisible(true));
+      
+      // Timer para iniciar a saída
       const timer = setTimeout(() => {
         setIsVisible(false);
-        setTimeout(onClose, 300); // Espera a animação de saída
       }, 3000);
+      
       return () => clearTimeout(timer);
     }
-  }, [notification, onClose]);
+  }, [notification]);
   
-  if (!notification && !isVisible) return null;
+  // Quando a animação de saída termina, remove do DOM e limpa o estado pai
+  const handleTransitionEnd = () => {
+    if (!isVisible) {
+      setShouldRender(false);
+      onClose();
+    }
+  };
+  
+  if (!shouldRender && !notification) return null;
   
   const styles = {
-    success: {
-      border: 'border-green-500',
-      shadow: 'shadow-[0_0_30px_-5px_rgba(34,197,94,0.6)]',
-      text: 'text-green-400',
-      bg: 'bg-green-950/90',
-      icon: <CheckCircle className="w-6 h-6 text-green-400 animate-pulse" />
-    },
-    error: {
-      border: 'border-red-500',
-      shadow: 'shadow-[0_0_30px_-5px_rgba(239,68,68,0.6)]',
-      text: 'text-red-400',
-      bg: 'bg-red-950/90',
-      icon: <XCircle className="w-6 h-6 text-red-400 animate-pulse" />
-    },
-    info: {
-      border: 'border-cyan-500',
-      shadow: 'shadow-[0_0_30px_-5px_rgba(6,182,212,0.6)]',
-      text: 'text-cyan-400',
-      bg: 'bg-slate-900/90',
-      icon: <Info className="w-6 h-6 text-cyan-400 animate-pulse" />
-    }
+    success: { border: 'border-green-500/50', bg: 'bg-green-950/90', text: 'text-green-400', icon: <CheckCircle className="w-5 h-5" /> },
+    error: { border: 'border-red-500/50', bg: 'bg-red-950/90', text: 'text-red-400', icon: <XCircle className="w-5 h-5" /> },
+    info: { border: 'border-cyan-500/50', bg: 'bg-slate-900/90', text: 'text-cyan-400', icon: <Info className="w-5 h-5" /> }
   };
   
   const currentStyle = styles[notification?.type || 'info'];
   
   return (
-    <div className={`fixed top-6 left-1/2 transform -translate-x-1/2 z-[11000] w-[90%] max-w-sm transition-all duration-300 ease-out ${isVisible ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0'}`}>
-      <div className={`relative flex items-center gap-4 p-4 rounded-xl border ${currentStyle.border} ${currentStyle.bg} backdrop-blur-xl ${currentStyle.shadow}`}>
-        {/* Glow interno animado */}
-        <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-transparent via-white/5 to-transparent opacity-20 animate-shimmer pointer-events-none" />
-        
-        <div className="flex-shrink-0">
+    <div 
+      className={`fixed top-4 left-4 right-4 z-[11000] flex justify-center transition-all duration-500 ease-in-out ${
+        isVisible ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0'
+      }`}
+      onTransitionEnd={handleTransitionEnd}
+    >
+      <div className={`relative w-full max-w-sm flex items-center gap-3 p-3 rounded-xl border backdrop-blur-md shadow-2xl ${currentStyle.bg} ${currentStyle.border}`}>
+        <div className={`p-2 rounded-full bg-black/20 ${currentStyle.text}`}>
           {currentStyle.icon}
         </div>
         
         <div className="flex-1 min-w-0">
-          <h4 className={`font-bold text-sm uppercase tracking-wider ${currentStyle.text}`}>
-            {notification?.title}
-          </h4>
-          <p className="text-gray-200 text-xs mt-0.5 font-medium leading-relaxed">
-            {notification?.message}
-          </p>
+          <h4 className={`font-bold text-sm ${currentStyle.text}`}>{notification?.title}</h4>
+          <p className="text-white/80 text-xs leading-tight">{notification?.message}</p>
         </div>
+
+        <button 
+          onClick={() => setIsVisible(false)}
+          className="p-1 text-white/50 hover:text-white transition-colors"
+        >
+          <X size={16} />
+        </button>
       </div>
     </div>
   );

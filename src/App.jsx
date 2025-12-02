@@ -3284,142 +3284,104 @@ const exportProjectAsKML = (project = currentProject) => {
 
       <div className="absolute top-4 left-4 right-4 z-10 flex items-center gap-2">
         { /* MENU LATERAL - DESIGNER GLOW AGRESSIVO */ }
+{ /* MENU COMPACTO V3.0 */ }
 <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
   <SheetTrigger asChild>
     <Button
       size="icon"
-      className="bg-slate-950/80 backdrop-blur-md border border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/20 hover:border-cyan-400 hover:text-cyan-200 shadow-[0_0_15px_rgba(6,182,212,0.3)] transition-all duration-300 rounded-xl"
+      className="bg-slate-950/90 backdrop-blur border border-white/10 text-cyan-400 shadow-xl rounded-xl h-10 w-10 active:scale-90 transition-transform"
     >
       <Menu className="w-6 h-6" />
     </Button>
   </SheetTrigger>
   
-  <SheetContent side="left" className="w-[85vw] max-w-[340px] p-0 border-r border-cyan-500/20 bg-slate-950/95 backdrop-blur-xl shadow-[0_0_50px_rgba(0,0,0,0.8)] text-white">
-    <div className="flex flex-col h-full relative overflow-hidden">
-      
-      {/* Elementos Decorativos de Fundo */}
-      <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-cyan-500 to-transparent opacity-50"></div>
-      <div className="absolute bottom-0 right-0 w-64 h-64 bg-cyan-500/5 rounded-full blur-3xl pointer-events-none"></div>
-
-      {/* CABEÇALHO DO MENU */}
-      <SheetHeader className="p-6 pb-2 text-left z-10">
-        <div className="flex items-center gap-4 mb-2">
-          <div className="relative w-12 h-12 flex items-center justify-center bg-slate-900 rounded-xl border border-cyan-500/30 shadow-[0_0_20px_rgba(6,182,212,0.15)] group">
-            <MapPinned className="w-6 h-6 text-cyan-400 group-hover:scale-110 transition-transform duration-300" />
-            <div className="absolute inset-0 rounded-xl border border-cyan-400/20 animate-pulse"></div>
+  <SheetContent side="left" className="w-[280px] p-0 border-r border-white/5 bg-slate-950 text-white flex flex-col">
+    {/* HEADER DO MENU */}
+    <div className="p-5 border-b border-white/5 bg-gradient-to-b from-cyan-950/20 to-transparent">
+      <div className="flex items-center gap-3 mb-1">
+        <div className="w-10 h-10 rounded-xl bg-cyan-500 flex items-center justify-center text-black shadow-[0_0_15px_rgba(6,182,212,0.5)]">
+          <MapPinned className="w-6 h-6" />
+        </div>
+        <div>
+          <h2 className="font-bold text-lg tracking-tight">Jamaaw</h2>
+          <div className="flex items-center gap-1.5">
+            <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500'}`}></div>
+            <span className="text-[10px] text-slate-400 font-mono uppercase">{isOnline ? 'Online' : 'Offline'}</span>
           </div>
-          <div>
-            <SheetTitle className="text-xl font-black text-white tracking-widest uppercase italic">
-              JAMAAW <span className="text-cyan-400">MAP</span>
-            </SheetTitle>
-            <p className="text-[10px] font-mono text-cyan-600/80 uppercase tracking-[0.2em]">
-              Sistema de Rastreio v2.0
-            </p>
-          </div>
-        </div>
-        {/* Status Conexão - Estilo Terminal */}
-        <div className={`inline-flex items-center gap-2 px-3 py-1 rounded bg-slate-900 border ${isOnline ? 'border-green-500/30' : 'border-red-500/30'}`}>
-          <div className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
-          <span className={`text-[10px] font-bold font-mono uppercase ${isOnline ? 'text-green-400' : 'text-red-400'}`}>
-            {isOnline ? 'SYSTEM ONLINE' : 'DISCONNECTED'}
-          </span>
-        </div>
-      </SheetHeader>
-
-      {/* CORPO COM SCROLL */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6 z-10 custom-scrollbar">
-        
-        {/* Seção 1: Ferramentas Principais */}
-        <div className="space-y-2">
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest pl-1 mb-1">Módulos</p>
-          
-          <Button
-            variant="ghost"
-            className="w-full justify-start h-12 bg-slate-900/50 hover:bg-cyan-950/30 border border-slate-800 hover:border-cyan-500/50 text-slate-300 hover:text-cyan-400 transition-all group"
-            onClick={() => { setSidebarOpen(false); setShowRulerPopup(true); }}
-          >
-            <Ruler className="w-4 h-4 mr-3 text-slate-500 group-hover:text-cyan-400 transition-colors" />
-            <span className="font-semibold tracking-wide">Medição & Ferramentas</span>
-            <ArrowRight className="w-3 h-3 ml-auto opacity-0 group-hover:opacity-100 -translate-x-2 group-hover:translate-x-0 transition-all" />
-          </Button>
-
-          <Button
-            variant="ghost"
-            className="w-full justify-start h-12 bg-slate-900/50 hover:bg-blue-950/30 border border-slate-800 hover:border-blue-500/50 text-slate-300 hover:text-blue-400 transition-all group"
-            onClick={() => { 
-               if(tracking) { showFeedback('Atenção', 'Pare o rastreio antes.', 'error'); return; }
-               setSidebarOpen(false); setShowProjectsList(true); 
-            }}
-          >
-            <FolderOpen className="w-4 h-4 mr-3 text-slate-500 group-hover:text-blue-400 transition-colors" />
-            <span className="font-semibold tracking-wide">Meus Projetos</span>
-            <div className="ml-auto bg-blue-500/10 border border-blue-500/20 text-blue-400 text-[10px] font-mono px-1.5 py-0.5 rounded">
-              {projects.length}
-            </div>
-          </Button>
-
-          <Button
-            variant="ghost"
-            className="w-full justify-start h-12 bg-slate-900/50 hover:bg-purple-950/30 border border-slate-800 hover:border-purple-500/50 text-slate-300 hover:text-purple-400 transition-all group"
-            onClick={() => { setSidebarOpen(false); handleARMode(); }}
-          >
-            <Camera className="w-4 h-4 mr-3 text-slate-500 group-hover:text-purple-400 transition-colors" />
-            <span className="font-semibold tracking-wide">Modo AR (Beta)</span>
-          </Button>
-        </div>
-
-        {/* Seção 2: Dados e Stats (Visual de Telemetria) */}
-        <div className="space-y-3">
-           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest pl-1 mb-1">Telemetria</p>
-           
-           <div className="grid grid-cols-2 gap-2">
-              <div className="bg-slate-900/80 p-3 rounded-lg border border-slate-800 flex flex-col items-center">
-                 <span className="text-2xl font-black text-white font-mono">{markers.length}</span>
-                 <span className="text-[9px] text-slate-500 uppercase font-bold">Marcadores</span>
-              </div>
-              <div className="bg-slate-900/80 p-3 rounded-lg border border-slate-800 flex flex-col items-center">
-                 <span className="text-sm font-black text-cyan-400 font-mono mt-1">
-                    {formatDistanceDetailed(totalDistanceAllProjects)}
-                 </span>
-                 <span className="text-[9px] text-slate-500 uppercase font-bold mt-1">Distância Total</span>
-              </div>
-           </div>
-        </div>
-
-        {/* Seção 3: Ações de Sistema */}
-        <div className="space-y-2 pt-2 border-t border-slate-800/50">
-           <div className="flex gap-2">
-             <Button
-               className="flex-1 bg-slate-800 hover:bg-slate-700 text-xs h-9 border border-slate-700"
-               onClick={() => { setSidebarOpen(false); fileInputRef.current?.click(); }}
-             >
-               <Upload className="w-3 h-3 mr-2" /> Importar
-             </Button>
-             <Button
-               className="flex-1 bg-slate-800 hover:bg-slate-700 text-xs h-9 border border-slate-700"
-               onClick={() => { setSidebarOpen(false); handleExport(); }}
-             >
-               <Download className="w-3 h-3 mr-2" /> Exportar
-             </Button>
-           </div>
         </div>
       </div>
+    </div>
 
-      {/* FOOTER - USER INFO */}
-      <div className="p-4 bg-slate-900/90 border-t border-cyan-500/10 z-10">
-        <div className="flex items-center justify-between">
-          <div className="flex flex-col">
-            <span className="text-[10px] text-slate-500 uppercase font-bold">Usuário Logado</span>
-            <span className="text-xs font-medium text-cyan-100 truncate max-w-[150px]">{user?.email}</span>
-          </div>
-          <Button
-            size="sm"
-            onClick={handleLogout}
-            className="bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 hover:border-red-500/50"
-          >
-            <LogOut className="w-4 h-4" />
-          </Button>
+    {/* LISTA DE OPÇÕES */}
+    <div className="flex-1 overflow-y-auto py-2 custom-scrollbar">
+      <div className="px-3 space-y-1">
+        <p className="text-[10px] uppercase text-slate-600 font-bold px-2 mt-4 mb-2">Ferramentas</p>
+        
+        <Button
+          variant="ghost"
+          className="w-full justify-start h-12 text-slate-300 hover:text-white hover:bg-white/5 rounded-xl transition-all group"
+          onClick={() => { setSidebarOpen(false); setShowProjectsList(true); }}
+        >
+          <FolderOpen className="w-5 h-5 mr-3 text-cyan-500 group-hover:scale-110 transition-transform" />
+          <span className="flex-1 text-left">Projetos</span>
+          <span className="bg-slate-800 text-slate-400 text-[10px] px-2 py-0.5 rounded-full">{projects.length}</span>
+        </Button>
+
+        <Button
+          variant="ghost"
+          className="w-full justify-start h-12 text-slate-300 hover:text-white hover:bg-white/5 rounded-xl transition-all group"
+          onClick={() => { setSidebarOpen(false); setShowRulerPopup(true); }}
+        >
+          <Ruler className="w-5 h-5 mr-3 text-purple-500 group-hover:scale-110 transition-transform" />
+          <span>Medir</span>
+        </Button>
+
+        <Button
+          variant="ghost"
+          className="w-full justify-start h-12 text-slate-300 hover:text-white hover:bg-white/5 rounded-xl transition-all group"
+          onClick={() => { setSidebarOpen(false); handleARMode(); }}
+        >
+          <Camera className="w-5 h-5 mr-3 text-yellow-500 group-hover:scale-110 transition-transform" />
+          <span>Realidade Aumentada</span>
+        </Button>
+
+        <p className="text-[10px] uppercase text-slate-600 font-bold px-2 mt-6 mb-2">Dados</p>
+        
+        <Button
+          variant="ghost"
+          className="w-full justify-start h-12 text-slate-300 hover:text-white hover:bg-white/5 rounded-xl transition-all"
+          onClick={() => { setSidebarOpen(false); fileInputRef.current?.click(); }}
+        >
+          <Upload className="w-5 h-5 mr-3 text-slate-500" />
+          <span>Importar KML</span>
+        </Button>
+
+        <Button
+          variant="ghost"
+          className="w-full justify-start h-12 text-slate-300 hover:text-white hover:bg-white/5 rounded-xl transition-all"
+          onClick={() => { setSidebarOpen(false); handleExport(); }}
+        >
+          <Download className="w-5 h-5 mr-3 text-slate-500" />
+          <span>Exportar Tudo</span>
+        </Button>
+      </div>
+    </div>
+
+    {/* FOOTER */}
+    <div className="p-4 border-t border-white/5 bg-slate-900/50">
+      <div className="flex items-center justify-between">
+        <div className="flex flex-col overflow-hidden mr-2">
+          <span className="text-xs font-medium text-white truncate">{user?.email}</span>
+          <span className="text-[10px] text-slate-500">Logado</span>
         </div>
+        <Button
+          size="icon"
+          variant="ghost"
+          onClick={handleLogout}
+          className="text-red-400 hover:text-white hover:bg-red-500/20 rounded-lg"
+        >
+          <LogOut className="w-5 h-5" />
+        </Button>
       </div>
     </div>
   </SheetContent>
@@ -3470,14 +3432,14 @@ const exportProjectAsKML = (project = currentProject) => {
           <Layers className="w-5 h-5" />
         </Button>
 
-        <Button
-          size="icon"
-          className="bg-gradient-to-br from-slate-800 to-slate-700 backdrop-blur-sm hover:from-slate-700 hover:to-slate-600 text-white shadow-xl border border-slate-600/50 transition-all-smooth hover-lift"
-          onClick={() => setShowRulerPopup(!showRulerPopup)}
-          data-testid="tools-button"
-        >
-          <Star className="w-5 h-5" />
-        </Button>
+        { /* Dentro do Card do showRulerPopup */ }
+<Button
+  size="icon" // Importante: size="icon" para ficar quadrado/redondo
+  variant="ghost"
+  onClick={() => setShowRulerPopup(false)} // Função que fecha
+  className="h-8 w-8 text-slate-400 hover:text-white hover:bg-white/10 rounded-full"
+>
+  <X className="w-5 h-5" /> </Button>
       </div>
 
       <div className="absolute bottom-40 right-4 z-10">
