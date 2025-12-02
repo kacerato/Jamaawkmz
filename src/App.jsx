@@ -1,16 +1,47 @@
 import React from 'react';
 import { useState, useEffect, useRef, useCallback } from 'react'
 import Map, { Marker, Popup, Source, Layer, NavigationControl } from 'react-map-gl'
-import { 
-  Upload, MapPin, Ruler, X, Download, Share2, Edit2, Menu, LogOut, 
-  Heart, MapPinned, Layers, Play, Pause, Square, FolderOpen, Save, 
-  Navigation, Clock, Cloud, CloudOff, Archive, Camera, Plus, Star, 
-  LocateFixed, Info, Undo, FileText, MousePointerClick, CheckCircle, 
-  Users, Hash, ArrowRight // <--- ADICIONE ESTE AQUI
+import {
+  Upload,
+  MapPin,
+  Ruler,
+  X,
+  Download,
+  Share2,
+  Edit2,
+  Menu,
+  LogOut,
+  Heart,
+  MapPinned,
+  Layers,
+  Play,
+  Pause,
+  Square,
+  FolderOpen,
+  Save,
+  Navigation,
+  Clock,
+  Cloud,
+  CloudOff,
+  Archive,
+  Camera,
+  Plus,
+  Star,
+  LocateFixed,
+  Info,
+  Undo,
+  FileText,
+  MousePointerClick,
+  CheckCircle,
+  Users,
+  Hash,
+  ArrowRight // <--- ADICIONE ESTE AQUI
 } from 'lucide-react'
 import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.jsx'
 import GlowNotification from './components/GlowNotification';
+// No topo do App.jsx
+import ToolsDock from './components/ToolsDock';
 import { Input } from '@/components/ui/input.jsx'
 import { Label } from '@/components/ui/label.jsx'
 import { Textarea } from '@/components/ui/textarea.jsx'
@@ -66,7 +97,8 @@ const generateUUID = () => {
   }
   // Fallback simples se crypto não estiver disponível
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-    var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+    var r = Math.random() * 16 | 0,
+      v = c == 'x' ? r : (r & 0x3 | 0x8);
     return v.toString(16);
   });
 };
@@ -116,7 +148,7 @@ class KalmanFilter {
     this.cov = NaN;
     this.x = NaN;
   }
-
+  
   filter(z, u = 0) {
     if (isNaN(this.x)) {
       this.x = (1 / this.C) * z;
@@ -134,22 +166,22 @@ class KalmanFilter {
 
 const isValidProject = (project) => {
   try {
-    return project && 
-           project.id && 
-           project.name && 
-           typeof project.name === 'string' &&
-           project.name.trim().length > 0 &&
-           Array.isArray(project.points) && 
-           project.points.length > 0 &&
-           project.points.every(point => 
-             point && 
-             typeof point.lat === 'number' && 
-             !isNaN(point.lat) &&
-             typeof point.lng === 'number' && 
-             !isNaN(point.lng) &&
-             point.lat >= -90 && point.lat <= 90 &&
-             point.lng >= -180 && point.lng <= 180
-           );
+    return project &&
+      project.id &&
+      project.name &&
+      typeof project.name === 'string' &&
+      project.name.trim().length > 0 &&
+      Array.isArray(project.points) &&
+      project.points.length > 0 &&
+      project.points.every(point =>
+        point &&
+        typeof point.lat === 'number' &&
+        !isNaN(point.lat) &&
+        typeof point.lng === 'number' &&
+        !isNaN(point.lng) &&
+        point.lat >= -90 && point.lat <= 90 &&
+        point.lng >= -180 && point.lng <= 180
+      );
   } catch (error) {
     console.warn('Projeto inválido detectado:', project, error);
     return false;
@@ -180,7 +212,7 @@ class RoadSnappingService {
     
     return { lat, lng, snapped: false };
   }
-
+  
   static async snapMultiplePoints(points) {
     const snappedPoints = [];
     
@@ -230,12 +262,12 @@ const calculateDistance = (lat1, lon1, lat2, lon2) => {
   const φ2 = lat2 * Math.PI / 180
   const Δφ = (lat2 - lat1) * Math.PI / 180
   const Δλ = (lon2 - lon1) * Math.PI / 180
-
+  
   const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-            Math.cos(φ1) * Math.cos(φ2) *
-            Math.sin(Δλ / 2) * Math.sin(Δλ / 2)
+    Math.cos(φ1) * Math.cos(φ2) *
+    Math.sin(Δλ / 2) * Math.sin(Δλ / 2)
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-
+  
   return R * c
 }
 
@@ -284,7 +316,7 @@ const PoleMarker = React.memo(({ point, index, color, onClick, isActive }) => {
 const ProjectCard = React.memo(({ project, isSelected, onToggle, onLoad, onEdit, onExport, onDelete, tracking }) => {
   const distance = safeToFixed(((project.totalDistance || project.total_distance) || 0) / 1000, 2);
   const date = new Date(project.created_at || project.createdAt || Date.now()).toLocaleDateString('pt-BR');
-
+  
   return (
     <div className={`modern-project-card ${isSelected ? 'selected' : ''}`}>
       <div className="card-header-row">
@@ -535,7 +567,7 @@ function App() {
   const [positionHistory, setPositionHistory] = useState([]);
   const [gpsAccuracy, setGpsAccuracy] = useState(null);
   const [speed, setSpeed] = useState(0);
-
+  
   const [tracking, setTracking] = useState(false)
   const [paused, setPaused] = useState(false)
   const [manualPoints, setManualPoints] = useState([])
@@ -559,14 +591,14 @@ function App() {
   const [pointPopupInfo, setPointPopupInfo] = useState(null);
   
   const [notification, setNotification] = useState(null);
-
+  
   const [popupMarker, setPopupMarker] = useState(null);
   const [adjustBoundsForMarkers, setAdjustBoundsForMarkers] = useState(false);
   const [adjustBoundsForProject, setAdjustBoundsForProject] = useState(false);
   const [backupStatus, setBackupStatus] = useState('idle');
   const [arMode, setArMode] = useState(false);
   const [arPermission, setArPermission] = useState(null);
-
+  
   const [importProgress, setImportProgress] = useState(0);
   const [showImportProgress, setShowImportProgress] = useState(false);
   const [importCurrentStep, setImportCurrentStep] = useState(1);
@@ -574,95 +606,95 @@ function App() {
   const [importCurrentAction, setImportCurrentAction] = useState('');
   const [importSuccess, setImportSuccess] = useState(false);
   const [importError, setImportError] = useState(null);
-
+  
   const [selectedMarkers, setSelectedMarkers] = useState([]);
   const [showBatchBairroDialog, setShowBatchBairroDialog] = useState(false);
   const [selectedProjects, setSelectedProjects] = useState([]);
   const [showMultipleSelection, setShowMultipleSelection] = useState(false);
-
+  
   const [selectedStartPoint, setSelectedStartPoint] = useState(null);
-
+  
   // Novo estado para modo de entrada do rastreamento
   const [trackingInputMode, setTrackingInputMode] = useState('gps');
-
+  
   const kalmanLatRef = useRef(new KalmanFilter(0.1, 0.1));
   const kalmanLngRef = useRef(new KalmanFilter(0.1, 0.1));
-
+  
   const totalDistanceAllProjects = calculateTotalDistanceAllProjects(projects);
-
-// Dentro do componente App
-const loadProjectsFromSupabase = async () => {
-  if (!user) return [];
-  try {
-    // 1. Busca meus projetos
-    const { data: myProjects, error: err1 } = await supabase
-      .from('projetos')
-      .select('*')
-      .eq('user_id', user.id);
-    
-    if (err1) throw err1;
-    
-    // 2. Busca projetos onde sou membro
-    const { data: memberData, error: err2 } = await supabase
-      .from('project_members')
-      .select('project_id')
-      .eq('user_id', user.id);
-    
-    if (err2) throw err2;
-    
-    let sharedProjects = [];
-    if (memberData && memberData.length > 0) {
-      const ids = memberData.map(m => m.project_id);
-      const { data: shared, error: err3 } = await supabase
+  
+  // Dentro do componente App
+  const loadProjectsFromSupabase = async () => {
+    if (!user) return [];
+    try {
+      // 1. Busca meus projetos
+      const { data: myProjects, error: err1 } = await supabase
         .from('projetos')
         .select('*')
-        .in('id', ids);
+        .eq('user_id', user.id);
       
-      if (err3) throw err3;
-      sharedProjects = shared;
+      if (err1) throw err1;
+      
+      // 2. Busca projetos onde sou membro
+      const { data: memberData, error: err2 } = await supabase
+        .from('project_members')
+        .select('project_id')
+        .eq('user_id', user.id);
+      
+      if (err2) throw err2;
+      
+      let sharedProjects = [];
+      if (memberData && memberData.length > 0) {
+        const ids = memberData.map(m => m.project_id);
+        const { data: shared, error: err3 } = await supabase
+          .from('projetos')
+          .select('*')
+          .in('id', ids);
+        
+        if (err3) throw err3;
+        sharedProjects = shared;
+      }
+      
+      const allProjects = [...(myProjects || []), ...(sharedProjects || [])];
+      
+      // Ordena por data
+      allProjects.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+      
+      localStorage.setItem('jamaaw_projects', JSON.stringify(allProjects));
+      return allProjects;
+      
+    } catch (error) {
+      console.error('Erro ao carregar projetos:', error);
+      return JSON.parse(localStorage.getItem('jamaaw_projects') || '[]');
     }
-    
-    const allProjects = [...(myProjects || []), ...(sharedProjects || [])];
-    
-    // Ordena por data
-    allProjects.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
-    
-    localStorage.setItem('jamaaw_projects', JSON.stringify(allProjects));
-    return allProjects;
-    
-  } catch (error) {
-    console.error('Erro ao carregar projetos:', error);
-    return JSON.parse(localStorage.getItem('jamaaw_projects') || '[]');
-  }
-};
-
+  };
+  
   // Função para detectar bairros de projetos que ainda estão como "Vários"
   const refreshProjectNeighborhoods = async () => {
     if (!projects || projects.length === 0) return;
-
+    
     // Filtra projetos que precisam de atualização (bairro 'Vários' ou vazio) e têm pontos
-    const projectsToUpdate = projects.filter(p => 
-      (!p.bairro || p.bairro === 'Vários') && 
-      p.points && 
+    const projectsToUpdate = projects.filter(p =>
+      (!p.bairro || p.bairro === 'Vários') &&
+      p.points &&
       p.points.length > 0
     );
-
+    
     if (projectsToUpdate.length === 0) return;
-
+    
     console.log(`Detectando bairros para ${projectsToUpdate.length} projetos...`);
-
+    
     // Cria uma cópia dos projetos atuais para não mutar o estado diretamente
     let updatedProjectsList = [...projects];
     let hasUpdates = false;
-
+    
     for (const project of projectsToUpdate) {
       try {
         // Usa o serviço existente para detectar
         const detectedBairro = await BairroDetectionService.detectBairroForProject(project.points);
-
+        
         if (detectedBairro && detectedBairro !== 'Vários') {
           // Atualiza o projeto na lista local
-          updatedProjectsList = updatedProjectsList.map(p => 
+          updatedProjectsList = updatedProjectsList.map(p =>
             p.id === project.id ? { ...p, bairro: detectedBairro } : p
           );
           
@@ -676,13 +708,13 @@ const loadProjectsFromSupabase = async () => {
           
           hasUpdates = true;
           // Pequeno delay para não bloquear a UI ou exceder limites da API
-          await new Promise(resolve => setTimeout(resolve, 200)); 
+          await new Promise(resolve => setTimeout(resolve, 200));
         }
       } catch (error) {
         console.error(`Erro ao detectar bairro para projeto ${project.name}:`, error);
       }
     }
-
+    
     if (hasUpdates) {
       setProjects(updatedProjectsList);
       localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjectsList));
@@ -691,114 +723,114 @@ const loadProjectsFromSupabase = async () => {
   };
   
   // Efeito de Realtime para o projeto ATUAL
-useEffect(() => {
-  if (!currentProject || !isOnline) return;
-
-  const channel = supabase
-    .channel(`project-tracking-${currentProject.id}`)
-    .on(
-      'postgres_changes',
-      {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'projetos',
-        filter: `id=eq.${currentProject.id}`
-      },
-      (payload) => {
-        console.log("⚡ Atualização Realtime recebida:", payload);
-        
-        const updatedProject = payload.new;
-        
-        // Se eu sou quem editou, ignora (já atualizei localmente)
-        // (Isso evita glitches visuais, embora não seja estritamente necessário se o estado for bem gerenciado)
-        
-        // Atualiza estado do projeto atual
-        setCurrentProject(prev => ({ ...prev, ...updatedProject }));
-        
-        // Se estiver rastreando e os pontos mudarem externamente, atualiza manualPoints
-        if (updatedProject.points) {
-           setManualPoints(updatedProject.points);
-           setTotalDistance(updatedProject.total_distance);
+  useEffect(() => {
+    if (!currentProject || !isOnline) return;
+    
+    const channel = supabase
+      .channel(`project-tracking-${currentProject.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'projetos',
+          filter: `id=eq.${currentProject.id}`
+        },
+        (payload) => {
+          console.log("⚡ Atualização Realtime recebida:", payload);
+          
+          const updatedProject = payload.new;
+          
+          // Se eu sou quem editou, ignora (já atualizei localmente)
+          // (Isso evita glitches visuais, embora não seja estritamente necessário se o estado for bem gerenciado)
+          
+          // Atualiza estado do projeto atual
+          setCurrentProject(prev => ({ ...prev, ...updatedProject }));
+          
+          // Se estiver rastreando e os pontos mudarem externamente, atualiza manualPoints
+          if (updatedProject.points) {
+            setManualPoints(updatedProject.points);
+            setTotalDistance(updatedProject.total_distance);
+          }
+          
+          // Atualiza na lista geral também
+          setProjects(prev => prev.map(p => p.id === updatedProject.id ? updatedProject : p));
         }
-
-        // Atualiza na lista geral também
-        setProjects(prev => prev.map(p => p.id === updatedProject.id ? updatedProject : p));
-      }
-    )
-    .subscribe();
-
-  return () => {
-    supabase.removeChannel(channel);
-  };
-}, [currentProject?.id, isOnline]);
-
+      )
+      .subscribe();
+    
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentProject?.id, isOnline]);
+  
   // Efeito para rodar a detecção quando abrir a lista de projetos
   useEffect(() => {
     if (showProjectsList) {
       refreshProjectNeighborhoods();
     }
   }, [showProjectsList]); // Roda sempre que showProjectsList mudar para true
-
+  
   const selectPointAsStart = (point) => {
     setSelectedStartPoint(point);
     showFeedback('Sucesso', 'Ponto selecionado como novo início! Novos pontos serão conectados a partir daqui.', 'success');
-};
-
+  };
+  
   const resetStartPoint = () => {
     setSelectedStartPoint(null);
   };
   
   const deleteMultipleProjects = async () => {
-  if (selectedProjects.length === 0) {
-    showFeedback('Erro', 'Nenhum projeto selecionado para excluir.', 'error');
-    return;
-  }
-
-  const projectNames = selectedProjects.map(p => p.name).join(', ');
-  if (!confirm(`Tem certeza que deseja excluir ${selectedProjects.length} projeto(s) selecionado(s)?\n\n${projectNames}`)) {
-    return;
-  }
-
-  try {
-    const deletedIds = [];
+    if (selectedProjects.length === 0) {
+      showFeedback('Erro', 'Nenhum projeto selecionado para excluir.', 'error');
+      return;
+    }
     
-    for (const project of selectedProjects) {
-      if (isOnline && user && !project.id.toString().startsWith('offline_')) {
-        const success = await deleteProjectFromSupabase(project.id);
-        if (!success) {
-          console.warn(`Falha ao deletar projeto ${project.name} do Supabase`);
+    const projectNames = selectedProjects.map(p => p.name).join(', ');
+    if (!confirm(`Tem certeza que deseja excluir ${selectedProjects.length} projeto(s) selecionado(s)?\n\n${projectNames}`)) {
+      return;
+    }
+    
+    try {
+      const deletedIds = [];
+      
+      for (const project of selectedProjects) {
+        if (isOnline && user && !project.id.toString().startsWith('offline_')) {
+          const success = await deleteProjectFromSupabase(project.id);
+          if (!success) {
+            console.warn(`Falha ao deletar projeto ${project.name} do Supabase`);
+          }
         }
+        deletedIds.push(project.id);
       }
-      deletedIds.push(project.id);
+      
+      const updatedProjects = projects.filter(p => !deletedIds.includes(p.id));
+      setProjects(updatedProjects);
+      localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
+      
+      setLoadedProjects(prev => prev.filter(p => !deletedIds.includes(p.id)));
+      
+      if (currentProject && deletedIds.includes(currentProject.id)) {
+        setCurrentProject(null);
+        setManualPoints([]);
+        setTotalDistance(0);
+        setSelectedStartPoint(null);
+      }
+      
+      setSelectedProjects([]);
+      
+      showFeedback(
+        'Sucesso',
+        `${selectedProjects.length} projeto(s) excluído(s) com sucesso!`,
+        'success'
+      );
+      
+    } catch (error) {
+      console.error('Erro ao excluir múltiplos projetos:', error);
+      showFeedback('Erro', 'Erro ao excluir projetos. Tente novamente.', 'error');
     }
-
-    const updatedProjects = projects.filter(p => !deletedIds.includes(p.id));
-    setProjects(updatedProjects);
-    localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
-
-    setLoadedProjects(prev => prev.filter(p => !deletedIds.includes(p.id)));
-
-    if (currentProject && deletedIds.includes(currentProject.id)) {
-      setCurrentProject(null);
-      setManualPoints([]);
-      setTotalDistance(0);
-      setSelectedStartPoint(null);
-    }
-
-    setSelectedProjects([]);
-
-    showFeedback(
-  'Sucesso',
-  `${selectedProjects.length} projeto(s) excluído(s) com sucesso!`,
-  'success'
-);
-    
-  } catch (error) {
-    console.error('Erro ao excluir múltiplos projetos:', error);
-    showFeedback('Erro', 'Erro ao excluir projetos. Tente novamente.', 'error');
-  }
-};
-
+  };
+  
   const calculateTotalDistanceWithBranches = (points) => {
     if (points.length < 2) return 0;
     
@@ -807,9 +839,9 @@ useEffect(() => {
     const mainPathPoints = points.filter(point => point.connectedFrom === null);
     for (let i = 0; i < mainPathPoints.length - 1; i++) {
       total += calculateDistance(
-        mainPathPoints[i].lat, 
+        mainPathPoints[i].lat,
         mainPathPoints[i].lng,
-        mainPathPoints[i + 1].lat, 
+        mainPathPoints[i + 1].lat,
         mainPathPoints[i + 1].lng
       );
     }
@@ -819,9 +851,9 @@ useEffect(() => {
       const parentPoint = points.find(p => p.id === branchPoint.connectedFrom);
       if (parentPoint) {
         total += calculateDistance(
-          parentPoint.lat, 
+          parentPoint.lat,
           parentPoint.lng,
-          branchPoint.lat, 
+          branchPoint.lat,
           branchPoint.lng
         );
       }
@@ -829,7 +861,7 @@ useEffect(() => {
     
     return total;
   };
-
+  
   const handleLogout = async () => {
     try {
       localStorage.removeItem('supabase.auth.token');
@@ -841,12 +873,12 @@ useEffect(() => {
         localStorage.removeItem(`jamaaw_favorites_${user.id}`);
         localStorage.removeItem(`jamaaw_markers_${user.id}`);
       }
-
+      
       const { error } = await supabase.auth.signOut();
       if (error) {
         console.error('Erro no logout:', error);
       }
-
+      
       setUser(null);
       setMarkers([]);
       setFilteredMarkers([]);
@@ -867,11 +899,11 @@ useEffect(() => {
       setSelectedStartPoint(null);
     }
   };
-
+  
   const canLoadProjects = () => {
     return !tracking && manualPoints.length === 0;
   };
-
+  
   const updateImportProgress = (progress, step, action) => {
     setImportProgress(progress);
     setImportCurrentStep(step);
@@ -879,8 +911,8 @@ useEffect(() => {
   };
   
   const showFeedback = (title, message, type = 'success') => {
-  setNotification({ title, message, type });
-};
+    setNotification({ title, message, type });
+  };
   
   // Função para importar arquivos KML/KMZ
   const handleProjectImport = async (event) => {
@@ -912,7 +944,7 @@ useEffect(() => {
         updateImportProgress(20, 2, 'Extraindo KML do arquivo KMZ...');
         
         // Usa JSZip para abrir o KMZ
-        const zip = new (JSZip.default || JSZip)();
+        const zip = new(JSZip.default || JSZip)();
         const contents = await zip.loadAsync(file);
         const kmlFile = Object.keys(contents.files).find(name => name.toLowerCase().endsWith('.kml'));
         if (!kmlFile) {
@@ -1009,7 +1041,7 @@ useEffect(() => {
         name: projectName,
         points: points,
         total_distance: totalDistanceVal, // Nome da coluna no Supabase
-        totalDistance: totalDistanceVal,  // Compatibilidade local
+        totalDistance: totalDistanceVal, // Compatibilidade local
         bairro: 'Importado',
         tracking_mode: 'manual',
         created_at: new Date().toISOString(),
@@ -1020,9 +1052,9 @@ useEffect(() => {
       if (isOnline && user) {
         // Se for sobrescrever, usa update, senão insert
         if (existingProject && shouldOverwrite) {
-             await supabase.from('projetos').update(project).eq('id', project.id);
+          await supabase.from('projetos').update(project).eq('id', project.id);
         } else {
-             await supabase.from('projetos').insert([project]);
+          await supabase.from('projetos').insert([project]);
         }
         // Atualiza a lista
         const updatedList = await loadProjectsFromSupabase(); // Chama a função que criamos no passo anterior
@@ -1058,14 +1090,14 @@ useEffect(() => {
       }
     }
   };
-
+  
   const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
     let finalPoints = pointsToSave;
     
     if (editingProject && finalPoints.length === 0) {
       finalPoints = editingProject.points;
     }
-
+    
     if (!finalPoints || finalPoints.length === 0) {
       console.log('⚠️ Nenhum ponto para salvar');
       if (!autoSave) {
@@ -1100,11 +1132,12 @@ useEffect(() => {
       ...p,
       id: typeof p.id === 'number' || !isNaN(p.id) ? generateUUID() : p.id,
       // Atualiza connectedFrom se for um ID numérico
-      connectedFrom: p.connectedFrom && (typeof p.connectedFrom === 'number' || !isNaN(p.connectedFrom)) 
-        ? null // Reseta para evitar referências quebradas - será recalculado se necessário
-        : p.connectedFrom
+      connectedFrom: p.connectedFrom && (typeof p.connectedFrom === 'number' || !isNaN(p.connectedFrom)) ?
+        null // Reseta para evitar referências quebradas - será recalculado se necessário
+        :
+        p.connectedFrom
     }));
-
+    
     const calculatedTotalDistance = calculateTotalDistanceWithBranches(sanitizedPoints) || 0;
     
     const projectData = {
@@ -1124,10 +1157,10 @@ useEffect(() => {
         
         if (isOnline && user) {
           const { data, error } = await supabase
-  .from('projetos')
-  .update(projectData)
-  .eq('id', editingProject.id)
-  .select();
+            .from('projetos')
+            .update(projectData)
+            .eq('id', editingProject.id)
+            .select();
           
           if (error) throw error;
           
@@ -1151,15 +1184,16 @@ useEffect(() => {
         setLoadedProjects(prev => {
           const exists = prev.find(p => p.id === savedProject.id);
           if (exists) {
-            return prev.map(p => 
-              p.id === savedProject.id 
-                ? { ...savedProject, color: p.color } // Mantém a cor original visual
-                : p
+            return prev.map(p =>
+              p.id === savedProject.id ?
+              { ...savedProject, color: p.color } // Mantém a cor original visual
+              :
+              p
             );
           }
           return prev;
         });
-
+        
         if (currentProject && currentProject.id === editingProject.id) {
           setCurrentProject(savedProject);
         }
@@ -1171,17 +1205,17 @@ useEffect(() => {
         
         if (isOnline && user) {
           const { data, error } = await supabase
-  .from('projetos')
-  .update(projectData)
-  .eq('id', currentProject.id)
-  .select();
+            .from('projetos')
+            .update(projectData)
+            .eq('id', currentProject.id)
+            .select();
           
           if (error) throw error;
           
           if (!data || data.length === 0) {
             throw new Error("Erro ao salvar: Retorno vazio do banco.");
           }
-
+          
           savedProject = data[0];
         } else {
           savedProject = { ...currentProject, ...projectData };
@@ -1192,15 +1226,16 @@ useEffect(() => {
         );
         setProjects(updatedProjects);
         localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
-
+        
         // Atualiza também o projeto na camada visual (loadedProjects)
         setLoadedProjects(prev => {
           const exists = prev.find(p => p.id === savedProject.id);
           if (exists) {
-            return prev.map(p => 
-              p.id === savedProject.id 
-                ? { ...savedProject, color: p.color } // Mantém a cor original visual
-                : p
+            return prev.map(p =>
+              p.id === savedProject.id ?
+              { ...savedProject, color: p.color } // Mantém a cor original visual
+              :
+              p
             );
           }
           return prev;
@@ -1249,10 +1284,10 @@ useEffect(() => {
         }
         
         showFeedback(
-  'Sucesso',
-  editingProject ? 'Projeto atualizado com sucesso!' : 'Projeto salvo com sucesso!',
-  'success'
-);
+          'Sucesso',
+          editingProject ? 'Projeto atualizado com sucesso!' : 'Projeto salvo com sucesso!',
+          'success'
+        );
       } else {
         console.log('✅ Projeto salvo automaticamente:', savedProject.name);
       }
@@ -1264,7 +1299,7 @@ useEffect(() => {
       }
     }
   };
-
+  
   const startTracking = async (mode = 'gps') => {
     if (loadedProjects.length === 1 && loadedProjects[0].points.length > 0) {
       const project = loadedProjects[0];
@@ -1294,142 +1329,142 @@ useEffect(() => {
     kalmanLatRef.current = new KalmanFilter(0.1, 0.1);
     kalmanLngRef.current = new KalmanFilter(0.1, 0.1);
   };
-
- const loadProject = async (project) => {
-  // 1. Se o GPS estiver realmente ligado, impede.
-  if (tracking && !paused) {
-    showFeedback('Erro', 'O rastreamento GPS está ativo. Pare o rastreamento antes de carregar um projeto.', 'error');
-    return;
-  }
   
-  // 2. Se houver pontos no mapa (mas GPS desligado), pede confirmação para limpar.
-  if (manualPoints.length > 0) {
-    // Se for o mesmo projeto que já está carregado, não faz nada
-    if (currentProject && currentProject.id === project.id) {
-      setShowProjectsList(false); // Só fecha o menu
+  const loadProject = async (project) => {
+    // 1. Se o GPS estiver realmente ligado, impede.
+    if (tracking && !paused) {
+      showFeedback('Erro', 'O rastreamento GPS está ativo. Pare o rastreamento antes de carregar um projeto.', 'error');
       return;
     }
     
-    if (!confirm('Existem pontos desenhados no mapa atual. Deseja descartá-los para carregar este projeto?')) {
+    // 2. Se houver pontos no mapa (mas GPS desligado), pede confirmação para limpar.
+    if (manualPoints.length > 0) {
+      // Se for o mesmo projeto que já está carregado, não faz nada
+      if (currentProject && currentProject.id === project.id) {
+        setShowProjectsList(false); // Só fecha o menu
+        return;
+      }
+      
+      if (!confirm('Existem pontos desenhados no mapa atual. Deseja descartá-los para carregar este projeto?')) {
+        return;
+      }
+    }
+    
+    // 3. Carrega o projeto
+    if (!project || !project.points) {
+      console.error('Projeto inválido:', project);
+      showFeedback('Erro', 'Projeto inválido ou corrompido.', 'error');
       return;
     }
-  }
-  
-  // 3. Carrega o projeto
-  if (!project || !project.points) {
-    console.error('Projeto inválido:', project);
-    showFeedback('Erro', 'Projeto inválido ou corrompido.', 'error');
-    return;
-  }
-  
-  // Limpa estado atual
-  setManualPoints([]);
-  setTotalDistance(0);
-  setSelectedStartPoint(null);
-  setTracking(false); // Garante que tracking está off
-  setPaused(false);
-  
-  // Configura novo projeto
-  setCurrentProject(project); // Define como projeto atual para edições futuras
-  
-  // Adiciona à lista de carregados (visualização)
-  const exists = loadedProjects.find(p => p.id === project.id);
-  if (!exists) {
-    let bairroDetectado = project.bairro;
-    if (!project.bairro || project.bairro === 'Vários') {
-      try {
-        // Tenta detectar bairro se não tiver
-        bairroDetectado = await BairroDetectionService.detectBairroForProject(project.points);
-      } catch (e) { console.log(e); }
+    
+    // Limpa estado atual
+    setManualPoints([]);
+    setTotalDistance(0);
+    setSelectedStartPoint(null);
+    setTracking(false); // Garante que tracking está off
+    setPaused(false);
+    
+    // Configura novo projeto
+    setCurrentProject(project); // Define como projeto atual para edições futuras
+    
+    // Adiciona à lista de carregados (visualização)
+    const exists = loadedProjects.find(p => p.id === project.id);
+    if (!exists) {
+      let bairroDetectado = project.bairro;
+      if (!project.bairro || project.bairro === 'Vários') {
+        try {
+          // Tenta detectar bairro se não tiver
+          bairroDetectado = await BairroDetectionService.detectBairroForProject(project.points);
+        } catch (e) { console.log(e); }
+      }
+      
+      const projectWithColor = {
+        ...project,
+        bairro: bairroDetectado || 'Vários',
+        color: project.color || generateRandomColor(),
+        points: project.points.map(point => ({
+          ...point,
+          projectId: project.id,
+          projectName: project.name
+        }))
+      };
+      
+      setLoadedProjects(prev => [...prev, projectWithColor]);
+      
+      // Centraliza o mapa no primeiro ponto do projeto carregado
+      if (project.points.length > 0 && mapRef.current) {
+        mapRef.current.flyTo({
+          center: [project.points[0].lng, project.points[0].lat],
+          zoom: 15,
+          duration: 1000
+        });
+      }
     }
     
-    const projectWithColor = {
-      ...project,
-      bairro: bairroDetectado || 'Vários',
-      color: project.color || generateRandomColor(),
-      points: project.points.map(point => ({
-        ...point,
-        projectId: project.id,
-        projectName: project.name
-      }))
-    };
-    
-    setLoadedProjects(prev => [...prev, projectWithColor]);
-    
-    // Centraliza o mapa no primeiro ponto do projeto carregado
-    if (project.points.length > 0 && mapRef.current) {
-      mapRef.current.flyTo({
-        center: [project.points[0].lng, project.points[0].lat],
-        zoom: 15,
-        duration: 1000
-      });
-    }
-  }
-  
-  setShowProjectsList(false);
-};
+    setShowProjectsList(false);
+  };
   
   const loadMultipleProjects = async () => {
-  if (!canLoadProjects()) {
-    showFeedback('Erro', 'Não é possível carregar projetos durante o rastreamento ativo. Pare o rastreamento atual primeiro.', 'error');
-    return;
-  }
+    if (!canLoadProjects()) {
+      showFeedback('Erro', 'Não é possível carregar projetos durante o rastreamento ativo. Pare o rastreamento atual primeiro.', 'error');
+      return;
+    }
+    
+    if (selectedProjects.length === 0) {
+      showFeedback('Erro', 'Selecione pelo menos um projeto para carregar', 'error');
+      return;
+    }
+    
+    try {
+      setImportCurrentAction('Detectando bairros dos projetos...');
+      
+      const detectedBairro = await BairroDetectionService.detectBairroForMultipleProjects(selectedProjects);
+      
+      const projectsWithColors = selectedProjects.map(project => ({
+        ...project,
+        color: project.color || generateRandomColor(),
+        bairro: detectedBairro,
+        points: project.points.map(point => ({
+          ...point,
+          projectId: project.id,
+          projectName: project.name
+        }))
+      }));
+      
+      setLoadedProjects(prev => {
+        const newProjects = projectsWithColors.filter(
+          newProject => !prev.some(existing => existing.id === newProject.id)
+        );
+        return [...prev, ...newProjects];
+      });
+      
+      setSelectedProjects([]);
+      setShowProjectsList(false);
+      
+    } catch (error) {
+      console.error('Erro ao carregar múltiplos projetos:', error);
+      const projectsWithColors = selectedProjects.map(project => ({
+        ...project,
+        color: project.color || generateRandomColor(),
+        points: project.points.map(point => ({
+          ...point,
+          projectId: project.id,
+          projectName: project.name
+        }))
+      }));
+      
+      setLoadedProjects(prev => {
+        const newProjects = projectsWithColors.filter(
+          newProject => !prev.some(existing => existing.id === newProject.id)
+        );
+        return [...prev, ...newProjects];
+      });
+      
+      setSelectedProjects([]);
+      setShowProjectsList(false);
+    }
+  };
   
-  if (selectedProjects.length === 0) {
-    showFeedback('Erro', 'Selecione pelo menos um projeto para carregar', 'error');
-    return;
-  }
-  
-  try {
-    setImportCurrentAction('Detectando bairros dos projetos...');
-    
-    const detectedBairro = await BairroDetectionService.detectBairroForMultipleProjects(selectedProjects);
-    
-    const projectsWithColors = selectedProjects.map(project => ({
-      ...project,
-      color: project.color || generateRandomColor(),
-      bairro: detectedBairro,
-      points: project.points.map(point => ({
-        ...point,
-        projectId: project.id,
-        projectName: project.name
-      }))
-    }));
-    
-    setLoadedProjects(prev => {
-      const newProjects = projectsWithColors.filter(
-        newProject => !prev.some(existing => existing.id === newProject.id)
-      );
-      return [...prev, ...newProjects];
-    });
-    
-    setSelectedProjects([]);
-    setShowProjectsList(false);
-    
-  } catch (error) {
-    console.error('Erro ao carregar múltiplos projetos:', error);
-    const projectsWithColors = selectedProjects.map(project => ({
-      ...project,
-      color: project.color || generateRandomColor(),
-      points: project.points.map(point => ({
-        ...point,
-        projectId: project.id,
-        projectName: project.name
-      }))
-    }));
-    
-    setLoadedProjects(prev => {
-      const newProjects = projectsWithColors.filter(
-        newProject => !prev.some(existing => existing.id === newProject.id)
-      );
-      return [...prev, ...newProjects];
-    });
-    
-    setSelectedProjects([]);
-    setShowProjectsList(false);
-  }
-};
-
   const startNewProject = () => {
     if (tracking) {
       if (!confirm('Deseja parar o rastreamento atual e iniciar um novo projeto?')) {
@@ -1437,7 +1472,7 @@ useEffect(() => {
       }
       stopTracking();
     }
-
+    
     if (currentProject && manualPoints.length > 0) {
       if (!confirm(`Deseja iniciar um novo projeto? O projeto atual "${currentProject.name}" será descartado.`)) {
         return;
@@ -1452,22 +1487,22 @@ useEffect(() => {
     setShowProjectDetails(false);
     setShowRulerPopup(false);
   };
-
+  
   const calculateTotalDistance = (points) => {
     if (points.length < 2) return 0;
     
     let total = 0;
     for (let i = 0; i < points.length - 1; i++) {
       total += calculateDistance(
-        points[i].lat, 
+        points[i].lat,
         points[i].lng,
-        points[i + 1].lat, 
+        points[i + 1].lat,
         points[i + 1].lng
       );
     }
     return total;
   };
-
+  
   useEffect(() => {
     const checkAuth = async () => {
       try {
@@ -1479,7 +1514,7 @@ useEffect(() => {
             console.log('Cleanup de tokens no checkAuth')
           }
         }
-
+        
         const { data: { session }, error } = await supabase.auth.getSession()
         
         if (error) {
@@ -1500,7 +1535,7 @@ useEffect(() => {
     }
     
     checkAuth()
-
+    
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log('Auth state change:', event)
       
@@ -1519,10 +1554,10 @@ useEffect(() => {
         setUser(session?.user ?? null)
       }
     })
-
+    
     return () => subscription.unsubscribe()
   }, [])
-
+  
   const createProjectsTable = async () => {
     try {
       const { error } = await supabase.rpc('create_projects_table_if_not_exists');
@@ -1531,7 +1566,7 @@ useEffect(() => {
       console.error('Erro ao criar tabela de projetos:', error);
     }
   };
-
+  
   const saveProjectToSupabase = async (project) => {
     if (!user) return null;
     
@@ -1544,7 +1579,7 @@ useEffect(() => {
         tracking_mode: 'manual',
         user_id: user.id
       };
-
+      
       let result;
       
       if (project.id && typeof project.id === 'number') {
@@ -1573,7 +1608,7 @@ useEffect(() => {
       return null;
     }
   };
-
+  
   const deleteProjectFromSupabase = async (projectId) => {
     if (!user) return false;
     
@@ -1584,7 +1619,7 @@ useEffect(() => {
         .delete()
         .eq('id', projectId)
         .eq('user_id', user.id);
-
+      
       if (error) throw error;
       return true;
     } catch (error) {
@@ -1592,17 +1627,17 @@ useEffect(() => {
       return false;
     }
   };
-
+  
   const syncOfflineProjects = async () => {
     if (!user || !isOnline) return;
-
+    
     try {
       const savedProjects = localStorage.getItem('jamaaw_projects');
       if (!savedProjects) return;
-
+      
       const projects = JSON.parse(savedProjects);
       const offlineProjects = projects.filter(p => p.id && p.id.toString().startsWith('offline_'));
-
+      
       for (const project of offlineProjects) {
         try {
           const { data, error } = await supabase
@@ -1616,15 +1651,15 @@ useEffect(() => {
               user_id: user.id
             }])
             .select();
-
+          
           if (error) throw error;
-
-          const updatedProjects = projects.map(p => 
+          
+          const updatedProjects = projects.map(p =>
             p.id === project.id ? data[0] : p
           );
           localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
           setProjects(updatedProjects);
-
+          
           console.log('Projeto offline sincronizado:', project.name);
           
         } catch (projectError) {
@@ -1635,13 +1670,13 @@ useEffect(() => {
       console.error('Erro na sincronização offline:', error);
     }
   };
-
+  
   // EFEITO ATUALIZADO: Carregar projetos
   useEffect(() => {
     const loadProjects = async () => {
       try {
         let loadedProjects = [];
-
+        
         if (user) {
           if (isOnline) {
             try {
@@ -1666,7 +1701,7 @@ useEffect(() => {
             }
           }
         }
-
+        
         setProjects(loadedProjects);
         
       } catch (error) {
@@ -1674,23 +1709,23 @@ useEffect(() => {
         setProjects([]);
       }
     };
-
+    
     loadProjects();
   }, [user, isOnline]);
-
+  
   useEffect(() => {
     if (isOnline && user) {
       syncOfflineProjects();
     }
   }, [isOnline, user]);
-
+  
   useEffect(() => {
     const savedBairros = localStorage.getItem('jamaaw_bairros')
     if (savedBairros) {
       setBairros(JSON.parse(savedBairros))
     }
   }, [])
-
+  
   useEffect(() => {
     if (user) {
       const savedFavorites = localStorage.getItem(`jamaaw_favorites_${user.id}`)
@@ -1699,7 +1734,7 @@ useEffect(() => {
       }
     }
   }, [user])
-
+  
   useEffect(() => {
     let watchId = null
     
@@ -1764,12 +1799,12 @@ useEffect(() => {
       }
     }
   }, [tracking, paused])
-
+  
   const saveBairros = (newBairros) => {
     setBairros(newBairros)
     localStorage.setItem('jamaaw_bairros', JSON.stringify(newBairros))
   }
-
+  
   const handleAddBairro = () => {
     if (newBairro.trim() && !bairros.includes(newBairro.trim())) {
       const updatedBairros = [...bairros, newBairro.trim()]
@@ -1779,7 +1814,7 @@ useEffect(() => {
       setShowBairroManager(false)
     }
   }
-
+  
   const handleRemoveBairro = (bairro) => {
     if (DEFAULT_BAIRROS.includes(bairro)) {
       showFeedback('Erro', 'Não é possível remover bairros padrão.', 'error');
@@ -1793,18 +1828,18 @@ useEffect(() => {
       }
     }
   }
-
+  
   const toggleFavorite = (markerId) => {
-    const newFavorites = favorites.includes(markerId)
-      ? favorites.filter(id => id !== markerId)
-      : [...favorites, markerId]
+    const newFavorites = favorites.includes(markerId) ?
+      favorites.filter(id => id !== markerId) :
+      [...favorites, markerId]
     
     setFavorites(newFavorites)
     if (user) {
       localStorage.setItem(`jamaaw_favorites_${user.id}`, JSON.stringify(newFavorites))
     }
   }
-
+  
   useEffect(() => {
     const checkConnectivity = async () => {
       try {
@@ -1814,9 +1849,9 @@ useEffect(() => {
         setIsOnline(true)
       }
     }
-
+    
     checkConnectivity()
-
+    
     const setupListener = async () => {
       let networkListener
       try {
@@ -1827,8 +1862,7 @@ useEffect(() => {
             setSyncPending(false)
           }
         })
-      } catch (error) {
-      }
+      } catch (error) {}
       
       return () => {
         if (networkListener) {
@@ -1842,27 +1876,27 @@ useEffect(() => {
       cleanupPromise.then(cleanup => cleanup && cleanup())
     }
   }, [syncPending])
-
+  
   useEffect(() => {
     if (user) {
       loadMarkers()
     }
   }, [user])
-
+  
   useEffect(() => {
     let filtered = markers
-
+    
     if (selectedBairro !== 'todos') {
       filtered = filtered.filter(m => m.bairro === selectedBairro)
     }
-
+    
     if (showFavoritesOnly) {
       filtered = filtered.filter(m => favorites.includes(m.id))
     }
-
+    
     setFilteredMarkers(filtered)
   }, [markers, selectedBairro, showFavoritesOnly, favorites])
-
+  
   const loadMarkers = async () => {
     if (!user) return
     
@@ -1875,7 +1909,7 @@ useEffect(() => {
           .select('*')
           .eq('user_id', user.id)
           .order('created_at', { ascending: false })
-
+        
         if (error) {
           if (error.code === '42P01') {
             console.log('Tabela não existe, será criada no primeiro upload')
@@ -1904,7 +1938,7 @@ useEffect(() => {
       setLoading(false)
     }
   }
-
+  
   const loadMarkersFromCache = async () => {
     if (!user) return
     
@@ -1929,7 +1963,7 @@ useEffect(() => {
       console.error('Erro ao carregar marcações do cache:', error)
     }
   }
-
+  
   const saveMarkerToSupabase = async (marker) => {
     if (!user) return null
     
@@ -1938,7 +1972,7 @@ useEffect(() => {
         .from('marcacoes')
         .insert([{ ...marker, user_id: user.id }])
         .select()
-
+      
       if (error) throw error
       return data[0]
     } catch (error) {
@@ -1946,7 +1980,7 @@ useEffect(() => {
       return null
     }
   }
-
+  
   const updateMarkerInSupabase = async (marker) => {
     if (!user) return false
     
@@ -1956,7 +1990,7 @@ useEffect(() => {
         .update(marker)
         .eq('id', marker.id)
         .eq('user_id', user.id)
-
+      
       if (error) throw error
       return true
     } catch (error) {
@@ -1964,7 +1998,7 @@ useEffect(() => {
       return false
     }
   }
-
+  
   const deleteMarkerFromSupabase = async (markerId) => {
     if (!user) return false
     
@@ -1974,7 +2008,7 @@ useEffect(() => {
         .delete()
         .eq('id', markerId)
         .eq('user_id', user.id)
-
+      
       if (error) throw error
       return true
     } catch (error) {
@@ -1982,45 +2016,45 @@ useEffect(() => {
       return false
     }
   }
-
-  const handleJoinProject = async (projectId) => {
-  if (!user || !isOnline) {
-    showFeedback('Erro', 'Você precisa estar online para importar projetos.', 'error');
-    return;
-  }
   
-  try {
-    // Usa a função RPC segura que criamos no SQL
-    const { data, error } = await supabase.rpc('join_project', {
-      p_id: projectId
-    });
-    
-    if (error) throw error;
-    
-    if (data.success) {
-      showFeedback('Erro', data.message, 'error');
-      // Atualiza a lista imediatamente
-      const updatedList = await loadProjectsFromSupabase();
-      setProjects(updatedList);
-    } else {
-      showFeedback('Erro', data.message, 'error'); // Ex: "Projeto não encontrado" ou "Já é membro"
+  const handleJoinProject = async (projectId) => {
+    if (!user || !isOnline) {
+      showFeedback('Erro', 'Você precisa estar online para importar projetos.', 'error');
+      return;
     }
     
-  } catch (error) {
-    console.error("Erro ao importar:", error);
-    // Tratamento amigável para erro de ID inválido (ex: texto incompleto)
-    if (error.code === '22P02') {
-      showFeedback('Erro', 'ID inválido. Certifique-se de copiar o código completo.', 'error');
-    } else {
-      showFeedback('Erro', 'Erro ao entrar no projeto.', 'error');
+    try {
+      // Usa a função RPC segura que criamos no SQL
+      const { data, error } = await supabase.rpc('join_project', {
+        p_id: projectId
+      });
+      
+      if (error) throw error;
+      
+      if (data.success) {
+        showFeedback('Erro', data.message, 'error');
+        // Atualiza a lista imediatamente
+        const updatedList = await loadProjectsFromSupabase();
+        setProjects(updatedList);
+      } else {
+        showFeedback('Erro', data.message, 'error'); // Ex: "Projeto não encontrado" ou "Já é membro"
+      }
+      
+    } catch (error) {
+      console.error("Erro ao importar:", error);
+      // Tratamento amigável para erro de ID inválido (ex: texto incompleto)
+      if (error.code === '22P02') {
+        showFeedback('Erro', 'ID inválido. Certifique-se de copiar o código completo.', 'error');
+      } else {
+        showFeedback('Erro', 'Erro ao entrar no projeto.', 'error');
+      }
     }
-  }
-};
-
+  };
+  
   const handleFileImport = async (event) => {
     const file = event.target.files[0];
     if (!file) return;
-
+    
     setImportProgress(0);
     setImportCurrentStep(1);
     setImportTotalSteps(4);
@@ -2028,17 +2062,17 @@ useEffect(() => {
     setImportSuccess(false);
     setImportError(null);
     setShowImportProgress(true);
-
+    
     setUploading(true);
     try {
       updateImportProgress(20, 1, 'Lendo arquivo...');
-
+      
       let kmlText;
-
+      
       if (file.name.endsWith('.kmz')) {
         updateImportProgress(40, 2, 'Extraindo KML do KMZ...');
         // Garante que funcione tanto em desenvolvimento quanto após o build (produção)
-const zip = new(JSZip.default || JSZip)();
+        const zip = new(JSZip.default || JSZip)();
         const contents = await zip.loadAsync(file);
         const kmlFile = Object.keys(contents.files).find(name => name.endsWith('.kml'));
         if (!kmlFile) {
@@ -2049,7 +2083,7 @@ const zip = new(JSZip.default || JSZip)();
         updateImportProgress(40, 2, 'Lendo arquivo KML...');
         kmlText = await file.text();
       }
-
+      
       if (isOnline && user) {
         updateImportProgress(60, 3, 'Limpando marcações antigas...');
         try {
@@ -2065,17 +2099,17 @@ const zip = new(JSZip.default || JSZip)();
           console.error('Erro ao limpar marcações antigas:', error);
         }
       }
-
+      
       setMarkers([]);
-
+      
       updateImportProgress(80, 4, 'Processando novas marcações...');
       const parser = new DOMParser();
       const xmlDoc = parser.parseFromString(kmlText, 'text/xml');
       const placemarks = xmlDoc.getElementsByTagName('Placemark');
-
+      
       const newMarkers = [];
       const totalPlacemarks = placemarks.length;
-
+      
       for (let i = 0; i < totalPlacemarks; i++) {
         const placemark = placemarks[i];
         const name = placemark.getElementsByTagName('name')[0]?.textContent || `Marcação ${i + 1}`;
@@ -2095,7 +2129,7 @@ const zip = new(JSZip.default || JSZip)();
             rua: '',
             fotos: []
           }
-
+          
           if (isOnline) {
             const savedMarker = await saveMarkerToSupabase(marker);
             if (savedMarker) {
@@ -2108,15 +2142,15 @@ const zip = new(JSZip.default || JSZip)();
             setSyncPending(true);
           }
         }
-
+        
         const progress = 80 + (i / totalPlacemarks) * 15;
         updateImportProgress(progress, 4, `Processando ${i + 1}/${totalPlacemarks} marcações...`);
-
+        
         if (i % 20 === 0) {
           await new Promise(resolve => setTimeout(resolve, 10));
         }
       }
-
+      
       setMarkers(newMarkers);
       setAdjustBoundsForMarkers(true);
       
@@ -2130,14 +2164,14 @@ const zip = new(JSZip.default || JSZip)();
           localStorage.setItem(`jamaaw_markers_${user.id}`, JSON.stringify(newMarkers));
         }
       }
-
+      
       updateImportProgress(100, 4, 'Importação concluída!');
       setImportSuccess(true);
-
+      
       setTimeout(() => {
         setShowImportProgress(false);
       }, 2000);
-
+      
     } catch (error) {
       console.error('Erro ao importar arquivo:', error);
       setImportError('Erro ao importar arquivo. Verifique o formato.');
@@ -2149,12 +2183,12 @@ const zip = new(JSZip.default || JSZip)();
       }
     }
   };
-
+  
   const handleClearImportedMarkers = async () => {
     if (!confirm('Tem certeza que deseja limpar todas as marcações importadas? Esta ação não pode ser desfeita.')) {
       return;
     }
-
+    
     try {
       if (isOnline && user) {
         const { error } = await supabase
@@ -2168,7 +2202,7 @@ const zip = new(JSZip.default || JSZip)();
           return
         }
       }
-
+      
       setMarkers([])
       setFilteredMarkers([])
       handleClearRoute()
@@ -2180,19 +2214,19 @@ const zip = new(JSZip.default || JSZip)();
           localStorage.removeItem(`jamaaw_markers_${user.id}`)
         }
       }
-
+      
       showFeedback('Sucesso', 'Todas as marcações importadas foram removidas com sucesso!', 'success');
     } catch (error) {
       console.error('Erro ao limpar marcações:', error)
       showFeedback('Erro', 'Erro ao limpar marcações', 'error');
     }
   }
-
+  
   const handleClearAllMarkers = async () => {
     if (!confirm('Tem certeza que deseja limpar todas as marcações? Esta ação não pode ser desfeita.')) {
       return
     }
-
+    
     try {
       if (isOnline && user) {
         const { error } = await supabase
@@ -2206,7 +2240,7 @@ const zip = new(JSZip.default || JSZip)();
           return
         }
       }
-
+      
       setMarkers([])
       setFilteredMarkers([])
       handleClearRoute()
@@ -2218,20 +2252,20 @@ const zip = new(JSZip.default || JSZip)();
           localStorage.removeItem(`jamaaw_markers_${user.id}`)
         }
       }
-
+      
       showFeedback('Sucesso', 'Todas as marcações foram removidas com sucesso!', 'success');
     } catch (error) {
       console.error('Erro ao limpar marcações:', error)
       showFeedback('Erro', 'Erro ao limpar marcações', 'error');
     }
   }
-
+  
   const handleExport = () => {
     if (markers.length === 0) {
       showFeedback('Erro', 'Não há marcações para exportar.', 'error');
       return
     }
-
+    
     const kml = `<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2">
   <Document>
@@ -2246,68 +2280,74 @@ const zip = new(JSZip.default || JSZip)();
     </Placemark>`).join('')}
   </Document>
 </kml>`
-
+    
     downloadKML(kml, 'marcacoes-jamaaw.kml')
   }
-
+  
   const escapeXml = (unsafe) => {
     return unsafe.replace(/[<>&'"]/g, (c) => {
       switch (c) {
-        case '<': return '&lt;'
-        case '>': return '&gt;'
-        case '&': return '&amp;'
-        case '\'': return '&apos;'
-        case '"': return '&quot;'
-        default: return c
+        case '<':
+          return '&lt;'
+        case '>':
+          return '&gt;'
+        case '&':
+          return '&amp;'
+        case '\'':
+          return '&apos;'
+        case '"':
+          return '&quot;'
+        default:
+          return c
       }
     })
   }
-
- // App.jsx
-const downloadKML = async (kmlContent, filename) => {
-  try {
-    console.log('Iniciando download...', filename);
-    
-    if (Capacitor.getPlatform() === 'web') {
-      // Lógica Web
-      const blob = new Blob([kmlContent], {
-        type: 'application/vnd.google-earth.kml+xml;charset=utf-8'
-      });
+  
+  // App.jsx
+  const downloadKML = async (kmlContent, filename) => {
+    try {
+      console.log('Iniciando download...', filename);
       
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      a.style.display = 'none';
-      
-      document.body.appendChild(a);
-      a.click();
-      
-      setTimeout(() => {
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }, 1000);
-    } else {
-      // Lógica Android/iOS
-      await Filesystem.writeFile({
-        path: filename,
-        data: kmlContent,
-        directory: Directory.Documents,
-        encoding: 'utf-8',
-      });
-      
-      showFeedback(
-  'Sucesso',
-  `Arquivo salvo em Documentos: ${filename}`,
-  'success'
-);
+      if (Capacitor.getPlatform() === 'web') {
+        // Lógica Web
+        const blob = new Blob([kmlContent], {
+          type: 'application/vnd.google-earth.kml+xml;charset=utf-8'
+        });
+        
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.style.display = 'none';
+        
+        document.body.appendChild(a);
+        a.click();
+        
+        setTimeout(() => {
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        }, 1000);
+      } else {
+        // Lógica Android/iOS
+        await Filesystem.writeFile({
+          path: filename,
+          data: kmlContent,
+          directory: Directory.Documents,
+          encoding: 'utf-8',
+        });
+        
+        showFeedback(
+          'Sucesso',
+          `Arquivo salvo em Documentos: ${filename}`,
+          'success'
+        );
+      }
+    } catch (error) {
+      console.error('Erro fatal no download:', error);
+      showFeedback('Erro', 'Erro ao salvar o arquivo. Verifique as permissões.', 'error');
     }
-  } catch (error) {
-    console.error('Erro fatal no download:', error);
-    showFeedback('Erro', 'Erro ao salvar o arquivo. Verifique as permissões.', 'error');
-  }
-};
-
+  };
+  
   const getRouteFromAPI = async (start, end) => {
     try {
       const response = await fetch(
@@ -2325,7 +2365,7 @@ const downloadKML = async (kmlContent, filename) => {
       return null
     }
   }
-
+  
   const calculateDistanceMatrix = async (coordinates) => {
     try {
       const coordsString = coordinates.map(c => `${c[0]},${c[1]}`).join(';')
@@ -2343,16 +2383,16 @@ const downloadKML = async (kmlContent, filename) => {
       return null
     }
   }
-
+  
   const handleCalculateDistance = async () => {
     if (selectedForDistance.length !== 2) {
       showFeedback('Erro', 'Selecione exatamente 2 marcadores', 'error');
       return
     }
-
+    
     setCalculatingRoute(true)
     const [m1, m2] = selectedForDistance
-
+    
     const route = await getRouteFromAPI([m1.lng, m1.lat], [m2.lng, m2.lat])
     
     if (route) {
@@ -2379,7 +2419,10 @@ const downloadKML = async (kmlContent, filename) => {
       })
     } else {
       const distance = calculateDistance(m1.lat, m1.lng, m2.lat, m2.lng)
-      setRouteCoordinates([[m1.lat, m1.lng], [m2.lat, m2.lng]])
+      setRouteCoordinates([
+        [m1.lat, m1.lng],
+        [m2.lat, m2.lng]
+      ])
       setDistanceResult({
         type: 'dois',
         distance: distance.toFixed(2),
@@ -2391,15 +2434,15 @@ const downloadKML = async (kmlContent, filename) => {
     setCalculatingRoute(false)
     setSidebarOpen(false)
   }
-
+  
   const handleCalculateAllDistances = async () => {
     if (markers.length < 2) {
       showFeedback('Erro', 'É necessário ter pelo menos 2 marcadores', 'error');
       return
     }
-
+    
     setCalculatingRoute(true)
-
+    
     const allCoordinates = markers.map(m => [m.lng, m.lat])
     
     try {
@@ -2450,13 +2493,13 @@ const downloadKML = async (kmlContent, filename) => {
     setCalculatingRoute(false)
     setSidebarOpen(false)
   }
-
+  
   const handleClearRoute = () => {
     setRouteCoordinates([])
     setDistanceResult(null)
     setSelectedForDistance([])
   }
-
+  
   const toggleMarkerSelection = (marker) => {
     if (marker === 'all') {
       if (selectedMarkers.length === markers.length) {
@@ -2476,17 +2519,17 @@ const downloadKML = async (kmlContent, filename) => {
       }
     })
   }
-
+  
   const handleBatchBairroUpdate = async (bairro) => {
     if (!bairro || selectedMarkers.length === 0) return;
-
+    
     try {
-      const updatedMarkers = markers.map(marker => 
-        selectedMarkers.some(selected => selected.id === marker.id) 
-          ? { ...marker, bairro }
-          : marker
+      const updatedMarkers = markers.map(marker =>
+        selectedMarkers.some(selected => selected.id === marker.id) ?
+        { ...marker, bairro } :
+        marker
       );
-
+      
       setMarkers(updatedMarkers);
       
       if (isOnline && user) {
@@ -2494,21 +2537,21 @@ const downloadKML = async (kmlContent, filename) => {
           await updateMarkerInSupabase({ ...marker, bairro });
         }
       }
-
+      
       setSelectedMarkers([]);
       setShowBatchBairroDialog(false);
       setShowMultipleSelection(false);
       showFeedback(
-  'Sucesso',
-  `${selectedMarkers.length} marcadores atualizados para o bairro ${bairro}`,
-  'success'
-);
+        'Sucesso',
+        `${selectedMarkers.length} marcadores atualizados para o bairro ${bairro}`,
+        'success'
+      );
     } catch (error) {
       console.error('Erro ao atualizar marcadores em massa:', error);
       showFeedback('Erro', 'Erro ao atualizar marcadores', 'error');
     }
   };
-
+  
   const toggleProjectSelection = (project) => {
     setSelectedProjects(prev => {
       const exists = prev.find(p => p.id === project.id);
@@ -2519,19 +2562,19 @@ const downloadKML = async (kmlContent, filename) => {
       }
     });
   };
-
+  
   const removeLoadedProject = (projectId) => {
     setLoadedProjects(prev => prev.filter(p => p.id !== projectId));
   };
-
+  
   const handleEditMarker = useCallback((marker) => {
     setEditingMarker(marker);
     setShowEditDialog(true);
   }, []);
-
+  
   const handleSaveEdit = async () => {
     if (!editingMarker) return
-
+    
     if (isOnline) {
       const success = await updateMarkerInSupabase(editingMarker)
       if (success) {
@@ -2548,10 +2591,10 @@ const downloadKML = async (kmlContent, filename) => {
       setEditingMarker(null)
     }
   }
-
+  
   const handleDeleteMarker = async () => {
     if (!editingMarker) return
-
+    
     if (confirm(`Deseja realmente deletar "${editingMarker.name}"?`)) {
       if (isOnline) {
         const success = await deleteMarkerFromSupabase(editingMarker.id)
@@ -2570,12 +2613,12 @@ const downloadKML = async (kmlContent, filename) => {
       }
     }
   }
-
+  
   const detectStreetName = async (lat, lng) => {
     try {
       const response = await axios.get(
         `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`,
-       
+        
       )
       
       if (response.data && response.data.address) {
@@ -2589,7 +2632,7 @@ const downloadKML = async (kmlContent, filename) => {
       return ''
     }
   }
-
+  
   const handleShareLocation = (marker) => {
     const url = `https://www.google.com/maps?q=${marker.lat},${marker.lng}`
     if (navigator.share) {
@@ -2603,12 +2646,12 @@ const downloadKML = async (kmlContent, filename) => {
       showFeedback('Sucesso', 'Link copiado para a área de transferência!', 'success');
     }
   }
-
+  
   const getMarkerCountByBairro = (bairro) => {
     if (bairro === 'todos') return markers.length
     return markers.filter(m => m.bairro === bairro).length
   }
-
+  
   const addManualPoint = async () => {
     if (!currentPosition || !tracking || paused) {
       return;
@@ -2629,7 +2672,7 @@ const downloadKML = async (kmlContent, filename) => {
     
     addPoint(finalPosition);
   }
-
+  
   // 1. ATUALIZE A FUNÇÃO addPoint
   const addPoint = (position) => {
     const newPoint = {
@@ -2650,46 +2693,46 @@ const downloadKML = async (kmlContent, filename) => {
       setSelectedStartPoint(newPoint);
     }
   }
-
+  
   // Substitua a função undoLastPoint existente por esta:
-const undoLastPoint = () => {
-  if (manualPoints.length > 0) {
-    // 1. Identifica o ponto que será removido
-    const pointToRemove = manualPoints[manualPoints.length - 1];
-    
-    // 2. Cria a nova lista sem ele
-    const newPoints = manualPoints.slice(0, -1);
-    
-    // 3. Atualiza a lista e a distância
-    setManualPoints(newPoints);
-    const newTotalDistance = calculateTotalDistanceWithBranches(newPoints);
-    setTotalDistance(newTotalDistance);
-    
-    // 4. CORREÇÃO DO TRAÇADO:
-    // Se o ponto removido era o "Ativo" (onde o próximo se conectaria),
-    // precisamos mover o "Ativo" para trás.
-    if (selectedStartPoint && selectedStartPoint.id === pointToRemove.id) {
-      if (newPoints.length > 0) {
-        // Tenta encontrar o "Pai" do ponto removido (para manter a lógica de ramificação)
-        const parentPoint = pointToRemove.connectedFrom ?
-          newPoints.find(p => p.id === pointToRemove.connectedFrom) :
-          null;
-        
-        // Se tiver pai, volta para o pai. Se não, volta para o último ponto da lista.
-        const newActivePoint = parentPoint || newPoints[newPoints.length - 1];
-        
-        setSelectedStartPoint(newActivePoint);
-        
-        // Feedback visual opcional
-        // console.log("Voltando conexão para:", newActivePoint.id);
-      } else {
-        // Se apagou tudo, reseta o ponto inicial
-        setSelectedStartPoint(null);
+  const undoLastPoint = () => {
+    if (manualPoints.length > 0) {
+      // 1. Identifica o ponto que será removido
+      const pointToRemove = manualPoints[manualPoints.length - 1];
+      
+      // 2. Cria a nova lista sem ele
+      const newPoints = manualPoints.slice(0, -1);
+      
+      // 3. Atualiza a lista e a distância
+      setManualPoints(newPoints);
+      const newTotalDistance = calculateTotalDistanceWithBranches(newPoints);
+      setTotalDistance(newTotalDistance);
+      
+      // 4. CORREÇÃO DO TRAÇADO:
+      // Se o ponto removido era o "Ativo" (onde o próximo se conectaria),
+      // precisamos mover o "Ativo" para trás.
+      if (selectedStartPoint && selectedStartPoint.id === pointToRemove.id) {
+        if (newPoints.length > 0) {
+          // Tenta encontrar o "Pai" do ponto removido (para manter a lógica de ramificação)
+          const parentPoint = pointToRemove.connectedFrom ?
+            newPoints.find(p => p.id === pointToRemove.connectedFrom) :
+            null;
+          
+          // Se tiver pai, volta para o pai. Se não, volta para o último ponto da lista.
+          const newActivePoint = parentPoint || newPoints[newPoints.length - 1];
+          
+          setSelectedStartPoint(newActivePoint);
+          
+          // Feedback visual opcional
+          // console.log("Voltando conexão para:", newActivePoint.id);
+        } else {
+          // Se apagou tudo, reseta o ponto inicial
+          setSelectedStartPoint(null);
+        }
       }
     }
-  }
-};
-
+  };
+  
   const pauseTracking = async () => {
     try {
       if (manualPoints.length > 0 && tracking && !paused) {
@@ -2701,11 +2744,11 @@ const undoLastPoint = () => {
       setPaused(!paused);
     }
   };
-
+  
   const toggleSnapping = () => {
     setSnappingEnabled(!snappingEnabled);
   };
-
+  
   const stopTracking = async () => {
     try {
       if (manualPoints.length > 0 && !showProjectDialog) {
@@ -2734,14 +2777,14 @@ const undoLastPoint = () => {
       setSpeed(0);
     }
   };
-
+  
   const clearManualPoints = () => {
     setManualPoints([])
     setTotalDistance(0)
     setCurrentProject(null)
     setSelectedStartPoint(null)
   }
-
+  
   const handleRemovePoints = () => {
     if (currentProject && confirm(`Tem certeza que deseja remover todos os pontos do projeto "${currentProject.name}"?`)) {
       setManualPoints([]);
@@ -2752,12 +2795,12 @@ const undoLastPoint = () => {
       setProjectName('');
     }
   };
-
+  
   const deleteProject = async (projectId) => {
     if (!confirm('Tem certeza que deseja deletar este projeto?')) {
       return;
     }
-
+    
     try {
       if (isOnline && user && !projectId.toString().startsWith('offline_')) {
         const { error } = await supabase
@@ -2765,10 +2808,10 @@ const undoLastPoint = () => {
           .delete()
           .eq('id', projectId)
           .eq('user_id', user.id);
-
+        
         if (error) throw error;
       }
-
+      
       const updatedProjects = projects.filter(p => p.id !== projectId);
       setProjects(updatedProjects);
       localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
@@ -2791,18 +2834,18 @@ const undoLastPoint = () => {
       showFeedback('Erro', 'Erro ao deletar projeto. Tente novamente.', 'error');
     }
   };
-
-const exportProjectAsKML = (project = currentProject) => {
-  if (!project) return;
   
-  // Pequeno delay para garantir que a UI não trave
-  setTimeout(() => {
-    // Cria a string de coordenadas para a linha única
-    const coordinatesString = project.points
-      .map(point => `${point.lng},${point.lat},0`)
-      .join('\n          ');
+  const exportProjectAsKML = (project = currentProject) => {
+    if (!project) return;
     
-    const kml = `<?xml version="1.0" encoding="UTF-8"?>
+    // Pequeno delay para garantir que a UI não trave
+    setTimeout(() => {
+      // Cria a string de coordenadas para a linha única
+      const coordinatesString = project.points
+        .map(point => `${point.lng},${point.lat},0`)
+        .join('\n          ');
+      
+      const kml = `<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2">
   <Document>
     <name>${escapeXml(project.name)}</name>
@@ -2837,20 +2880,20 @@ const exportProjectAsKML = (project = currentProject) => {
 
   </Document>
 </kml>`;
-    
-    const friendlyName = project.name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
-    downloadKML(kml, `projeto_${friendlyName}.kml`);
-  }, 100);
-};
-
+      
+      const friendlyName = project.name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+      downloadKML(kml, `projeto_${friendlyName}.kml`);
+    }, 100);
+  };
+  
   const handleBoundsAdjustedForMarkers = () => {
     setAdjustBoundsForMarkers(false);
   };
-
+  
   const handleBoundsAdjustedForProject = () => {
     setAdjustBoundsForProject(false);
   };
-
+  
   const centerMapOnUser = () => {
     if (currentPosition && mapRef.current) {
       mapRef.current.flyTo({
@@ -2862,21 +2905,21 @@ const exportProjectAsKML = (project = currentProject) => {
       showFeedback('Erro', 'Localização atual ainda não disponível.', 'error');
     }
   };
-
+  
   const handleARMode = async () => {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       showFeedback('Erro', 'Seu navegador não suporta acesso à câmera para realidade aumentada.', 'error');
       return;
     }
-
+    
     if (!currentPosition) {
       showFeedback('Erro', 'Aguardando localização GPS... Tente novamente em alguns segundos.', 'error');
       return;
     }
-
+    
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'environment' } 
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' }
       });
       
       stream.getTracks().forEach(track => track.stop());
@@ -2899,7 +2942,7 @@ const exportProjectAsKML = (project = currentProject) => {
       setArPermission('denied');
     }
   };
-
+  
   useEffect(() => {
     const handleBodyClick = (event) => {
       if (event.target.closest('button')?.textContent.includes('Exportar') ||
@@ -2915,7 +2958,7 @@ const exportProjectAsKML = (project = currentProject) => {
       document.body.removeEventListener('click', handleBodyClick)
     }
   }, [])
-
+  
   if (authLoading) {
     return (
       <div className="flex items-center justify-center h-screen bg-gradient-to-br from-slate-900 via-cyan-900 to-slate-900">
@@ -2926,11 +2969,11 @@ const exportProjectAsKML = (project = currentProject) => {
       </div>
     )
   }
-
+  
   if (!user) {
     return <Auth onAuthSuccess={(user) => setUser(user)} />
   }
-
+  
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-slate-900">
       <div className="absolute inset-0 z-0">
@@ -4142,6 +4185,15 @@ const exportProjectAsKML = (project = currentProject) => {
           </div>
         </DialogContent> 
       </Dialog>
+      
+      {/* NOVO DOCK DE FERRAMENTAS FUTURISTA */}
+<ToolsDock
+  active={tracking} // Se estiver rastreando, o dock some para dar lugar aos controles
+  onStartGPS={() => startTracking('gps')}
+  onStartTouch={() => startTracking('touch')}
+  onStartAR={handleARMode}
+  onNewProject={startNewProject}
+/>
 
       {tracking && showTrackingControls && (
         <ControlesRastreamento
