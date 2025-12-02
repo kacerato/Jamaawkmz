@@ -1,7 +1,7 @@
 import React from 'react';
 import { useState, useEffect, useRef, useCallback } from 'react'
 import Map, { Marker, Popup, Source, Layer, NavigationControl } from 'react-map-gl'
-import { Upload, MapPin, Ruler, X, Download, Share2, Edit2, Menu, LogOut, Heart, MapPinned, Layers, Play, Pause, Square, FolderOpen, Save, Navigation, Clock, Cloud, CloudOff, Archive, Camera, Plus, Star, LocateFixed, Info, Undo, FileText, MousePointerClick, CheckCircle, Users, Hash, RefreshCw } from 'lucide-react'
+import { Upload, MapPin, Ruler, X, Download, Share2, Edit2, Menu, LogOut, Heart, MapPinned, Layers, Play, Pause, Square, FolderOpen, Save, Navigation, Clock, Cloud, CloudOff, Archive, Camera, Plus, Star, LocateFixed, Info, Undo, FileText, MousePointerClick, CheckCircle, Users, Hash } from 'lucide-react'
 import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.jsx'
 import { Input } from '@/components/ui/input.jsx'
@@ -273,7 +273,7 @@ const PoleMarker = React.memo(({ point, index, color, onClick, isActive }) => {
 });
 
 // Novo componente otimizado para o Card do Projeto
-const ProjectCard = React.memo(({ project, isSelected, onToggle, onLoad, onEdit, onExport, onDelete, tracking, onShare }) => {
+const ProjectCard = React.memo(({ project, isSelected, onToggle, onLoad, onEdit, onExport, onDelete, tracking }) => {
   const distance = safeToFixed(((project.totalDistance || project.total_distance) || 0) / 1000, 2);
   const date = new Date(project.created_at || project.createdAt || Date.now()).toLocaleDateString('pt-BR');
 
@@ -336,23 +336,6 @@ const ProjectCard = React.memo(({ project, isSelected, onToggle, onLoad, onEdit,
             className="action-btn-mini w-8 px-0 text-blue-400 hover:bg-blue-500/10 hover:text-blue-300"
           >
             <Edit2 className="w-3.5 h-3.5" />
-          </Button>
-          
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={(e) => {
-              e.stopPropagation();
-              onShare(project);
-            }}
-            className="action-btn-mini w-8 px-0 text-purple-400 hover:bg-purple-500/10 hover:text-purple-300"
-            title={project.shared_id ? `Compartilhado: ${project.shared_id}` : "Compartilhar projeto"}
-          >
-            {project.shared_id ? (
-              <CheckCircle className="w-3.5 h-3.5" />
-            ) : (
-              <Share2 className="w-3.5 h-3.5" />
-            )}
           </Button>
           
           <Button
@@ -505,6 +488,8 @@ const TrackingPointPopupContent = ({ pointInfo, onClose, onSelectStart, selected
             </>
           )}
         </Button>
+
+        {/* DESCRIÇÃO REMOVIDA DAQUI */}
       </div>
     </div>
   );
@@ -589,15 +574,6 @@ function App() {
 
   // Novo estado para modo de entrada do rastreamento
   const [trackingInputMode, setTrackingInputMode] = useState('gps');
-
-  // Estados para compartilhamento
-  const [showShareDialog, setShowShareDialog] = useState(false);
-  const [shareMode, setShareMode] = useState('load'); // 'load' ou 'share'
-  const [shareCode, setShareCode] = useState('');
-  const [sharedProjects, setSharedProjects] = useState([]);
-  const [showSharedProjects, setShowSharedProjects] = useState(false);
-  const [isSharing, setIsSharing] = useState(false);
-  const [realtimeSubscription, setRealtimeSubscription] = useState(null);
 
   const kalmanLatRef = useRef(new KalmanFilter(0.1, 0.1));
   const kalmanLngRef = useRef(new KalmanFilter(0.1, 0.1));
@@ -827,48 +803,6 @@ const loadProjectsFromSupabase = async () => {
     setImportCurrentAction(action);
   };
 
-  // Função para gerar código de compartilhamento (6 caracteres maiúsculos)
-  const generateShareCode = () => {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let result = '';
-    for (let i = 0; i < 6; i++) {
-      result += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return result;
-  };
-
-  // Função para atualizar projeto compartilhado
-  const updateSharedProject = async (project, updates) => {
-    if (!project.shared_id || !user) return;
-
-    try {
-      // Atualizar projeto principal (com shared_id)
-      const { error } = await supabase
-        .from('projetos')
-        .update({
-          ...updates,
-          updated_at: new Date().toISOString()
-        })
-        .eq('shared_id', project.shared_id)
-        .eq('is_shared', true);
-
-      if (error) throw error;
-
-      // A atualização será propagada via Realtime para todos os usuários
-      console.log('Projeto compartilhado atualizado');
-      
-    } catch (error) {
-      console.error('Erro ao atualizar projeto compartilhado:', error);
-      // Fallback: atualizar apenas localmente
-      const updatedProjects = projects.map(p => 
-        p.shared_id === project.shared_id || p.id === project.id 
-          ? { ...p, ...updates } 
-          : p
-      );
-      setProjects(updatedProjects);
-    }
-  };
-
   const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
     let finalPoints = pointsToSave;
     
@@ -933,32 +867,21 @@ const loadProjectsFromSupabase = async () => {
         console.log('🔄 Atualizando projeto em edição:', editingProject.name);
         
         if (isOnline && user) {
-          const updateData = {
-            ...projectData,
-            updated_at: new Date().toISOString()
-          };
-
-          // Se o projeto é compartilhado, atualiza pelo shared_id
-          if (editingProject?.shared_id) {
-            await updateSharedProject(editingProject, updateData);
-            savedProject = { ...editingProject, ...projectData };
-          } else {
-            const { data, error } = await supabase
-              .from('projetos')
-              .update(projectData)
-              .eq('id', editingProject.id)
-              .eq('user_id', user.id)
-              .select();
-            
-            if (error) throw error;
-            
-            // Verificação de segurança: Se o RLS falhar ou usuário não tiver permissão, data vem vazio
-            if (!data || data.length === 0) {
-              throw new Error("Permissão negada ou projeto não encontrado para atualização.");
-            }
-            
-            savedProject = data[0];
+          const { data, error } = await supabase
+            .from('projetos')
+            .update(projectData)
+            .eq('id', editingProject.id)
+            .eq('user_id', user.id)
+            .select();
+          
+          if (error) throw error;
+          
+          // Verificação de segurança: Se o RLS falhar ou usuário não tiver permissão, data vem vazio
+          if (!data || data.length === 0) {
+            throw new Error("Permissão negada ou projeto não encontrado para atualização.");
           }
+          
+          savedProject = data[0];
         } else {
           savedProject = { ...editingProject, ...projectData };
         }
@@ -992,31 +915,20 @@ const loadProjectsFromSupabase = async () => {
         console.log('🔄 Atualizando projeto atual:', currentProject.name);
         
         if (isOnline && user) {
-          const updateData = {
-            ...projectData,
-            updated_at: new Date().toISOString()
-          };
-
-          // Se o projeto é compartilhado, atualiza pelo shared_id
-          if (currentProject?.shared_id) {
-            await updateSharedProject(currentProject, updateData);
-            savedProject = { ...currentProject, ...projectData };
-          } else {
-            const { data, error } = await supabase
-              .from('projetos')
-              .update(projectData)
-              .eq('id', currentProject.id)
-              .eq('user_id', user.id)
-              .select();
-            
-            if (error) throw error;
-            
-            if (!data || data.length === 0) {
-              throw new Error("Erro ao salvar: Retorno vazio do banco.");
-            }
-
-            savedProject = data[0];
+          const { data, error } = await supabase
+            .from('projetos')
+            .update(projectData)
+            .eq('id', currentProject.id)
+            .eq('user_id', user.id)
+            .select();
+          
+          if (error) throw error;
+          
+          if (!data || data.length === 0) {
+            throw new Error("Erro ao salvar: Retorno vazio do banco.");
           }
+
+          savedProject = data[0];
         } else {
           savedProject = { ...currentProject, ...projectData };
         }
@@ -1092,392 +1004,6 @@ const loadProjectsFromSupabase = async () => {
       if (!autoSave) {
         alert('Erro ao salvar projeto. Tente novamente.');
       }
-    }
-  };
-
-  // Função para compartilhar um projeto
-  const shareProject = async (project) => {
-    if (!user || !project) return;
-    
-    // Se já estiver compartilhado, apenas mostra o código
-    if (project.shared_id) {
-      setShareCode(project.shared_id);
-      setShareMode('share');
-      setShowShareDialog(true);
-      return;
-    }
-    
-    setIsSharing(true);
-    try {
-      // Gerar um ID único para compartilhamento
-      const sharedId = generateShareCode();
-      
-      const { error } = await supabase
-        .from('projetos')
-        .update({
-          shared_id: sharedId,
-          is_shared: true,
-          shared_with: [],
-          last_sync: new Date().toISOString()
-        })
-        .eq('id', project.id)
-        .eq('user_id', user.id);
-
-      if (error) throw error;
-
-      // Atualizar o projeto localmente
-      const updatedProject = {
-        ...project,
-        shared_id: sharedId,
-        is_shared: true
-      };
-
-      const updatedProjects = projects.map(p => 
-        p.id === project.id ? updatedProject : p
-      );
-      
-      setProjects(updatedProjects);
-      localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
-      
-      setShareCode(sharedId);
-      setShareMode('share');
-      setShowShareDialog(true);
-      
-      // Iniciar assinatura em tempo real
-      setupRealtimeSubscription(sharedId);
-      
-      alert(`Projeto compartilhado! Código: ${sharedId}`);
-      
-    } catch (error) {
-      console.error('Erro ao compartilhar projeto:', error);
-      alert('Erro ao compartilhar projeto. Verifique sua conexão.');
-    } finally {
-      setIsSharing(false);
-    }
-  };
-
-  // Função para carregar um projeto compartilhado
-  const loadSharedProject = async () => {
-    const code = shareCode.trim().toUpperCase();
-    
-    if (!code || code.length !== 6) {
-      alert('Digite um código válido de 6 caracteres');
-      return;
-    }
-    
-    if (!user) {
-      alert('Você precisa estar logado para carregar projetos compartilhados');
-      return;
-    }
-
-    setIsSharing(true);
-    try {
-      // Buscar projeto pelo código compartilhado
-      const { data, error } = await supabase
-        .from('projetos')
-        .select('*')
-        .eq('shared_id', code)
-        .eq('is_shared', true)
-        .maybeSingle();
-
-      if (error) throw error;
-      
-      if (!data) {
-        alert('Projeto não encontrado. Verifique o código.');
-        return;
-      }
-
-      // Verificar se já temos este projeto
-      const existingProject = projects.find(p => 
-        p.shared_id === code || p.original_shared_id === code
-      );
-      
-      if (existingProject) {
-        alert('Este projeto já está em sua lista');
-        return;
-      }
-
-      // Criar uma cópia local do projeto compartilhado
-      const newProject = {
-        ...data,
-        id: generateUUID(),
-        user_id: user.id,
-        name: `${data.name} (Compartilhado)`,
-        created_at: new Date().toISOString(),
-        is_shared: false,
-        shared_id: null,
-        original_shared_id: data.shared_id, // Mantém referência ao original
-        original_owner_id: data.user_id // Guarda quem criou originalmente
-      };
-
-      // Remover campos que não devem ser duplicados
-      delete newProject.updated_at;
-      delete newProject.created_at;
-
-      let savedProject;
-      
-      // Salvar a cópia no Supabase
-      try {
-        const { data: savedData, error: saveError } = await supabase
-          .from('projetos')
-          .insert([newProject])
-          .select()
-          .single();
-
-        if (saveError) throw saveError;
-        savedProject = savedData;
-      } catch (saveError) {
-        // Se falhar online, salva localmente
-        console.log('Salvando projeto compartilhado localmente...', saveError);
-        savedProject = newProject;
-      }
-
-      // Adicionar à lista de projetos
-      const updatedProjects = [...projects, savedProject];
-      setProjects(updatedProjects);
-      localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
-
-      // Adicionar aos projetos carregados
-      const projectWithColor = {
-        ...savedProject,
-        color: generateRandomColor(),
-        points: savedProject.points.map(point => ({
-          ...point,
-          projectId: savedProject.id,
-          projectName: savedProject.name
-        }))
-      };
-      
-      setLoadedProjects(prev => [...prev, projectWithColor]);
-
-      // Iniciar assinatura em tempo real
-      setupRealtimeSubscription(code);
-
-      alert('✅ Projeto carregado com sucesso!');
-      setShareCode('');
-      setShowShareDialog(false);
-
-    } catch (error) {
-      console.error('Erro ao carregar projeto compartilhado:', error);
-      alert('Erro ao carregar projeto. Tente novamente.');
-    } finally {
-      setIsSharing(false);
-    }
-  };
-
-  // Configurar assinatura em tempo real
-  const setupRealtimeSubscription = (sharedId) => {
-    if (!sharedId || !isOnline) return;
-
-    // Cancelar assinatura anterior se existir
-    if (realtimeSubscription) {
-      supabase.removeChannel(realtimeSubscription);
-    }
-
-    // Criar nova assinatura
-    const channel = supabase.channel(`shared:${sharedId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'projetos',
-          filter: `shared_id=eq.${sharedId}`
-        },
-        (payload) => {
-          console.log('Mudança detectada no projeto compartilhado:', payload);
-          
-          // Atualizar projetos locais
-          if (payload.new) {
-            setProjects(prev => prev.map(project => {
-              if (project.shared_id === sharedId || project.original_shared_id === sharedId) {
-                return { ...project, ...payload.new };
-              }
-              return project;
-            }));
-            
-            setLoadedProjects(prev => prev.map(project => {
-              if (project.shared_id === sharedId || project.original_shared_id === sharedId) {
-                return { 
-                  ...payload.new, 
-                  color: project.color || generateRandomColor() 
-                };
-              }
-              return project;
-            }));
-          }
-        }
-      )
-      .subscribe((status) => {
-        console.log(`Status da conexão realtime (${sharedId}):`, status);
-      });
-
-    setRealtimeSubscription(channel);
-  };
-
-  // Função para parar de compartilhar
-  const stopSharing = async (project) => {
-    if (!project || !project.shared_id) return;
-    
-    if (!confirm('Deseja parar de compartilhar este projeto?')) {
-      return;
-    }
-
-    try {
-      const { error } = await supabase
-        .from('projetos')
-        .update({
-          shared_id: null,
-          is_shared: false
-        })
-        .eq('id', project.id)
-        .eq('user_id', user.id);
-
-      if (error) throw error;
-
-      // Atualizar localmente
-      const updatedProjects = projects.map(p => 
-        p.id === project.id ? { ...p, shared_id: null, is_shared: false } : p
-      );
-      
-      setProjects(updatedProjects);
-      localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
-
-      // Remover da lista de compartilhados
-      setSharedProjects(prev => prev.filter(sp => sp.shared_id !== project.shared_id));
-
-      alert('Compartilhamento encerrado com sucesso!');
-      
-    } catch (error) {
-      console.error('Erro ao parar compartilhamento:', error);
-      alert('Erro ao parar compartilhamento');
-    }
-  };
-
-  // Função para sincronizar projeto compartilhado
-  const syncSharedProject = async (project) => {
-    if (!project || !project.original_shared_id) return;
-    
-    setIsSharing(true);
-    try {
-      // Buscar versão mais recente do projeto
-      const { data, error } = await supabase
-        .from('projetos')
-        .select('*')
-        .eq('shared_id', project.original_shared_id)
-        .single();
-
-      if (error) throw error;
-
-      // Atualizar projeto local
-      const updatedProject = {
-        ...project,
-        points: data.points,
-        total_distance: data.total_distance,
-        bairro: data.bairro,
-        updated_at: new Date().toISOString()
-      };
-
-      // Atualizar no Supabase
-      const { error: updateError } = await supabase
-        .from('projetos')
-        .update(updatedProject)
-        .eq('id', project.id);
-
-      if (updateError) throw updateError;
-
-      // Atualizar estado local
-      const updatedProjects = projects.map(p => 
-        p.id === project.id ? updatedProject : p
-      );
-      
-      setProjects(updatedProjects);
-      localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
-
-      alert('Projeto sincronizado com sucesso!');
-      
-    } catch (error) {
-      console.error('Erro ao sincronizar projeto:', error);
-      alert('Erro ao sincronizar projeto');
-    } finally {
-      setIsSharing(false);
-    }
-  };
-
-  const syncOfflineProjects = async () => {
-    if (!user || !isOnline) return;
-
-    try {
-      const savedProjects = localStorage.getItem('jamaaw_projects');
-      if (!savedProjects) return;
-
-      const projects = JSON.parse(savedProjects);
-      
-      // Filtra apenas projetos offline válidos
-      const offlineProjects = projects.filter(p => 
-        p && 
-        p.id && 
-        p.id.toString().startsWith('offline_') && 
-        p.name && 
-        p.points && 
-        Array.isArray(p.points)
-      );
-
-      console.log(`Sincronizando ${offlineProjects.length} projetos offline...`);
-
-      for (const project of offlineProjects) {
-        try {
-          // Verifica se o projeto já foi sincronizado (já existe online)
-          const { data: existingProject } = await supabase
-            .from('projetos')
-            .select('id')
-            .eq('user_id', user.id)
-            .eq('name', project.name)
-            .maybeSingle();
-
-          if (existingProject) {
-            console.log(`Projeto "${project.name}" já existe online, ignorando...`);
-            continue;
-          }
-
-          // Insere o projeto offline no Supabase
-          const { data, error } = await supabase
-            .from('projetos')
-            .insert([{
-              name: project.name,
-              points: project.points,
-              total_distance: project.totalDistance || project.total_distance || 0,
-              bairro: project.bairro || 'Vários',
-              tracking_mode: 'manual',
-              user_id: user.id
-            }])
-            .select()
-            .single();
-
-          if (error) throw error;
-
-          // Atualiza o ID local para o ID do Supabase
-          const updatedProjects = projects.map(p => {
-            if (p.id === project.id) {
-              return { ...data, color: p.color || generateRandomColor() };
-            }
-            return p;
-          });
-          
-          localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
-          setProjects(updatedProjects);
-
-          console.log(`✅ Projeto offline sincronizado: "${project.name}"`);
-
-        } catch (projectError) {
-          console.error(`❌ Erro ao sincronizar projeto "${project?.name}":`, projectError);
-        }
-        
-        // Pequeno delay para não sobrecarregar
-        await new Promise(resolve => setTimeout(resolve, 500));
-      }
-    } catch (error) {
-      console.error('❌ Erro geral na sincronização offline:', error);
     }
   };
 
@@ -1783,6 +1309,49 @@ const loadProjectsFromSupabase = async () => {
     } catch (error) {
       console.error('Erro ao deletar projeto do Supabase:', error);
       return false;
+    }
+  };
+
+  const syncOfflineProjects = async () => {
+    if (!user || !isOnline) return;
+
+    try {
+      const savedProjects = localStorage.getItem('jamaaw_projects');
+      if (!savedProjects) return;
+
+      const projects = JSON.parse(savedProjects);
+      const offlineProjects = projects.filter(p => p.id && p.id.toString().startsWith('offline_'));
+
+      for (const project of offlineProjects) {
+        try {
+          const { data, error } = await supabase
+            .from('projetos')
+            .insert([{
+              name: project.name,
+              points: project.points,
+              total_distance: project.totalDistance || project.total_distance,
+              bairro: project.bairro,
+              tracking_mode: 'manual',
+              user_id: user.id
+            }])
+            .select();
+
+          if (error) throw error;
+
+          const updatedProjects = projects.map(p => 
+            p.id === project.id ? data[0] : p
+          );
+          localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
+          setProjects(updatedProjects);
+
+          console.log('Projeto offline sincronizado:', project.name);
+          
+        } catch (projectError) {
+          console.error('Erro ao sincronizar projeto offline:', projectError);
+        }
+      }
+    } catch (error) {
+      console.error('Erro na sincronização offline:', error);
     }
   };
 
@@ -3210,47 +2779,6 @@ const exportProjectAsKML = (project = currentProject) => {
     }
   };
 
-  // Efeito para carregar projetos compartilhados
-  useEffect(() => {
-    const loadSharedProjects = async () => {
-      if (!user) return;
-      
-      try {
-        // Buscar projetos compartilhados do usuário
-        const { data, error } = await supabase
-          .from('projetos')
-          .select('*')
-          .eq('user_id', user.id)
-          .eq('is_shared', true);
-
-        if (error) throw error;
-
-        // Configurar subscriptions para cada projeto compartilhado
-        data.forEach(project => {
-          if (project.shared_id) {
-            setupRealtimeSubscription(project.shared_id);
-          }
-        });
-
-      } catch (error) {
-        console.error('Erro ao carregar projetos compartilhados:', error);
-      }
-    };
-
-    if (user && isOnline) {
-      loadSharedProjects();
-    }
-  }, [user, isOnline]);
-
-  // Efeito para limpar subscription ao desmontar
-  useEffect(() => {
-    return () => {
-      if (realtimeSubscription) {
-        supabase.removeChannel(realtimeSubscription);
-      }
-    };
-  }, [realtimeSubscription]);
-
   useEffect(() => {
     const handleBodyClick = (event) => {
       if (event.target.closest('button')?.textContent.includes('Exportar') ||
@@ -3719,19 +3247,6 @@ const exportProjectAsKML = (project = currentProject) => {
                   <Button
                     variant="ghost"
                     className="w-full justify-start text-white hover:bg-slate-700 h-12 menu-button"
-                    onClick={() => {
-                      setShareMode('load'); // Sempre abre no modo "carregar" pelo menu
-                      setShareCode('');
-                      setShowShareDialog(true);
-                    }}
-                  >
-                    <Share2 className="w-5 h-5 mr-3 text-purple-400" />
-                    Projetos Compartilhados
-                  </Button>
-
-                  <Button
-                    variant="ghost"
-                    className="w-full justify-start text-white hover:bg-slate-700 h-12 menu-button"
                     onClick={handleARMode}
                   >
                     <Camera className="w-5 h-5 mr-3 text-purple-400" />
@@ -3966,290 +3481,6 @@ const exportProjectAsKML = (project = currentProject) => {
         onBatchBairroUpdate={handleBatchBairroUpdate}
         bairros={bairros}
       />
-
-      {/* Diálogo de Compartilhamento */}
-      <Dialog open={showShareDialog} onOpenChange={(open) => {
-        setShowShareDialog(open);
-        if (!open) {
-          setShareMode('load');
-          setShareCode('');
-        }
-      }}>
-        <DialogContent className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white border-slate-700/50 max-w-md shadow-2xl">
-          <DialogHeader>
-            <DialogTitle className="text-cyan-400 text-xl font-bold flex items-center gap-2">
-              <Share2 className="w-5 h-5" />
-              {shareMode === 'share' ? 'Compartilhar Projeto' : 'Carregar Projeto Compartilhado'}
-            </DialogTitle>
-            <DialogDescription className="text-gray-400 text-sm">
-              {shareMode === 'share' 
-                ? 'Compartilhe este código com outras pessoas' 
-                : 'Cole o código de 6 dígitos para carregar um projeto'}
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4">
-            {shareMode === 'share' ? (
-              <>
-                <div className="bg-slate-800/50 p-4 rounded-lg border border-slate-700">
-                  <div className="text-center mb-3">
-                    <div className="text-xs text-gray-400 mb-1">Código do Projeto</div>
-                    <div className="text-2xl font-mono font-bold text-cyan-400 tracking-wider bg-slate-900 p-3 rounded">
-                      {shareCode}
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <p className="text-sm text-gray-300">
-                      Compartilhe este código com outras pessoas para que elas possam acessar e atualizar o projeto em tempo real.
-                    </p>
-                    <p className="text-xs text-gray-400">
-                      As alterações serão sincronizadas automaticamente entre todos os usuários.
-                    </p>
-                  </div>
-                </div>
-                
-                <div className="flex gap-2">
-                  <Button
-                    onClick={() => {
-                      navigator.clipboard.writeText(shareCode);
-                      alert('Código copiado para a área de transferência!');
-                    }}
-                    className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600"
-                  >
-                    <FileText className="w-4 h-4 mr-2" />
-                    Copiar Código
-                  </Button>
-                  <Button
-                    onClick={() => {
-                      setShareMode('load');
-                      setShareCode('');
-                    }}
-                    variant="outline"
-                    className="border-slate-700 text-gray-400 hover:text-white"
-                  >
-                    Carregar Outro
-                  </Button>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="space-y-4">
-                  <div>
-                    <Label className="text-gray-300 font-medium">Código do Projeto (6 dígitos)</Label>
-                    <div className="flex gap-2 mt-2">
-                      <Input
-                        value={shareCode}
-                        onChange={(e) => {
-                          const value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
-                          setShareCode(value.slice(0, 6));
-                        }}
-                        placeholder="Ex: ABC123"
-                        className="bg-slate-800/50 border-slate-700 text-white text-center text-lg tracking-wider flex-1"
-                      />
-                    </div>
-                    <p className="text-xs text-gray-400 mt-2">
-                      Digite o código de 6 letras/números que você recebeu
-                    </p>
-                  </div>
-                  
-                  <div className="flex gap-2">
-                    <Button
-                      onClick={loadSharedProject}
-                      disabled={!shareCode || shareCode.length !== 6 || isSharing}
-                      className="flex-1 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700"
-                    >
-                      {isSharing ? (
-                        <>
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                          Carregando...
-                        </>
-                      ) : (
-                        <>
-                          <FolderOpen className="w-4 h-4 mr-2" />
-                          Carregar Projeto
-                        </>
-                      )}
-                    </Button>
-                    <Button
-                      onClick={() => {
-                        setShareMode('share');
-                        setShareCode('');
-                      }}
-                      variant="outline"
-                      className="border-slate-700 text-gray-400 hover:text-white"
-                    >
-                      Compartilhar Meu
-                    </Button>
-                  </div>
-                </div>
-                
-                <div className="pt-4 border-t border-slate-700/50">
-                  <Button
-                    onClick={() => setShowSharedProjects(true)}
-                    className="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
-                  >
-                    <Users className="w-4 h-4 mr-2" />
-                    Ver Meus Projetos Compartilhados
-                  </Button>
-                </div>
-              </>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Diálogo de Projetos Compartilhados */}
-      <Dialog open={showSharedProjects} onOpenChange={setShowSharedProjects}>
-        <DialogContent className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white border-slate-700/50 w-[95vw] max-w-2xl shadow-2xl max-h-[80vh] overflow-hidden">
-          <DialogHeader>
-            <DialogTitle className="text-cyan-400 text-xl font-bold flex items-center gap-2">
-              <Users className="w-5 h-5" />
-              Projetos Compartilhados
-            </DialogTitle>
-            <DialogDescription className="text-gray-400 text-sm">
-              Projetos que você compartilhou ou que foram compartilhados com você
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="max-h-[60vh] overflow-y-auto custom-scrollbar">
-            <div className="space-y-3">
-              {/* Seção: Projetos que você compartilhou */}
-              <div className="bg-slate-800/30 rounded-lg p-4 border border-slate-700/50">
-                <h3 className="text-sm font-medium text-cyan-400 mb-3 flex items-center gap-2">
-                  <Share2 className="w-4 h-4" />
-                  Compartilhados por Você
-                </h3>
-                
-                {projects.filter(p => p.shared_id).length === 0 ? (
-                  <div className="text-center py-6 text-gray-500">
-                    <Share2 className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                    <p>Você ainda não compartilhou nenhum projeto</p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {projects.filter(p => p.shared_id).map(project => (
-                      <div key={project.id} className="flex items-center justify-between p-3 bg-slate-800/50 rounded-lg hover:bg-slate-800/70">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="text-white font-medium truncate">{project.name}</span>
-                            <span className="text-xs text-cyan-400 bg-cyan-400/10 px-2 py-0.5 rounded">
-                              Ativo
-                            </span>
-                          </div>
-                          <div className="text-xs text-gray-400 flex items-center gap-3">
-                            <span>{project.points?.length || 0} pontos</span>
-                            <span>•</span>
-                            <span>Código: {project.shared_id}</span>
-                          </div>
-                        </div>
-                        
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            onClick={() => {
-                              navigator.clipboard.writeText(project.shared_id);
-                              alert('Código copiado!');
-                            }}
-                            className="text-xs h-7 bg-slate-700 hover:bg-slate-600"
-                          >
-                            <FileText className="w-3 h-3 mr-1" />
-                            Copiar
-                          </Button>
-                          <Button
-                            size="sm"
-                            onClick={() => stopSharing(project)}
-                            className="text-xs h-7 bg-red-500/20 text-red-400 hover:bg-red-500/30"
-                          >
-                            <X className="w-3 h-3" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              
-              {/* Seção: Projetos compartilhados com você */}
-              <div className="bg-slate-800/30 rounded-lg p-4 border border-slate-700/50">
-                <h3 className="text-sm font-medium text-green-400 mb-3 flex items-center gap-2">
-                  <Users className="w-4 h-4" />
-                  Compartilhados com Você
-                </h3>
-                
-                {projects.filter(p => p.original_shared_id).length === 0 ? (
-                  <div className="text-center py-6 text-gray-500">
-                    <Users className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                    <p>Nenhum projeto compartilhado com você</p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {projects.filter(p => p.original_shared_id).map(project => (
-                      <div key={project.id} className="flex items-center justify-between p-3 bg-slate-800/50 rounded-lg hover:bg-slate-800/70">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="text-white font-medium truncate">{project.name}</span>
-                            <span className="text-xs text-green-400 bg-green-400/10 px-2 py-0.5 rounded">
-                              Sincronizado
-                            </span>
-                          </div>
-                          <div className="text-xs text-gray-400">
-                            Original: {project.original_shared_id}
-                          </div>
-                        </div>
-                        
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            onClick={() => syncSharedProject(project)}
-                            disabled={isSharing}
-                            className="text-xs h-7 bg-green-500/20 text-green-400 hover:bg-green-500/30"
-                          >
-                            {isSharing ? (
-                              <>Atualizando...</>
-                            ) : (
-                              <>
-                                <RefreshCw className="w-3 h-3 mr-1" />
-                                Sincronizar
-                              </>
-                            )}
-                          </Button>
-                          <Button
-                            size="sm"
-                            onClick={() => loadProject(project)}
-                            className="text-xs h-7 bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30"
-                          >
-                            <Play className="w-3 h-3" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-          
-          <div className="flex gap-2 pt-4 border-t border-slate-700/50">
-            <Button
-              onClick={() => setShowSharedProjects(false)}
-              className="flex-1 bg-gradient-to-r from-gray-500 to-slate-600 hover:from-gray-600 hover:to-slate-700"
-            >
-              Fechar
-            </Button>
-            <Button
-              onClick={() => {
-                setShowSharedProjects(false);
-                setShowShareDialog(true);
-              }}
-              className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600"
-            >
-              <Share2 className="w-4 h-4 mr-2" />
-              Compartilhar Novo
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
 
       {!tracking && showRulerPopup && (
         <div className="absolute top-20 right-4 z-10">
@@ -4549,7 +3780,6 @@ const exportProjectAsKML = (project = currentProject) => {
               }}
               onExport={exportProjectAsKML}
               onDelete={deleteProject}
-              onShare={shareProject}
               tracking={tracking}
             />
           ))}
