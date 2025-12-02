@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input.jsx'
 import { Label } from '@/components/ui/label.jsx'
 import { Textarea } from '@/components/ui/textarea.jsx'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select.jsx'
+import ProjectManager from './components/ProjectManager';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet.jsx'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog.jsx'
 import { supabase } from './lib/supabase'
@@ -580,30 +581,49 @@ function App() {
 
   const totalDistanceAllProjects = calculateTotalDistanceAllProjects(projects);
 
-  // FUNÇÃO ATUALIZADA: Carregar projetos do Supabase (sem compartilhados)
+// Dentro do componente App
 const loadProjectsFromSupabase = async () => {
   if (!user) return [];
-  
   try {
-    const { data, error } = await supabase
+    // 1. Busca meus projetos
+    const { data: myProjects, error: err1 } = await supabase
       .from('projetos')
       .select('*')
-      .eq('user_id', user.id)
-      .order('updated_at', { ascending: false });
+      .eq('user_id', user.id);
     
-    if (error) throw error;
+    if (err1) throw err1;
     
-    // Salva também no localStorage como backup
-    if (data && data.length > 0) {
-      localStorage.setItem('jamaaw_projects', JSON.stringify(data));
+    // 2. Busca projetos onde sou membro
+    const { data: memberData, error: err2 } = await supabase
+      .from('project_members')
+      .select('project_id')
+      .eq('user_id', user.id);
+    
+    if (err2) throw err2;
+    
+    let sharedProjects = [];
+    if (memberData && memberData.length > 0) {
+      const ids = memberData.map(m => m.project_id);
+      const { data: shared, error: err3 } = await supabase
+        .from('projetos')
+        .select('*')
+        .in('id', ids);
+      
+      if (err3) throw err3;
+      sharedProjects = shared;
     }
     
-    return data || [];
+    const allProjects = [...(myProjects || []), ...(sharedProjects || [])];
+    
+    // Ordena por data
+    allProjects.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+    
+    localStorage.setItem('jamaaw_projects', JSON.stringify(allProjects));
+    return allProjects;
+    
   } catch (error) {
     console.error('Erro ao carregar projetos:', error);
-    // Fallback para localStorage
-    const localProjects = localStorage.getItem('jamaaw_projects');
-    return localProjects ? JSON.parse(localProjects) : [];
+    return JSON.parse(localStorage.getItem('jamaaw_projects') || '[]');
   }
 };
 
@@ -660,6 +680,48 @@ const loadProjectsFromSupabase = async () => {
       console.log('Lista de projetos atualizada com novos bairros.');
     }
   };
+  
+  // Efeito de Realtime para o projeto ATUAL
+useEffect(() => {
+  if (!currentProject || !isOnline) return;
+
+  const channel = supabase
+    .channel(`project-tracking-${currentProject.id}`)
+    .on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'projetos',
+        filter: `id=eq.${currentProject.id}`
+      },
+      (payload) => {
+        console.log("⚡ Atualização Realtime recebida:", payload);
+        
+        const updatedProject = payload.new;
+        
+        // Se eu sou quem editou, ignora (já atualizei localmente)
+        // (Isso evita glitches visuais, embora não seja estritamente necessário se o estado for bem gerenciado)
+        
+        // Atualiza estado do projeto atual
+        setCurrentProject(prev => ({ ...prev, ...updatedProject }));
+        
+        // Se estiver rastreando e os pontos mudarem externamente, atualiza manualPoints
+        if (updatedProject.points) {
+           setManualPoints(updatedProject.points);
+           setTotalDistance(updatedProject.total_distance);
+        }
+
+        // Atualiza na lista geral também
+        setProjects(prev => prev.map(p => p.id === updatedProject.id ? updatedProject : p));
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}, [currentProject?.id, isOnline]);
 
   // Efeito para rodar a detecção quando abrir a lista de projetos
   useEffect(() => {
@@ -1702,207 +1764,49 @@ const loadProjectsFromSupabase = async () => {
     }
   }
 
-  const handleProjectImport = async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
+  const handleJoinProject = async (projectId) => {
+  if (!user || !isOnline) {
+    alert("Você precisa estar online para importar projetos.");
+    return;
+  }
+  
+  try {
+    // Verifica se o projeto existe
+    const { data: project, error: fetchError } = await supabase
+      .from('projetos')
+      .select('id, name')
+      .eq('id', projectId)
+      .single();
     
-    setImportProgress(0);
-    setImportCurrentStep(1);
-    setImportTotalSteps(5);
-    setImportCurrentAction('Iniciando importação...');
-    setImportSuccess(false);
-    setImportError(null);
-    setShowImportProgress(true);
-    
-    try {
-      setUploading(true);
-      
-      const fileName = file.name.toLowerCase();
-      if (!fileName.endsWith('.kml') && !fileName.endsWith('.kmz')) {
-        throw new Error('Por favor, selecione um arquivo KML ou KMZ válido.');
-      }
-      
-      updateImportProgress(10, 1, 'Lendo arquivo...');
-      
-      let kmlText;
-      
-      if (fileName.endsWith('.kmz')) {
-        updateImportProgress(20, 2, 'Extraindo KML do arquivo KMZ...');
-        
-        // Garante que funcione tanto em desenvolvimento quanto após o build (produção)
-const zip = new(JSZip.default || JSZip)();
-        const contents = await zip.loadAsync(file);
-        const kmlFile = Object.keys(contents.files).find(name => name.toLowerCase().endsWith('.kml'));
-        if (!kmlFile) {
-          throw new Error('Arquivo KML não encontrado no KMZ');
-        }
-        kmlText = await contents.files[kmlFile].async('text');
-      } else {
-        updateImportProgress(30, 2, 'Lendo arquivo KML...');
-        kmlText = await file.text();
-      }
-      
-      updateImportProgress(50, 3, 'Analisando estrutura do KML...');
-      
-      const parser = new DOMParser();
-      const xmlDoc = parser.parseFromString(kmlText, 'text/xml');
-      
-      const parseError = xmlDoc.getElementsByTagName('parsererror');
-      if (parseError.length > 0) {
-        throw new Error('Arquivo KML inválido ou malformado');
-      }
-      
-      const nameElement = xmlDoc.getElementsByTagName('name')[0];
-      let projectName = nameElement?.textContent || `Projeto Importado ${new Date().toLocaleDateString('pt-BR')}`;
-      
-      updateImportProgress(60, 4, 'Verificando nome do projeto...');
-      
-      const existingProject = projects.find(p => p.name === projectName);
-      let shouldOverwrite = false;
-      
-      if (existingProject) {
-        setImportCurrentAction('Projeto com nome duplicado encontrado...');
-        
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
-        shouldOverwrite = window.confirm(`Já existe um projeto com o nome "${projectName}". Deseja sobrescrever? Clique em "OK" para sobrescrever ou "Cancelar" para usar um nome diferente.`);
-        
-        if (!shouldOverwrite) {
-          const suggestedName = getUniqueProjectName(projectName, projects);
-          const newName = prompt('Digite um novo nome para o projeto:', suggestedName);
-          if (newName && newName.trim()) {
-            projectName = newName.trim();
-          } else {
-            throw new Error('Operação cancelada pelo usuário.');
-          }
-        }
-      }
-      
-      updateImportProgress(70, 4, 'Extraindo pontos geográficos...');
-      
-      const points = [];
-      
-      const lineStrings = xmlDoc.getElementsByTagName('LineString');
-      if (lineStrings.length > 0) {
-        for (let i = 0; i < lineStrings.length; i++) {
-          const coordinates = lineStrings[i].getElementsByTagName('coordinates')[0]?.textContent;
-          if (coordinates) {
-            const coordList = coordinates.trim().split(/\s+/);
-            
-            const batchSize = 100;
-            for (let j = 0; j < coordList.length; j += batchSize) {
-              const batch = coordList.slice(j, j + batchSize);
-              batch.forEach(coord => {
-                const [lng, lat] = coord.split(',').map(Number);
-                if (!isNaN(lat) && !isNaN(lng)) {
-                  points.push({
-                    lat,
-                    lng,
-                    id: generateUUID(), // UUID aqui
-                    timestamp: Date.now()
-                  });
-                }
-              });
-              
-              const progress = 70 + (i / lineStrings.length) * 20;
-              updateImportProgress(progress, 4, `Processando traçado ${i + 1}/${lineStrings.length}...`);
-              
-              if (batch.length > 0) {
-                await new Promise(resolve => setTimeout(resolve, 10));
-              }
-            }
-          }
-        }
-      }
-      
-      if (points.length === 0) {
-        const placemarks = xmlDoc.getElementsByTagName('Placemark');
-        const totalPlacemarks = placemarks.length;
-        
-        for (let i = 0; i < totalPlacemarks; i++) {
-          const placemark = placemarks[i];
-          const coordinates = placemark.getElementsByTagName('coordinates')[0]?.textContent;
-          
-          if (coordinates) {
-            const [lng, lat] = coordinates.split(',').map(Number);
-            if (!isNaN(lat) && !isNaN(lng)) {
-              points.push({
-                lat,
-                lng,
-                id: generateUUID(), // UUID aqui também
-                timestamp: Date.now()
-              });
-            }
-          }
-          
-          const progress = 70 + (i / totalPlacemarks) * 20;
-          updateImportProgress(progress, 4, `Processando marcadores ${i + 1}/${totalPlacemarks}...`);
-          
-          if (i % 50 === 0) {
-            await new Promise(resolve => setTimeout(resolve, 10));
-          }
-        }
-      }
-      
-      if (points.length === 0) {
-        throw new Error('Nenhum ponto válido encontrado no arquivo KML');
-      }
-      
-      updateImportProgress(90, 5, 'Finalizando importação...');
-      
-      const totalDistance = calculateTotalDistance(points);
-      
-      const project = {
-        id: `imported_${Date.now()}`,
-        name: projectName,
-        points: points,
-        totalDistance: totalDistance,
-        total_distance: totalDistance,
-        bairro: 'Importado',
-        tracking_mode: 'manual',
-        created_at: new Date().toISOString(),
-        description: `Projeto importado de ${file.name}`
-      };
-      
-      if (isValidProject(project)) {
-        let updatedProjects;
-        
-        if (existingProject && shouldOverwrite) {
-          updatedProjects = projects.map(p => 
-            p.id === existingProject.id ? project : p
-          );
-        } else {
-          updatedProjects = [...projects, project];
-        }
-        
-        setProjects(updatedProjects);
-        localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
-        
-        updateImportProgress(100, 5, 'Importação concluída!');
-        setImportSuccess(true);
-        
-        setTimeout(() => {
-          loadProject(project);
-          setTimeout(() => {
-            setShowImportProgress(false);
-          }, 2000);
-        }, 1500);
-        
-      } else {
-        throw new Error('Projeto inválido após importação');
-      }
-      
-    } catch (error) {
-      console.error('Erro ao importar projeto KML:', error);
-      setImportError(error.message);
-      setImportProgress(100);
-    } finally {
-      setUploading(false);
-      if (event.target) {
-        event.target.value = '';
-      }
+    if (fetchError || !project) {
+      alert("Projeto não encontrado. Verifique o ID.");
+      return;
     }
-  };
+    
+    // Adiciona o usuário como membro
+    const { error: joinError } = await supabase
+      .from('project_members')
+      .insert([
+        { project_id: projectId, user_id: user.id }
+      ]);
+    
+    if (joinError) {
+      if (joinError.code === '23505') { // Código de duplicidade no Postgres
+        alert("Você já tem este projeto na sua lista!");
+      } else {
+        throw joinError;
+      }
+    } else {
+      alert(`Projeto "${project.name}" adicionado com sucesso!`);
+      // Recarrega a lista
+      const updatedList = await loadProjectsFromSupabase();
+      setProjects(updatedList);
+    }
+  } catch (error) {
+    console.error("Erro ao importar:", error);
+    alert("Erro ao importar projeto.");
+  }
+};
 
   const handleFileImport = async (event) => {
     const file = event.target.files[0];
@@ -3696,121 +3600,20 @@ const exportProjectAsKML = (project = currentProject) => {
         </div>
       )}
 
-    <Dialog open={showProjectsList} onOpenChange={setShowProjectsList}>
-  <DialogContent className="bg-slate-900/95 backdrop-blur-md text-white border-slate-700/50 w-[95vw] max-w-4xl mx-auto shadow-2xl max-h-[85vh] overflow-hidden fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[10000] p-0 gap-0 rounded-xl flex flex-col">
-    
-    <div className="p-4 border-b border-slate-800 bg-slate-900/50 z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-      <div>
-        <DialogTitle className="text-cyan-400 text-xl font-bold flex items-center gap-2">
-          <FolderOpen className="w-5 h-5" />
-          Meus Projetos
-          <span className="text-slate-500 text-sm font-normal ml-2">({projects.length})</span>
-        </DialogTitle>
-        <DialogDescription className="text-gray-400 text-xs mt-1">
-          Gerencie seus traçados salvos
-        </DialogDescription>
-      </div>
-
-      {projects.length > 0 && (
-        <div className="flex items-center gap-2 bg-slate-800/50 p-1.5 rounded-lg border border-slate-700/50">
-          <div className="px-3 text-xs text-gray-400 border-r border-slate-700 mr-1">
-            {selectedProjects.length} <span className="hidden sm:inline">selecionados</span>
-          </div>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={loadMultipleProjects}
-            disabled={selectedProjects.length === 0 || tracking}
-            className="h-7 text-xs text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10"
-            title="Carregar Selecionados"
-          >
-            <Play className="w-3 h-3 mr-1.5" /> Carregar
-          </Button>
-          <div className="w-px h-4 bg-slate-700 mx-1"></div>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={deleteMultipleProjects}
-            disabled={selectedProjects.length === 0}
-            className="h-7 text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10"
-            title="Excluir Selecionados"
-          >
-            <X className="w-3 h-3 mr-1.5" /> Excluir
-          </Button>
-        </div>
-      )}
-    </div>
-
-    <div className="flex-1 overflow-y-auto custom-scrollbar bg-slate-950/30">
-      {projects.length === 0 ? (
-        <div className="flex flex-col items-center justify-center h-64 text-center p-6">
-          <div className="w-16 h-16 bg-slate-800/50 rounded-full flex items-center justify-center mb-4 border border-slate-700">
-            <FolderOpen className="w-8 h-8 text-slate-600" />
-          </div>
-          <h3 className="text-lg font-medium text-slate-400">Nenhum projeto ainda</h3>
-          <p className="text-slate-500 text-sm mt-2 max-w-xs">
-            Inicie um rastreamento manual e salve-o para vê-lo aqui.
-          </p>
-          <Button
-            onClick={() => {
-              setShowProjectsList(false);
-              setShowRulerPopup(true);
-            }}
-            className="mt-6 bg-cyan-500 hover:bg-cyan-600 text-white"
-          >
-            Criar Novo Projeto
-          </Button>
-        </div>
-      ) : (
-        <div className="projects-grid-container">
-          {projects.map(project => (
-            <ProjectCard
-              key={project.id}
-              project={project}
-              isSelected={selectedProjects.some(p => p.id === project.id)}
-              onToggle={toggleProjectSelection}
-              onLoad={(p) => {
-                loadProject(p);
-                setShowProjectsList(false); // Fecha o modal imediatamente
-              }}
-              onEdit={(p) => {
-                setEditingProject(p);
-                setProjectName(p.name);
-                setShowProjectDialog(true);
-              }}
-              onExport={exportProjectAsKML}
-              onDelete={deleteProject}
-              tracking={tracking}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-    
-    <div className="p-3 bg-slate-900 border-t border-slate-800 flex gap-3">
-      <Button
-        variant="outline"
-        onClick={() => {
-          setShowProjectsList(false);
-          setSelectedProjects([]);
-        }}
-        className="flex-1 border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
-      >
-        Fechar
-      </Button>
-      <Button
-        onClick={() => {
-          setShowProjectsList(false);
-          setShowRulerPopup(true);
-        }}
-        className="flex-1 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white border-0"
-      >
-        <Plus className="w-4 h-4 mr-2" />
-        Novo Projeto
-      </Button>
-    </div>
-  </DialogContent>
-</Dialog>
+    { /* Substituir o bloco antigo do Dialog de projetos por este: */ }
+<ProjectManager
+  isOpen={showProjectsList}
+  onClose={() => setShowProjectsList(false)}
+  projects={projects}
+  currentUserId={user?.id}
+  onLoadProject={(p) => {
+    loadProject(p);
+    setShowProjectsList(false);
+  }}
+  onDeleteProject={deleteProject}
+  onExportProject={exportProjectAsKML}
+  onJoinProject={handleJoinProject}
+/>
 
       <Dialog open={showLoadedProjects} onOpenChange={setShowLoadedProjects}>
         <DialogContent className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white border-slate-700/50 w-[95vw] max-w-2xl mx-auto shadow-2xl max-h-[80vh] overflow-hidden fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[10000]">
