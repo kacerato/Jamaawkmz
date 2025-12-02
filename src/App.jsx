@@ -1,7 +1,13 @@
 import React from 'react';
 import { useState, useEffect, useRef, useCallback } from 'react'
 import Map, { Marker, Popup, Source, Layer, NavigationControl } from 'react-map-gl'
-import { Upload, MapPin, Ruler, X, Download, Share2, Edit2, Menu, LogOut, Heart, MapPinned, Layers, Play, Pause, Square, FolderOpen, Save, Navigation, Clock, Cloud, CloudOff, Archive, Camera, Plus, Star, LocateFixed, Info, Undo, FileText, MousePointerClick, CheckCircle, Users, Hash } from 'lucide-react'
+import { 
+  Upload, MapPin, Ruler, X, Download, Share2, Edit2, Menu, LogOut, 
+  Heart, MapPinned, Layers, Play, Pause, Square, FolderOpen, Save, 
+  Navigation, Clock, Cloud, CloudOff, Archive, Camera, Plus, Star, 
+  LocateFixed, Info, Undo, FileText, MousePointerClick, CheckCircle, 
+  Users, Hash, ArrowRight // <--- ADICIONE ESTE AQUI
+} from 'lucide-react'
 import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.jsx'
 import GlowNotification from './components/GlowNotification';
