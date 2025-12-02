@@ -4,6 +4,7 @@ import Map, { Marker, Popup, Source, Layer, NavigationControl } from 'react-map-
 import { Upload, MapPin, Ruler, X, Download, Share2, Edit2, Menu, LogOut, Heart, MapPinned, Layers, Play, Pause, Square, FolderOpen, Save, Navigation, Clock, Cloud, CloudOff, Archive, Camera, Plus, Star, LocateFixed, Info, Undo, FileText, MousePointerClick, CheckCircle, Users, Hash } from 'lucide-react'
 import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.jsx'
+import GlowNotification from './components/GlowNotification';
 import { Input } from '@/components/ui/input.jsx'
 import { Label } from '@/components/ui/label.jsx'
 import { Textarea } from '@/components/ui/textarea.jsx'
@@ -314,7 +315,7 @@ const ProjectCard = React.memo(({ project, isSelected, onToggle, onLoad, onEdit,
           size="sm"
           onClick={() => {
             if (tracking) {
-              alert('Pare o rastreamento atual primeiro.');
+              showFeedback('Erro', 'Pare o rastreamento atual primeiro.', 'error');
               return;
             }
             onLoad(project);
@@ -550,6 +551,8 @@ function App() {
   const [loadedProjects, setLoadedProjects] = useState([]);
   const [showLoadedProjects, setShowLoadedProjects] = useState(false);
   const [pointPopupInfo, setPointPopupInfo] = useState(null);
+  
+  const [notification, setNotification] = useState(null);
 
   const [popupMarker, setPopupMarker] = useState(null);
   const [adjustBoundsForMarkers, setAdjustBoundsForMarkers] = useState(false);
@@ -732,8 +735,8 @@ useEffect(() => {
 
   const selectPointAsStart = (point) => {
     setSelectedStartPoint(point);
-    alert(`Ponto selecionado como novo início! Novos pontos serão conectados a partir daqui.`);
-  };
+    showFeedback('Sucesso', 'Ponto selecionado como novo início! Novos pontos serão conectados a partir daqui.', 'success');
+};
 
   const resetStartPoint = () => {
     setSelectedStartPoint(null);
@@ -741,7 +744,7 @@ useEffect(() => {
   
   const deleteMultipleProjects = async () => {
   if (selectedProjects.length === 0) {
-    alert('Nenhum projeto selecionado para excluir.');
+    showFeedback('Erro', 'Nenhum projeto selecionado para excluir.', 'error');
     return;
   }
 
@@ -778,11 +781,15 @@ useEffect(() => {
 
     setSelectedProjects([]);
 
-    alert(`${selectedProjects.length} projeto(s) excluído(s) com sucesso!`);
+    showFeedback(
+  'Sucesso',
+  `${selectedProjects.length} projeto(s) excluído(s) com sucesso!`,
+  'success'
+);
     
   } catch (error) {
     console.error('Erro ao excluir múltiplos projetos:', error);
-    alert('Erro ao excluir projetos. Tente novamente.');
+    showFeedback('Erro', 'Erro ao excluir projetos. Tente novamente.', 'error');
   }
 };
 
@@ -864,6 +871,10 @@ useEffect(() => {
     setImportCurrentStep(step);
     setImportCurrentAction(action);
   };
+  
+  const showFeedback = (title, message, type = 'success') => {
+  setNotification({ title, message, type });
+};
   
   // Função para importar arquivos KML/KMZ
   const handleProjectImport = async (event) => {
@@ -1052,7 +1063,7 @@ useEffect(() => {
     if (!finalPoints || finalPoints.length === 0) {
       console.log('⚠️ Nenhum ponto para salvar');
       if (!autoSave) {
-        alert('Não há pontos para salvar no projeto.');
+        showFeedback('Erro', 'Não há pontos para salvar no projeto.', 'error');
       }
       return;
     }
@@ -1073,7 +1084,7 @@ useEffect(() => {
     
     if (!projectNameToUse.trim() && finalPoints.length === 0) {
       if (!autoSave) {
-        alert('Digite um nome para o projeto e certifique-se de ter pontos no traçado.');
+        showFeedback('Erro', 'Digite um nome para o projeto e certifique-se de ter pontos no traçado.', 'error');
       }
       return;
     }
@@ -1231,7 +1242,11 @@ useEffect(() => {
           setSelectedStartPoint(null);
         }
         
-        alert(editingProject ? 'Projeto atualizado com sucesso!' : 'Projeto salvo com sucesso!');
+        showFeedback(
+  'Sucesso',
+  editingProject ? 'Projeto atualizado com sucesso!' : 'Projeto salvo com sucesso!',
+  'success'
+);
       } else {
         console.log('✅ Projeto salvo automaticamente:', savedProject.name);
       }
@@ -1239,7 +1254,7 @@ useEffect(() => {
     } catch (error) {
       console.error('Erro ao salvar projeto:', error);
       if (!autoSave) {
-        alert('Erro ao salvar projeto. Tente novamente.');
+        showFeedback('Erro', 'Erro ao salvar projeto. Tente novamente.', 'error');
       }
     }
   };
@@ -1277,7 +1292,7 @@ useEffect(() => {
  const loadProject = async (project) => {
   // 1. Se o GPS estiver realmente ligado, impede.
   if (tracking && !paused) {
-    alert('O rastreamento GPS está ativo. Pare o rastreamento antes de carregar um projeto.');
+    showFeedback('Erro', 'O rastreamento GPS está ativo. Pare o rastreamento antes de carregar um projeto.', 'error');
     return;
   }
   
@@ -1297,7 +1312,7 @@ useEffect(() => {
   // 3. Carrega o projeto
   if (!project || !project.points) {
     console.error('Projeto inválido:', project);
-    alert('Erro: Projeto inválido ou corrompido.');
+    showFeedback('Erro', 'Projeto inválido ou corrompido.', 'error');
     return;
   }
   
@@ -1350,12 +1365,12 @@ useEffect(() => {
   
   const loadMultipleProjects = async () => {
   if (!canLoadProjects()) {
-    alert('Não é possível carregar projetos durante o rastreamento ativo. Pare o rastreamento atual primeiro.');
+    showFeedback('Erro', 'Não é possível carregar projetos durante o rastreamento ativo. Pare o rastreamento atual primeiro.', 'error');
     return;
   }
   
   if (selectedProjects.length === 0) {
-    alert('Selecione pelo menos um projeto para carregar');
+    showFeedback('Erro', 'Selecione pelo menos um projeto para carregar', 'error');
     return;
   }
   
@@ -1761,7 +1776,7 @@ useEffect(() => {
 
   const handleRemoveBairro = (bairro) => {
     if (DEFAULT_BAIRROS.includes(bairro)) {
-      alert('Não é possível remover bairros padrão.')
+      showFeedback('Erro', 'Não é possível remover bairros padrão.', 'error');
       return
     }
     if (confirm(`Deseja remover o bairro "${bairro}"?`)) {
@@ -1964,7 +1979,7 @@ useEffect(() => {
 
   const handleJoinProject = async (projectId) => {
   if (!user || !isOnline) {
-    alert("Você precisa estar online para importar projetos.");
+    showFeedback('Erro', 'Você precisa estar online para importar projetos.', 'error');
     return;
   }
   
@@ -1977,21 +1992,21 @@ useEffect(() => {
     if (error) throw error;
     
     if (data.success) {
-      alert(data.message);
+      showFeedback('Erro', data.message, 'error');
       // Atualiza a lista imediatamente
       const updatedList = await loadProjectsFromSupabase();
       setProjects(updatedList);
     } else {
-      alert(data.message); // Ex: "Projeto não encontrado" ou "Já é membro"
+      showFeedback('Erro', data.message, 'error'); // Ex: "Projeto não encontrado" ou "Já é membro"
     }
     
   } catch (error) {
     console.error("Erro ao importar:", error);
     // Tratamento amigável para erro de ID inválido (ex: texto incompleto)
     if (error.code === '22P02') {
-      alert("ID inválido. Certifique-se de copiar o código completo.");
+      showFeedback('Erro', 'ID inválido. Certifique-se de copiar o código completo.', 'error');
     } else {
-      alert("Erro ao entrar no projeto.");
+      showFeedback('Erro', 'Erro ao entrar no projeto.', 'error');
     }
   }
 };
@@ -2143,7 +2158,7 @@ const zip = new(JSZip.default || JSZip)();
         
         if (error && error.code !== '42P01') {
           console.error('Erro ao limpar marcações:', error)
-          alert('Erro ao limpar marcações do servidor')
+          showFeedback('Erro', 'Erro ao limpar marcações do servidor', 'error');
           return
         }
       }
@@ -2160,10 +2175,10 @@ const zip = new(JSZip.default || JSZip)();
         }
       }
 
-      alert('Todas as marcações importadas foram removidas com sucesso!')
+      showFeedback('Sucesso', 'Todas as marcações importadas foram removidas com sucesso!', 'success');
     } catch (error) {
       console.error('Erro ao limpar marcações:', error)
-      alert('Erro ao limpar marcações')
+      showFeedback('Erro', 'Erro ao limpar marcações', 'error');
     }
   }
 
@@ -2181,7 +2196,7 @@ const zip = new(JSZip.default || JSZip)();
         
         if (error && error.code !== '42P01') {
           console.error('Erro ao limpar marcações:', error)
-          alert('Erro ao limpar marcações do servidor')
+          showFeedback('Erro', 'Erro ao limpar marcações do servidor', 'error');
           return
         }
       }
@@ -2198,16 +2213,16 @@ const zip = new(JSZip.default || JSZip)();
         }
       }
 
-      alert('Todas as marcações foram removidas com sucesso!')
+      showFeedback('Sucesso', 'Todas as marcações foram removidas com sucesso!', 'success');
     } catch (error) {
       console.error('Erro ao limpar marcações:', error)
-      alert('Erro ao limpar marcações')
+      showFeedback('Erro', 'Erro ao limpar marcações', 'error');
     }
   }
 
   const handleExport = () => {
     if (markers.length === 0) {
-      alert('Não há marcações para exportar.')
+      showFeedback('Erro', 'Não há marcações para exportar.', 'error');
       return
     }
 
@@ -2275,11 +2290,15 @@ const downloadKML = async (kmlContent, filename) => {
         encoding: 'utf-8',
       });
       
-      alert(`Arquivo salvo em Documentos: ${filename}`);
+      showFeedback(
+  'Sucesso',
+  `Arquivo salvo em Documentos: ${filename}`,
+  'success'
+);
     }
   } catch (error) {
     console.error('Erro fatal no download:', error);
-    alert('Erro ao salvar o arquivo. Verifique as permissões.');
+    showFeedback('Erro', 'Erro ao salvar o arquivo. Verifique as permissões.', 'error');
   }
 };
 
@@ -2321,7 +2340,7 @@ const downloadKML = async (kmlContent, filename) => {
 
   const handleCalculateDistance = async () => {
     if (selectedForDistance.length !== 2) {
-      alert('Selecione exatamente 2 marcadores')
+      showFeedback('Erro', 'Selecione exatamente 2 marcadores', 'error');
       return
     }
 
@@ -2369,7 +2388,7 @@ const downloadKML = async (kmlContent, filename) => {
 
   const handleCalculateAllDistances = async () => {
     if (markers.length < 2) {
-      alert('É necessário ter pelo menos 2 marcadores')
+      showFeedback('Erro', 'É necessário ter pelo menos 2 marcadores', 'error');
       return
     }
 
@@ -2473,10 +2492,14 @@ const downloadKML = async (kmlContent, filename) => {
       setSelectedMarkers([]);
       setShowBatchBairroDialog(false);
       setShowMultipleSelection(false);
-      alert(`${selectedMarkers.length} marcadores atualizados para o bairro ${bairro}`);
+      showFeedback(
+  'Sucesso',
+  `${selectedMarkers.length} marcadores atualizados para o bairro ${bairro}`,
+  'success'
+);
     } catch (error) {
       console.error('Erro ao atualizar marcadores em massa:', error);
-      alert('Erro ao atualizar marcadores');
+      showFeedback('Erro', 'Erro ao atualizar marcadores', 'error');
     }
   };
 
@@ -2510,7 +2533,7 @@ const downloadKML = async (kmlContent, filename) => {
         setShowEditDialog(false)
         setEditingMarker(null)
       } else {
-        alert('Erro ao salvar alterações')
+        showFeedback('Erro', 'Erro ao salvar alterações', 'error');
       }
     } else {
       setMarkers(prev => prev.map(m => m.id === editingMarker.id ? editingMarker : m))
@@ -2531,7 +2554,7 @@ const downloadKML = async (kmlContent, filename) => {
           setShowEditDialog(false)
           setEditingMarker(null)
         } else {
-          alert('Erro ao deletar marcação')
+          showFeedback('Erro', 'Erro ao deletar marcação', 'error');
         }
       } else {
         setMarkers(prev => prev.filter(m => m.id !== editingMarker.id))
@@ -2571,7 +2594,7 @@ const downloadKML = async (kmlContent, filename) => {
       })
     } else {
       navigator.clipboard.writeText(url)
-      alert('Link copiado para a área de transferência!')
+      showFeedback('Sucesso', 'Link copiado para a área de transferência!', 'success');
     }
   }
 
@@ -2755,11 +2778,11 @@ const undoLastPoint = () => {
         setEditingProject(null);
       }
       
-      alert('Projeto deletado com sucesso!');
+      showFeedback('Sucesso', 'Projeto deletado com sucesso!', 'success');
       
     } catch (error) {
       console.error('Erro ao deletar projeto:', error);
-      alert('Erro ao deletar projeto. Tente novamente.');
+      showFeedback('Erro', 'Erro ao deletar projeto. Tente novamente.', 'error');
     }
   };
 
@@ -2830,18 +2853,18 @@ const exportProjectAsKML = (project = currentProject) => {
         essential: true,
       });
     } else {
-      alert('Localização atual ainda não disponível.');
+      showFeedback('Erro', 'Localização atual ainda não disponível.', 'error');
     }
   };
 
   const handleARMode = async () => {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      alert('Seu navegador não suporta acesso à câmera para realidade aumentada.');
+      showFeedback('Erro', 'Seu navegador não suporta acesso à câmera para realidade aumentada.', 'error');
       return;
     }
 
     if (!currentPosition) {
-      alert('Aguardando localização GPS... Tente novamente em alguns segundos.');
+      showFeedback('Erro', 'Aguardando localização GPS... Tente novamente em alguns segundos.', 'error');
       return;
     }
 
@@ -2860,11 +2883,11 @@ const exportProjectAsKML = (project = currentProject) => {
       console.error('Erro ao acessar câmera:', error);
       
       if (error.name === 'NotAllowedError') {
-        alert('Permissão da câmera negada. Ative as permissões da câmera nas configurações do seu navegador.');
+        showFeedback('Erro', 'Permissão da câmera negada. Ative as permissões da câmera nas configurações do seu navegador.', 'error');
       } else if (error.name === 'NotFoundError') {
-        alert('Nenhuma câmera traseira encontrada. O modo AR funciona melhor com câmera traseira.');
+        showFeedback('Erro', 'Nenhuma câmera traseira encontrada. O modo AR funciona melhor com câmera traseira.', 'error');
       } else {
-        alert('Não foi possível acessar a câmera: ' + error.message);
+        showFeedback('Erro', 'Não foi possível acessar a câmera: ' + error.message, 'error');
       }
       
       setArPermission('denied');
@@ -3254,249 +3277,147 @@ const exportProjectAsKML = (project = currentProject) => {
       </div>
 
       <div className="absolute top-4 left-4 right-4 z-10 flex items-center gap-2">
-        <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-          <SheetTrigger asChild>
-            <Button
-              size="icon"
-              className="bg-gradient-to-br from-slate-800 to-slate-700 backdrop-blur-sm hover:from-slate-700 hover:to-slate-600 text-white shadow-xl border border-slate-600/50 transition-all-smooth hover-lift"
-            >
-              <Menu className="w-5 h-5" />
-            </Button>
-          </SheetTrigger>
-          <SheetContent side="left" className="w-80 bg-slate-800 border-slate-700 text-white shadow-2xl flex flex-col slide-in-menu">
-            <SheetHeader className="p-6 bg-slate-900 border-b border-slate-700">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg">
-                  <MapPinned className="w-6 h-6 text-white" />
-                </div>
-                <div className="flex-1">
-                  <SheetTitle className="text-white text-lg font-bold">Jamaaw App</SheetTitle>
-                  <p className="text-cyan-400 text-sm">Gerenciador Profissional</p>
-                </div>
-              </div>
-            </SheetHeader>
-            
-            <div className="flex-1 overflow-y-auto">
-              <div className="p-4 space-y-6">
-                
-                <div className="menu-section">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium text-white">Status do Sistema</span>
-                    <div className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      isOnline ? 'bg-green-500/20 text-green-400' : 'bg-orange-500/20 text-orange-400'
-                    }`}>
-                      {isOnline ? 'Online' : 'Offline'}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4 text-xs text-gray-400">
-                    <span>{projects.length} projetos</span>
-                    <span>{markers.length} marcações</span>
-                    <span>{loadedProjects.length} carregados</span>
-                  </div>
-                </div>
+        { /* MENU LATERAL - DESIGNER GLOW AGRESSIVO */ }
+<Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+  <SheetTrigger asChild>
+    <Button
+      size="icon"
+      className="bg-slate-950/80 backdrop-blur-md border border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/20 hover:border-cyan-400 hover:text-cyan-200 shadow-[0_0_15px_rgba(6,182,212,0.3)] transition-all duration-300 rounded-xl"
+    >
+      <Menu className="w-6 h-6" />
+    </Button>
+  </SheetTrigger>
+  
+  <SheetContent side="left" className="w-[85vw] max-w-[340px] p-0 border-r border-cyan-500/20 bg-slate-950/95 backdrop-blur-xl shadow-[0_0_50px_rgba(0,0,0,0.8)] text-white">
+    <div className="flex flex-col h-full relative overflow-hidden">
+      
+      {/* Elementos Decorativos de Fundo */}
+      <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-cyan-500 to-transparent opacity-50"></div>
+      <div className="absolute bottom-0 right-0 w-64 h-64 bg-cyan-500/5 rounded-full blur-3xl pointer-events-none"></div>
 
-                <div className="space-y-2">
-                  <h3 className="menu-section-title">Navegação</h3>
-                  
-                  <Button
-                    variant="ghost"
-                    className="w-full justify-start text-white hover:bg-slate-700 h-12 menu-button"
-                    onClick={() => setShowRulerPopup(true)}
-                  >
-                    <Ruler className="w-5 h-5 mr-3 text-cyan-400" />
-                    Ferramentas de Medição
-                  </Button>
+      {/* CABEÇALHO DO MENU */}
+      <SheetHeader className="p-6 pb-2 text-left z-10">
+        <div className="flex items-center gap-4 mb-2">
+          <div className="relative w-12 h-12 flex items-center justify-center bg-slate-900 rounded-xl border border-cyan-500/30 shadow-[0_0_20px_rgba(6,182,212,0.15)] group">
+            <MapPinned className="w-6 h-6 text-cyan-400 group-hover:scale-110 transition-transform duration-300" />
+            <div className="absolute inset-0 rounded-xl border border-cyan-400/20 animate-pulse"></div>
+          </div>
+          <div>
+            <SheetTitle className="text-xl font-black text-white tracking-widest uppercase italic">
+              JAMAAW <span className="text-cyan-400">MAP</span>
+            </SheetTitle>
+            <p className="text-[10px] font-mono text-cyan-600/80 uppercase tracking-[0.2em]">
+              Sistema de Rastreio v2.0
+            </p>
+          </div>
+        </div>
+        {/* Status Conexão - Estilo Terminal */}
+        <div className={`inline-flex items-center gap-2 px-3 py-1 rounded bg-slate-900 border ${isOnline ? 'border-green-500/30' : 'border-red-500/30'}`}>
+          <div className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
+          <span className={`text-[10px] font-bold font-mono uppercase ${isOnline ? 'text-green-400' : 'text-red-400'}`}>
+            {isOnline ? 'SYSTEM ONLINE' : 'DISCONNECTED'}
+          </span>
+        </div>
+      </SheetHeader>
 
-                  <Button
-                    variant="ghost"
-                    className="w-full justify-start text-white hover:bg-slate-700 h-12 menu-button"
-                    onClick={() => {
-                      if (tracking) {
-                        alert('Não é possível gerenciar projetos durante o rastreamento.');
-                        return;
-                      }
-                      setShowProjectsList(true);
-                    }}
-                    disabled={tracking}
-                  >
-                    <FolderOpen className="w-5 h-5 mr-3 text-blue-400" />
-                    Meus Projetos
-                    <span className="ml-auto bg-blue-500/20 text-blue-400 px-2 py-1 rounded-full text-xs">
-                      {projects.length}
-                    </span>
-                  </Button>
+      {/* CORPO COM SCROLL */}
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6 z-10 custom-scrollbar">
+        
+        {/* Seção 1: Ferramentas Principais */}
+        <div className="space-y-2">
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest pl-1 mb-1">Módulos</p>
+          
+          <Button
+            variant="ghost"
+            className="w-full justify-start h-12 bg-slate-900/50 hover:bg-cyan-950/30 border border-slate-800 hover:border-cyan-500/50 text-slate-300 hover:text-cyan-400 transition-all group"
+            onClick={() => { setSidebarOpen(false); setShowRulerPopup(true); }}
+          >
+            <Ruler className="w-4 h-4 mr-3 text-slate-500 group-hover:text-cyan-400 transition-colors" />
+            <span className="font-semibold tracking-wide">Medição & Ferramentas</span>
+            <ArrowRight className="w-3 h-3 ml-auto opacity-0 group-hover:opacity-100 -translate-x-2 group-hover:translate-x-0 transition-all" />
+          </Button>
 
-                  <Button
-                    variant="ghost"
-                    className="w-full justify-start text-white hover:bg-slate-700 h-12 menu-button"
-                    onClick={() => projectInputRef.current?.click()}
-                    disabled={tracking}
-                  >
-                    <Upload className="w-5 h-5 mr-3 text-green-400" />
-                    Importar Projeto (KML)
-                  </Button>
-
-                  <Button
-                    variant="ghost"
-                    className="w-full justify-start text-white hover:bg-slate-700 h-12 menu-button"
-                    onClick={handleARMode}
-                  >
-                    <Camera className="w-5 h-5 mr-3 text-purple-400" />
-                    Realidade Aumentada
-                  </Button>
-                </div>
-
-                <div className="space-y-2">
-                  <h3 className="menu-section-title">Ações Rápidas</h3>
-                  
-                  <div className="grid grid-cols-2 gap-2">
-                    <Button
-                      size="sm"
-                      className="bg-slate-700 hover:bg-slate-600 text-white h-10 text-xs"
-                      onClick={() => fileInputRef.current?.click()}
-                    >
-                      <Upload className="w-4 h-4 mr-1" />
-                      Importar
-                    </Button>
-                    
-                    <Button
-                      size="sm"
-                      className="bg-slate-700 hover:bg-slate-600 text-white h-10 text-xs"
-                      onClick={handleExport}
-                      disabled={markers.length === 0}
-                    >
-                      <Download className="w-4 h-4 mr-1" />
-                      Exportar
-                    </Button>
-                  </div>
-
-                  {markers.length > 0 && (
-                    <Button
-                      size="sm"
-                      className="w-full bg-red-500 hover:bg-red-600 text-white h-10 text-xs"
-                      onClick={handleClearImportedMarkers}
-                    >
-                      <X className="w-4 h-4 mr-1" />
-                      Limpar Marcações
-                    </Button>
-                  )}
-                </div>
-
-                {selectedMarkers.length > 0 && (
-                  <div className="menu-section">
-                    <h3 className="menu-section-title">
-                      {selectedMarkers.length} Marcadores Selecionados
-                    </h3>
-                    <div className="space-y-2">
-                      <Button
-                        size="sm"
-                        className="w-full bg-cyan-500 hover:bg-cyan-600 text-white"
-                        onClick={() => setShowMultipleSelection(true)}
-                      >
-                        <MapPin className="w-4 h-4 mr-2" />
-                        Gerenciar Seleção
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="w-full border-slate-600 text-gray-400 hover:text-white"
-                        onClick={() => setSelectedMarkers([])}
-                      >
-                        Limpar Seleção
-                      </Button>
-                    </div>
-                  </div>
-                )}
-
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h3 className="menu-section-title">Filtros</h3>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => setShowBairroManager(true)}
-                      className="h-6 text-xs text-cyan-400"
-                    >
-                      Gerenciar
-                    </Button>
-                  </div>
-
-                  <div className="space-y-2">
-                    <select
-                      value={selectedBairro}
-                      onChange={(e) => setSelectedBairro(e.target.value)}
-                      className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
-                    >
-                      <option value="todos">Todos os bairros</option>
-                      {bairros.map(bairro => (
-                        <option key={bairro} value={bairro}>{bairro}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="flex items-center justify-between p-3 bg-slate-700 rounded-lg">
-                    <span className="text-sm text-white">Apenas favoritos</span>
-                    <label className="toggle-switch">
-                      <input 
-                        type="checkbox" 
-                        checked={showFavoritesOnly} 
-                        onChange={() => setShowFavoritesOnly(!showFavoritesOnly)}
-                      />
-                      <span className="toggle-slider"></span>
-                    </label>
-                  </div>
-                </div>
-
-                <div className="menu-section">
-                  <h3 className="menu-section-title">Estatísticas</h3>
-                  <div className="stats-grid">
-                    <div className="stat-item">
-                      <div className="stat-value">{markers.length}</div>
-                      <div className="stat-label">Marcações</div>
-                    </div>
-                    <div className="stat-item">
-                      <div className="stat-value">{projects.length}</div>
-                      <div className="stat-label">Projetos</div>
-                    </div>
-                    <div className="stat-item">
-                      <div className="stat-value">{loadedProjects.length}</div>
-                      <div className="stat-label">Carregados</div>
-                    </div>
-                    <div className="stat-item">
-                      <div className="stat-value">
-                        {formatDistanceDetailed(totalDistanceAllProjects)}
-                      </div>
-                      <div className="stat-label">Distância Total</div>
-                    </div>
-                  </div>
-                </div>
-
-              </div>
+          <Button
+            variant="ghost"
+            className="w-full justify-start h-12 bg-slate-900/50 hover:bg-blue-950/30 border border-slate-800 hover:border-blue-500/50 text-slate-300 hover:text-blue-400 transition-all group"
+            onClick={() => { 
+               if(tracking) { showFeedback('Atenção', 'Pare o rastreio antes.', 'error'); return; }
+               setSidebarOpen(false); setShowProjectsList(true); 
+            }}
+          >
+            <FolderOpen className="w-4 h-4 mr-3 text-slate-500 group-hover:text-blue-400 transition-colors" />
+            <span className="font-semibold tracking-wide">Meus Projetos</span>
+            <div className="ml-auto bg-blue-500/10 border border-blue-500/20 text-blue-400 text-[10px] font-mono px-1.5 py-0.5 rounded">
+              {projects.length}
             </div>
+          </Button>
 
-            <div className="border-t border-slate-700 p-4 bg-slate-900">
-              <div className="flex items-center justify-between">
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-white truncate">{user?.email}</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-green-500' : 'bg-orange-500'}`}></div>
-                    <p className={`text-xs ${isOnline ? 'text-green-400' : 'text-orange-400'}`}>
-                      {isOnline ? 'Conectado' : 'Modo Offline'}
-                    </p>
-                  </div>
-                </div>
-                <Button
-                  size="sm"
-                  onClick={handleLogout}
-                  className="bg-red-500 hover:bg-red-600 text-white px-3 py-2 flex items-center gap-2 logout-button"
-                >
-                  <LogOut className="w-4 h-4" />
-                  <span className="text-sm">Sair</span>
-                </Button>
+          <Button
+            variant="ghost"
+            className="w-full justify-start h-12 bg-slate-900/50 hover:bg-purple-950/30 border border-slate-800 hover:border-purple-500/50 text-slate-300 hover:text-purple-400 transition-all group"
+            onClick={() => { setSidebarOpen(false); handleARMode(); }}
+          >
+            <Camera className="w-4 h-4 mr-3 text-slate-500 group-hover:text-purple-400 transition-colors" />
+            <span className="font-semibold tracking-wide">Modo AR (Beta)</span>
+          </Button>
+        </div>
+
+        {/* Seção 2: Dados e Stats (Visual de Telemetria) */}
+        <div className="space-y-3">
+           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest pl-1 mb-1">Telemetria</p>
+           
+           <div className="grid grid-cols-2 gap-2">
+              <div className="bg-slate-900/80 p-3 rounded-lg border border-slate-800 flex flex-col items-center">
+                 <span className="text-2xl font-black text-white font-mono">{markers.length}</span>
+                 <span className="text-[9px] text-slate-500 uppercase font-bold">Marcadores</span>
               </div>
-            </div>
-          </SheetContent>
-        </Sheet>
+              <div className="bg-slate-900/80 p-3 rounded-lg border border-slate-800 flex flex-col items-center">
+                 <span className="text-sm font-black text-cyan-400 font-mono mt-1">
+                    {formatDistanceDetailed(totalDistanceAllProjects)}
+                 </span>
+                 <span className="text-[9px] text-slate-500 uppercase font-bold mt-1">Distância Total</span>
+              </div>
+           </div>
+        </div>
+
+        {/* Seção 3: Ações de Sistema */}
+        <div className="space-y-2 pt-2 border-t border-slate-800/50">
+           <div className="flex gap-2">
+             <Button
+               className="flex-1 bg-slate-800 hover:bg-slate-700 text-xs h-9 border border-slate-700"
+               onClick={() => { setSidebarOpen(false); fileInputRef.current?.click(); }}
+             >
+               <Upload className="w-3 h-3 mr-2" /> Importar
+             </Button>
+             <Button
+               className="flex-1 bg-slate-800 hover:bg-slate-700 text-xs h-9 border border-slate-700"
+               onClick={() => { setSidebarOpen(false); handleExport(); }}
+             >
+               <Download className="w-3 h-3 mr-2" /> Exportar
+             </Button>
+           </div>
+        </div>
+      </div>
+
+      {/* FOOTER - USER INFO */}
+      <div className="p-4 bg-slate-900/90 border-t border-cyan-500/10 z-10">
+        <div className="flex items-center justify-between">
+          <div className="flex flex-col">
+            <span className="text-[10px] text-slate-500 uppercase font-bold">Usuário Logado</span>
+            <span className="text-xs font-medium text-cyan-100 truncate max-w-[150px]">{user?.email}</span>
+          </div>
+          <Button
+            size="sm"
+            onClick={handleLogout}
+            className="bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 hover:border-red-500/50"
+          >
+            <LogOut className="w-4 h-4" />
+          </Button>
+        </div>
+      </div>
+    </div>
+  </SheetContent>
+</Sheet>
 
         <div className="flex-1 flex items-center gap-3 bg-gradient-to-r from-slate-800 to-slate-700 backdrop-blur-sm rounded-lg px-4 py-2.5 shadow-xl border border-slate-600/50">
           <div className="w-8 h-8 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-lg flex items-center justify-center shadow-lg">
@@ -3533,7 +3454,7 @@ const exportProjectAsKML = (project = currentProject) => {
           }`}
           onClick={() => {
             if (tracking) {
-              alert('Não é possível gerenciar projetos durante o rastreamento. Pare o rastreamento atual primeiro.');
+              showFeedback('Erro', 'Não é possível gerenciar projetos durante o rastreamento. Pare o rastreamento atual primeiro.', 'error');
               return;
             }
             setShowLoadedProjects(true);
@@ -4334,6 +4255,14 @@ const exportProjectAsKML = (project = currentProject) => {
         onChange={handleFileImport}
         className="hidden"
       />
+      
+      {/* Sistema de Notificação Glow */}
+      <GlowNotification 
+        notification={notification} 
+        onClose={() => setNotification(null)} 
+      />
+      
+      {/* Inputs invisíveis... */}
 
      { /* Input invisível para importação de projetos */ } <input
 ref = { projectInputRef }
