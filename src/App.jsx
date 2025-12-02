@@ -1107,11 +1107,10 @@ useEffect(() => {
         
         if (isOnline && user) {
           const { data, error } = await supabase
-            .from('projetos')
-            .update(projectData)
-            .eq('id', editingProject.id)
-            .eq('user_id', user.id)
-            .select();
+  .from('projetos')
+  .update(projectData)
+  .eq('id', editingProject.id)
+  .select();
           
           if (error) throw error;
           
@@ -1155,11 +1154,10 @@ useEffect(() => {
         
         if (isOnline && user) {
           const { data, error } = await supabase
-            .from('projetos')
-            .update(projectData)
-            .eq('id', currentProject.id)
-            .eq('user_id', user.id)
-            .select();
+  .from('projetos')
+  .update(projectData)
+  .eq('id', currentProject.id)
+  .select();
           
           if (error) throw error;
           
