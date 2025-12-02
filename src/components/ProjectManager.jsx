@@ -4,7 +4,13 @@ import {
   Copy, Plus, Check, Search, X 
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogDescription 
+} from '@/components/ui/dialog';
 
 const ProjectManager = ({ 
   isOpen, 
@@ -118,34 +124,39 @@ const ProjectManager = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      {/* CORREÇÃO AQUI: 
-        1. Usamos !fixed !left-1/2 !top-1/2 para forçar a posição.
-        2. Usamos transform: translate(-50%, -50%) no style inline para garantir.
-        3. Adicionamos z-[10000] para garantir que fique acima do mapa.
+      {/* CORREÇÃO DE CENTRALIZAÇÃO E REMOÇÃO DE BORDAS PADRÃO 
+         Usamos left-[50%] top-[50%] translate-x-[-50%] translate-y-[-50%] para forçar o centro.
+         Removemos 'modal-enter' customizado para usar animações nativas do Radix.
       */}
       <DialogContent 
-        className="!fixed !left-1/2 !top-1/2 !-translate-x-1/2 !-translate-y-1/2 w-[90vw] max-w-md h-[80vh] p-0 border-none bg-transparent shadow-none modal-enter focus:outline-none z-[10000]"
-        style={{ transform: 'translate(-50%, -50%)' }}
+        className="fixed z-[10000] left-[50%] top-[50%] translate-x-[-50%] translate-y-[-50%] w-[90vw] max-w-md h-[80vh] p-0 border-none bg-transparent shadow-none outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] duration-200"
       >
         
         <div className="flex flex-col h-full liquid-glass rounded-[32px] overflow-hidden relative">
           
-          {/* Header Fixo */}
+          {/* Header Fixo com Título Semântico */}
           <div className="flex-none p-5 pb-2">
-            <div className="flex items-center justify-between mb-4">
+            
+            {/* Wrapper do Header para satisfazer acessibilidade */}
+            <DialogHeader className="flex flex-row items-center justify-between mb-4 space-y-0 text-left">
               <div>
-                <h2 className="text-xl font-bold text-white tracking-tight">Projetos</h2>
-                <p className="text-xs text-slate-400">Gerencie seus rastreios</p>
+                <DialogTitle className="text-xl font-bold text-white tracking-tight">
+                  Projetos
+                </DialogTitle>
+                <DialogDescription className="text-xs text-slate-400 mt-1">
+                  Gerencie seus rastreios
+                </DialogDescription>
               </div>
+              
               <Button 
                 size="icon" 
                 variant="ghost" 
                 onClick={onClose}
-                className="rounded-full bg-slate-800/50 text-slate-400 hover:text-white hover:bg-slate-700/50"
+                className="rounded-full bg-slate-800/50 text-slate-400 hover:text-white hover:bg-slate-700/50 -mr-2"
               >
                 <X size={20} />
               </Button>
-            </div>
+            </DialogHeader>
 
             {/* Tabs */}
             <div className="bg-slate-950/40 p-1 rounded-full flex relative mb-4">
