@@ -1,8 +1,7 @@
-// components/ProjectManager.jsx
 import React, { useState } from 'react';
 import { 
   FolderOpen, Share2, Download, Trash2, Play, Users, 
-  Copy, Plus, Check, Search, X, ArrowLeft
+  Copy, Plus, Check, Search, X, MapPin, ArrowRight 
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
@@ -21,8 +20,8 @@ const ProjectManager = ({
   const [joinId, setJoinId] = useState('');
   const [copiedId, setCopiedId] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [loadingJoin, setLoadingJoin] = useState(false);
 
+  // Filtragem
   const myProjects = projects.filter(p => p.user_id === currentUserId);
   const sharedProjects = projects.filter(p => p.user_id !== currentUserId);
   
@@ -36,145 +35,195 @@ const ProjectManager = ({
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="w-screen h-screen max-w-none m-0 p-0 rounded-none bg-slate-950 border-none text-white flex flex-col animate-in slide-in-from-bottom-10 duration-300">
+  // Componente do Cartão com o "Trick" (Glow Effect)
+  const ProjectCard = ({ project }) => {
+    const isMine = project.user_id === currentUserId;
+    const accentColor = isMine ? 'text-cyan-400' : 'text-purple-400';
+    const glowColor = isMine ? 'bg-cyan-500' : 'bg-purple-500';
+
+    return (
+      <div className="group relative liquid-glass rounded-2xl p-4 mb-3 transition-all duration-300 active:scale-[0.98] overflow-hidden">
         
-        {/* HEADER ESTILO APP ANDROID */}
-        <div className="flex-none p-4 bg-slate-900/80 backdrop-blur-xl border-b border-white/10 flex flex-col gap-4 z-10 sticky top-0">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={onClose} className="text-slate-400 hover:text-white -ml-2">
-              <ArrowLeft className="w-6 h-6" />
-            </Button>
-            <h2 className="text-lg font-bold tracking-wide flex-1">Meus Projetos</h2>
-            <div className="text-xs font-mono text-cyan-400 bg-cyan-950/50 px-2 py-1 rounded">
-              {projects.length} Total
+        {/* Shine Effect no toque/hover */}
+        <div className="absolute inset-0 bg-gradient-to-tr from-white/0 via-white/5 to-white/0 opacity-0 group-active:opacity-100 transition-opacity duration-500 pointer-events-none" />
+
+        <div className="flex justify-between items-start relative z-10">
+          <div className="flex gap-4 items-center">
+            
+            {/* O TRUQUE DO ÍCONE GLOW */}
+            <div className="w-12 h-12 flex-shrink-0 icon-glow-container">
+              {/* Camada de Fundo (Blur + Scale) */}
+              <div className={`icon-glow-bg ${glowColor}`}></div>
+              {/* Ícone Real */}
+              <div className={`relative z-10 bg-slate-950/50 p-2.5 rounded-xl border border-white/10 ${accentColor} shadow-sm`}>
+                {isMine ? <FolderOpen size={20} /> : <Users size={20} />}
+              </div>
+            </div>
+
+            <div className="flex-1 min-w-0">
+              <h3 className="text-base font-bold text-white leading-tight truncate pr-2">
+                {project.name}
+              </h3>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-[10px] font-medium text-slate-400 bg-slate-800/50 px-2 py-0.5 rounded-full border border-white/5">
+                  {(project.total_distance/1000).toFixed(2)}km
+                </span>
+                <span className="text-[10px] text-slate-500">
+                  {new Date(project.updated_at).toLocaleDateString()}
+                </span>
+              </div>
             </div>
           </div>
 
-          {/* Barra de Busca e Tabs Compactas */}
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+          {/* Botão de Copiar ID (Discreto) */}
+          <button 
+            onClick={(e) => handleCopyId(e, project.id)}
+            className="p-2 rounded-full hover:bg-white/10 text-slate-500 hover:text-white transition-colors"
+          >
+            {copiedId === project.id ? <Check size={16} className="text-green-400" /> : <Copy size={16} />}
+          </button>
+        </div>
+
+        {/* Barra de Ações (Aparece limpa abaixo) */}
+        <div className="flex items-center gap-2 mt-4 pt-3 border-t border-white/5">
+          <Button 
+            onClick={() => onLoadProject(project)}
+            className={`flex-1 h-9 rounded-xl text-xs font-bold uppercase tracking-wide border-0 shadow-lg ${
+              isMine 
+                ? 'bg-gradient-to-r from-cyan-600 to-cyan-500 hover:to-cyan-400 text-white' 
+                : 'bg-gradient-to-r from-purple-600 to-purple-500 hover:to-purple-400 text-white'
+            }`}
+          >
+            <Play size={12} className="mr-2 fill-current" /> Carregar
+          </Button>
+          
+          <div className="flex gap-1">
+            <Button 
+              size="icon" 
+              variant="ghost" 
+              onClick={() => onExportProject(project)}
+              className="h-9 w-9 rounded-xl text-slate-400 hover:text-white hover:bg-white/10"
+            >
+              <Download size={16} />
+            </Button>
+            
+            {isMine && (
+              <Button 
+                size="icon" 
+                variant="ghost" 
+                onClick={() => onDeleteProject(project.id)}
+                className="h-9 w-9 rounded-xl text-slate-400 hover:text-red-400 hover:bg-red-500/10"
+              >
+                <Trash2 size={16} />
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      {/* Container do Modal - Centralizado, flutuante, não full-screen */}
+      <DialogContent className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[90vw] max-w-md h-[80vh] p-0 border-none bg-transparent shadow-none modal-enter focus:outline-none">
+        
+        <div className="flex flex-col h-full liquid-glass rounded-[32px] overflow-hidden relative">
+          
+          {/* Header Fixo */}
+          <div className="flex-none p-5 pb-2">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-xl font-bold text-white tracking-tight">Projetos</h2>
+                <p className="text-xs text-slate-400">Gerencie seus rastreios</p>
+              </div>
+              <Button 
+                size="icon" 
+                variant="ghost" 
+                onClick={onClose}
+                className="rounded-full bg-slate-800/50 text-slate-400 hover:text-white hover:bg-slate-700/50"
+              >
+                <X size={20} />
+              </Button>
+            </div>
+
+            {/* Tabs Flutuantes "Pill" */}
+            <div className="bg-slate-950/40 p-1 rounded-full flex relative mb-4">
+              {/* Fundo deslizante da aba ativa poderia ser adicionado aqui com Framer Motion, mas vamos usar CSS simples */}
+              <button
+                onClick={() => setActiveTab('mine')}
+                className={`flex-1 py-2 text-xs font-bold rounded-full transition-all duration-300 ${
+                  activeTab === 'mine' 
+                    ? 'bg-slate-800 text-cyan-400 shadow-md' 
+                    : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                MEUS
+              </button>
+              <button
+                onClick={() => setActiveTab('shared')}
+                className={`flex-1 py-2 text-xs font-bold rounded-full transition-all duration-300 ${
+                  activeTab === 'shared' 
+                    ? 'bg-slate-800 text-purple-400 shadow-md' 
+                    : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                COMPARTILHADOS
+              </button>
+            </div>
+
+            {/* Barra de Busca Glass */}
+            <div className="relative">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
               <input 
                 type="text" 
-                placeholder="Buscar..." 
+                placeholder="Buscar projeto..." 
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full bg-slate-800 border-none rounded-full pl-9 pr-4 py-2 text-sm text-white placeholder:text-slate-600 focus:ring-1 focus:ring-cyan-500 transition-all"
+                className="w-full bg-slate-950/30 border border-white/5 rounded-2xl pl-10 pr-4 py-3 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:bg-slate-950/50 transition-all"
               />
             </div>
-            {activeTab === 'shared' && (
-               <Button size="icon" className="rounded-full bg-purple-600" onClick={() => {
-                 if(joinId) onJoinProject(joinId);
-               }}>
-                 <Plus className="w-5 h-5" />
-               </Button>
+          </div>
+
+          {/* Área de Importação (Só em Compartilhados) */}
+          {activeTab === 'shared' && (
+            <div className="px-5 pb-2 animate-in slide-in-from-top-2">
+              <div className="flex gap-2">
+                <input
+                  value={joinId}
+                  onChange={(e) => setJoinId(e.target.value)}
+                  placeholder="ID do projeto..."
+                  className="flex-1 bg-purple-900/10 border border-purple-500/20 rounded-xl px-4 py-2 text-sm text-white placeholder:text-purple-400/30 focus:border-purple-500/50 outline-none"
+                />
+                <Button 
+                  size="icon"
+                  onClick={() => { if(joinId) onJoinProject(joinId); }}
+                  className="rounded-xl bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-900/20"
+                >
+                  <Plus size={20} />
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Lista Scrollável */}
+          <div className="flex-1 overflow-y-auto px-5 py-2 custom-scrollbar space-y-1 pb-20">
+            {displayedProjects.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-48 text-slate-500">
+                <div className="w-16 h-16 rounded-full bg-slate-800/50 flex items-center justify-center mb-3">
+                   <FolderOpen size={24} className="opacity-50" />
+                </div>
+                <p className="text-sm font-medium">Nada por aqui</p>
+              </div>
+            ) : (
+              displayedProjects.map(project => (
+                <ProjectCard key={project.id} project={project} />
+              ))
             )}
           </div>
 
-          <div className="flex p-1 bg-slate-800/50 rounded-lg">
-            <button
-              onClick={() => setActiveTab('mine')}
-              className={`flex-1 py-1.5 text-xs font-bold uppercase tracking-wider rounded-md transition-all ${
-                activeTab === 'mine' ? 'bg-cyan-500 text-white shadow-lg' : 'text-slate-400'
-              }`}
-            >
-              Meus
-            </button>
-            <button
-              onClick={() => setActiveTab('shared')}
-              className={`flex-1 py-1.5 text-xs font-bold uppercase tracking-wider rounded-md transition-all ${
-                activeTab === 'shared' ? 'bg-purple-500 text-white shadow-lg' : 'text-slate-400'
-              }`}
-            >
-              Compartilhados
-            </button>
-          </div>
-        </div>
-
-        {/* INPUT IMPORTAR (Aparece condicionalmente) */}
-        {activeTab === 'shared' && (
-           <div className="px-4 pt-2 pb-0">
-             <input
-               value={joinId}
-               onChange={(e) => setJoinId(e.target.value)}
-               placeholder="Colar ID do projeto compartilhado..."
-               className="w-full bg-slate-900 border border-purple-500/30 rounded-lg px-3 py-3 text-sm font-mono text-white focus:border-purple-500 transition-colors"
-             />
-           </div>
-        )}
-
-        {/* LISTA DE PROJETOS (Scrollável) */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
-          {displayedProjects.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-40 text-slate-600">
-              <FolderOpen className="w-12 h-12 mb-2 opacity-20" />
-              <p className="text-sm">Nenhum projeto encontrado</p>
-            </div>
-          ) : (
-            displayedProjects.map(project => (
-              <div 
-                key={project.id} 
-                className="bg-slate-900 border border-slate-800 rounded-xl p-3 active:scale-[0.98] transition-transform duration-200"
-              >
-                <div className="flex justify-between items-start mb-2">
-                  <div className="flex gap-3 items-center">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center border ${
-                      project.user_id === currentUserId 
-                        ? 'bg-cyan-950/30 border-cyan-500/30 text-cyan-400' 
-                        : 'bg-purple-950/30 border-purple-500/30 text-purple-400'
-                    }`}>
-                      {project.user_id === currentUserId ? <FolderOpen size={18} /> : <Users size={18} />}
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-sm text-white leading-tight">{project.name}</h3>
-                      <p className="text-[10px] text-slate-400 mt-0.5">
-                        {new Date(project.updated_at).toLocaleDateString()} • {(project.total_distance/1000).toFixed(2)}km
-                      </p>
-                    </div>
-                  </div>
-                  
-                  {/* Botão Copiar ID */}
-                  <button 
-                    onClick={(e) => handleCopyId(e, project.id)}
-                    className="p-1.5 rounded-lg bg-slate-800 text-slate-400 active:bg-cyan-500 active:text-white transition-colors"
-                  >
-                    {copiedId === project.id ? <Check size={14} /> : <Copy size={14} />}
-                  </button>
-                </div>
-
-                <div className="flex items-center gap-2 mt-3">
-                  <Button 
-                    onClick={() => onLoadProject(project)}
-                    className="flex-1 h-9 text-xs bg-slate-800 hover:bg-cyan-500 hover:text-white border border-slate-700 transition-colors"
-                  >
-                    <Play size={14} className="mr-2" /> Carregar
-                  </Button>
-                  
-                  <Button 
-                    variant="ghost" 
-                    size="icon" 
-                    className="h-9 w-9 text-slate-400 hover:text-green-400 hover:bg-green-950/30 rounded-lg border border-slate-800"
-                    onClick={() => onExportProject(project)}
-                  >
-                    <Download size={16} />
-                  </Button>
-
-                  {project.user_id === currentUserId && (
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      className="h-9 w-9 text-slate-400 hover:text-red-400 hover:bg-red-950/30 rounded-lg border border-slate-800"
-                      onClick={() => onDeleteProject(project.id)}
-                    >
-                      <Trash2 size={16} />
-                    </Button>
-                  )}
-                </div>
-              </div>
-            ))
-          )}
+          {/* Efeito de Fade no Fundo da Lista */}
+          <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-slate-900/90 to-transparent pointer-events-none" />
         </div>
       </DialogContent>
     </Dialog>
