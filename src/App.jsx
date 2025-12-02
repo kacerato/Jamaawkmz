@@ -1266,31 +1266,37 @@ function App() {
         localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
       }
       
-      if (!autoSave && !editingProject) {
-        setCurrentProject(savedProject);
-      }
-      
-      if (!autoSave) {
-        setProjectName('');
-        setShowProjectDialog(false);
-        
-        if (!editingProject) {
-          setTracking(false);
-          setPaused(false);
-          setShowTrackingControls(false);
-          setManualPoints([]);
-          setTotalDistance(0);
-          setSelectedStartPoint(null);
-        }
-        
-        showFeedback(
-          'Sucesso',
-          editingProject ? 'Projeto atualizado com sucesso!' : 'Projeto salvo com sucesso!',
-          'success'
-        );
-      } else {
-        console.log('✅ Projeto salvo automaticamente:', savedProject.name);
-      }
+      // Se for edição, mantém como atual. Se for novo save, LIMPA o atual.
+if (!autoSave) {
+  if (editingProject) {
+    // Se estava editando, mantém atualizado
+    setCurrentProject(savedProject);
+  } else {
+    // SE SALVOU UM NOVO, DESCONECTA TUDO (Resolve o bug do fantasma)
+    setCurrentProject(null);
+  }
+}
+
+if (!autoSave) {
+  setProjectName('');
+  setShowProjectDialog(false);
+  
+  if (!editingProject) {
+    setTracking(false);
+    setPaused(false);
+    setShowTrackingControls(false);
+    
+    // Limpa visualmente o mapa
+    setManualPoints([]);
+    setTotalDistance(0);
+    setSelectedStartPoint(null);
+    
+    // Garante que o histórico de posição também limpe
+    setPositionHistory([]);
+  }
+  
+  showFeedback('Sucesso', editingProject ? 'Projeto atualizado!' : 'Projeto salvo e finalizado!', 'success');
+}
       
     } catch (error) {
       console.error('Erro ao salvar projeto:', error);
@@ -4185,15 +4191,6 @@ function App() {
           </div>
         </DialogContent> 
       </Dialog>
-      
-      {/* NOVO DOCK DE FERRAMENTAS FUTURISTA */}
-<ToolsDock
-  active={tracking} // Se estiver rastreando, o dock some para dar lugar aos controles
-  onStartGPS={() => startTracking('gps')}
-  onStartTouch={() => startTracking('touch')}
-  onStartAR={handleARMode}
-  onNewProject={startNewProject}
-/>
 
       {tracking && showTrackingControls && (
         <ControlesRastreamento
