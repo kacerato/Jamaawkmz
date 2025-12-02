@@ -1276,56 +1276,79 @@ useEffect(() => {
     kalmanLngRef.current = new KalmanFilter(0.1, 0.1);
   };
 
-  const loadProject = async (project) => {
-    if (!canLoadProjects()) {
-      alert('Não é possível carregar projetos durante o rastreamento ativo. Pare o rastreamento atual primeiro.');
+ const loadProject = async (project) => {
+  // 1. Se o GPS estiver realmente ligado, impede.
+  if (tracking && !paused) {
+    alert('O rastreamento GPS está ativo. Pare o rastreamento antes de carregar um projeto.');
+    return;
+  }
+  
+  // 2. Se houver pontos no mapa (mas GPS desligado), pede confirmação para limpar.
+  if (manualPoints.length > 0) {
+    // Se for o mesmo projeto que já está carregado, não faz nada
+    if (currentProject && currentProject.id === project.id) {
+      setShowProjectsList(false); // Só fecha o menu
       return;
     }
-
-    if (!project || !project.points) {
-      console.error('Projeto inválido:', project);
-      alert('Erro: Projeto inválido ou corrompido.');
+    
+    if (!confirm('Existem pontos desenhados no mapa atual. Deseja descartá-los para carregar este projeto?')) {
       return;
     }
-
-    const exists = loadedProjects.find(p => p.id === project.id);
-    if (exists) {
-      setLoadedProjects(prev => prev.filter(p => p.id !== project.id));
-      
-      if (currentProject && currentProject.id === project.id) {
-        setCurrentProject(null);
-        setManualPoints([]);
-        setTotalDistance(0);
-        setSelectedStartPoint(null);
-      }
-    } else {
-      let bairroDetectado = project.bairro;
-      if (project.bairro === 'Vários' || !project.bairro) {
-        try {
-          setImportCurrentAction('Detectando bairro...');
-          bairroDetectado = await BairroDetectionService.detectBairroForProject(project.points);
-        } catch (error) {
-          console.warn('Não foi possível detectar o bairro:', error);
-          bairroDetectado = 'Vários';
-        }
-      }
-
-      const projectWithColor = {
-        ...project,
-        bairro: bairroDetectado,
-        color: project.color || generateRandomColor(),
-        points: project.points.map(point => ({
-          ...point,
-          projectId: project.id,
-          projectName: project.name
-        }))
-      };
-
-      setLoadedProjects(prev => [...prev, projectWithColor]);
+  }
+  
+  // 3. Carrega o projeto
+  if (!project || !project.points) {
+    console.error('Projeto inválido:', project);
+    alert('Erro: Projeto inválido ou corrompido.');
+    return;
+  }
+  
+  // Limpa estado atual
+  setManualPoints([]);
+  setTotalDistance(0);
+  setSelectedStartPoint(null);
+  setTracking(false); // Garante que tracking está off
+  setPaused(false);
+  
+  // Configura novo projeto
+  setCurrentProject(project); // Define como projeto atual para edições futuras
+  
+  // Adiciona à lista de carregados (visualização)
+  const exists = loadedProjects.find(p => p.id === project.id);
+  if (!exists) {
+    let bairroDetectado = project.bairro;
+    if (!project.bairro || project.bairro === 'Vários') {
+      try {
+        // Tenta detectar bairro se não tiver
+        bairroDetectado = await BairroDetectionService.detectBairroForProject(project.points);
+      } catch (e) { console.log(e); }
     }
-
-    setShowProjectsList(false);
-  };
+    
+    const projectWithColor = {
+      ...project,
+      bairro: bairroDetectado || 'Vários',
+      color: project.color || generateRandomColor(),
+      points: project.points.map(point => ({
+        ...point,
+        projectId: project.id,
+        projectName: project.name
+      }))
+    };
+    
+    setLoadedProjects(prev => [...prev, projectWithColor]);
+    
+    // Centraliza o mapa no primeiro ponto do projeto carregado
+    if (project.points.length > 0 && mapRef.current) {
+      mapRef.current.flyTo({
+        center: [project.points[0].lng, project.points[0].lat],
+        zoom: 15,
+        duration: 1000
+      });
+    }
+  }
+  
+  setShowProjectsList(false);
+};
   
   const loadMultipleProjects = async () => {
   if (!canLoadProjects()) {
@@ -1948,40 +1971,30 @@ useEffect(() => {
   }
   
   try {
-    // Verifica se o projeto existe
-    const { data: project, error: fetchError } = await supabase
-      .from('projetos')
-      .select('id, name')
-      .eq('id', projectId)
-      .single();
+    // Usa a função RPC segura que criamos no SQL
+    const { data, error } = await supabase.rpc('join_project', {
+      p_id: projectId
+    });
     
-    if (fetchError || !project) {
-      alert("Projeto não encontrado. Verifique o ID.");
-      return;
-    }
+    if (error) throw error;
     
-    // Adiciona o usuário como membro
-    const { error: joinError } = await supabase
-      .from('project_members')
-      .insert([
-        { project_id: projectId, user_id: user.id }
-      ]);
-    
-    if (joinError) {
-      if (joinError.code === '23505') { // Código de duplicidade no Postgres
-        alert("Você já tem este projeto na sua lista!");
-      } else {
-        throw joinError;
-      }
-    } else {
-      alert(`Projeto "${project.name}" adicionado com sucesso!`);
-      // Recarrega a lista
+    if (data.success) {
+      alert(data.message);
+      // Atualiza a lista imediatamente
       const updatedList = await loadProjectsFromSupabase();
       setProjects(updatedList);
+    } else {
+      alert(data.message); // Ex: "Projeto não encontrado" ou "Já é membro"
     }
+    
   } catch (error) {
     console.error("Erro ao importar:", error);
-    alert("Erro ao importar projeto.");
+    // Tratamento amigável para erro de ID inválido (ex: texto incompleto)
+    if (error.code === '22P02') {
+      alert("ID inválido. Certifique-se de copiar o código completo.");
+    } else {
+      alert("Erro ao entrar no projeto.");
+    }
   }
 };
 
