@@ -3027,13 +3027,13 @@ input, textarea {
 
 /* Efeito Liquid Glass */
 .liquid-glass {
-  background: rgba(15, 23, 42, 0.65); /* Slate-900 com transparência */
-  backdrop-filter: blur(24px);         /* Desfoque pesado para efeito vidro */
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 
-    0 25px 50px -12px rgba(0, 0, 0, 0.5), /* Sombra profunda */
-    inset 0 1px 0 rgba(255, 255, 255, 0.1); /* Brilho superior */
+    0 25px 50px -12px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 /* O truque do ícone brilhante */
@@ -3054,12 +3054,23 @@ input, textarea {
   transition: all 0.5s ease;
 }
 
-/* Animação suave ao abrir */
-@keyframes floatUp {
-  0% { transform: translate(-50%, -40%) scale(0.95); opacity: 0; }
-  100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+/* IMPORTANTE: Animação de Entrada Centralizada */
+@keyframes floatUpCentered {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -45%) scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
 }
 
 .modal-enter {
-  animation: floatUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: floatUpCentered 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+  /* Garante que o elemento fique fixo no centro */
+  position: fixed !important;
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) !important;
 }

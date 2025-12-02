@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   FolderOpen, Share2, Download, Trash2, Play, Users, 
-  Copy, Plus, Check, Search, X, MapPin, ArrowRight 
+  Copy, Plus, Check, Search, X 
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
@@ -35,7 +35,6 @@ const ProjectManager = ({
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  // Componente do Cartão com o "Trick" (Glow Effect)
   const ProjectCard = ({ project }) => {
     const isMine = project.user_id === currentUserId;
     const accentColor = isMine ? 'text-cyan-400' : 'text-purple-400';
@@ -43,18 +42,14 @@ const ProjectManager = ({
 
     return (
       <div className="group relative liquid-glass rounded-2xl p-4 mb-3 transition-all duration-300 active:scale-[0.98] overflow-hidden">
-        
-        {/* Shine Effect no toque/hover */}
+        {/* Shine Effect */}
         <div className="absolute inset-0 bg-gradient-to-tr from-white/0 via-white/5 to-white/0 opacity-0 group-active:opacity-100 transition-opacity duration-500 pointer-events-none" />
 
         <div className="flex justify-between items-start relative z-10">
           <div className="flex gap-4 items-center">
-            
-            {/* O TRUQUE DO ÍCONE GLOW */}
+            {/* Ícone Glow */}
             <div className="w-12 h-12 flex-shrink-0 icon-glow-container">
-              {/* Camada de Fundo (Blur + Scale) */}
               <div className={`icon-glow-bg ${glowColor}`}></div>
-              {/* Ícone Real */}
               <div className={`relative z-10 bg-slate-950/50 p-2.5 rounded-xl border border-white/10 ${accentColor} shadow-sm`}>
                 {isMine ? <FolderOpen size={20} /> : <Users size={20} />}
               </div>
@@ -75,7 +70,6 @@ const ProjectManager = ({
             </div>
           </div>
 
-          {/* Botão de Copiar ID (Discreto) */}
           <button 
             onClick={(e) => handleCopyId(e, project.id)}
             className="p-2 rounded-full hover:bg-white/10 text-slate-500 hover:text-white transition-colors"
@@ -84,7 +78,6 @@ const ProjectManager = ({
           </button>
         </div>
 
-        {/* Barra de Ações (Aparece limpa abaixo) */}
         <div className="flex items-center gap-2 mt-4 pt-3 border-t border-white/5">
           <Button 
             onClick={() => onLoadProject(project)}
@@ -125,8 +118,15 @@ const ProjectManager = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      {/* Container do Modal - Centralizado, flutuante, não full-screen */}
-      <DialogContent className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[90vw] max-w-md h-[80vh] p-0 border-none bg-transparent shadow-none modal-enter focus:outline-none">
+      {/* CORREÇÃO AQUI: 
+        1. Usamos !fixed !left-1/2 !top-1/2 para forçar a posição.
+        2. Usamos transform: translate(-50%, -50%) no style inline para garantir.
+        3. Adicionamos z-[10000] para garantir que fique acima do mapa.
+      */}
+      <DialogContent 
+        className="!fixed !left-1/2 !top-1/2 !-translate-x-1/2 !-translate-y-1/2 w-[90vw] max-w-md h-[80vh] p-0 border-none bg-transparent shadow-none modal-enter focus:outline-none z-[10000]"
+        style={{ transform: 'translate(-50%, -50%)' }}
+      >
         
         <div className="flex flex-col h-full liquid-glass rounded-[32px] overflow-hidden relative">
           
@@ -147,9 +147,8 @@ const ProjectManager = ({
               </Button>
             </div>
 
-            {/* Tabs Flutuantes "Pill" */}
+            {/* Tabs */}
             <div className="bg-slate-950/40 p-1 rounded-full flex relative mb-4">
-              {/* Fundo deslizante da aba ativa poderia ser adicionado aqui com Framer Motion, mas vamos usar CSS simples */}
               <button
                 onClick={() => setActiveTab('mine')}
                 className={`flex-1 py-2 text-xs font-bold rounded-full transition-all duration-300 ${
@@ -172,7 +171,7 @@ const ProjectManager = ({
               </button>
             </div>
 
-            {/* Barra de Busca Glass */}
+            {/* Busca */}
             <div className="relative">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
               <input 
@@ -185,7 +184,7 @@ const ProjectManager = ({
             </div>
           </div>
 
-          {/* Área de Importação (Só em Compartilhados) */}
+          {/* Importar (Aba Compartilhados) */}
           {activeTab === 'shared' && (
             <div className="px-5 pb-2 animate-in slide-in-from-top-2">
               <div className="flex gap-2">
@@ -206,7 +205,7 @@ const ProjectManager = ({
             </div>
           )}
 
-          {/* Lista Scrollável */}
+          {/* Lista */}
           <div className="flex-1 overflow-y-auto px-5 py-2 custom-scrollbar space-y-1 pb-20">
             {displayedProjects.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-48 text-slate-500">
@@ -221,8 +220,8 @@ const ProjectManager = ({
               ))
             )}
           </div>
-
-          {/* Efeito de Fade no Fundo da Lista */}
+          
+          {/* Fade inferior */}
           <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-slate-900/90 to-transparent pointer-events-none" />
         </div>
       </DialogContent>
