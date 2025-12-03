@@ -1,158 +1,282 @@
-import React from 'react';
-import { FileText, Download, X, Calendar, User, MapPin, Activity } from 'lucide-react';
+import React, { useMemo } from 'react';
+import { FileText, Download, X, Calendar, User, MapPin, Activity, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-const ProjectReport = ({ isOpen, onClose, project, userName }) => {
+const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
   if (!project) return null;
 
-  // Cálculos do Relatório
-  const today = new Date().toDateString();
-  const pointsToday = project.points.filter(p => new Date(p.timestamp || p.created_at).toDateString() === today).length;
-  const totalDistanceKm = (project.total_distance / 1000).toFixed(3);
-  
-  // Função Geradora de PDF Criativo
+  // 1. Função de Formatação Inteligente de Distância
+  const formatSmartDistance = (meters) => {
+    if (!meters || isNaN(meters)) return "0 m";
+    if (meters < 1) return `${(meters * 100).toFixed(0)} cm`;
+    if (meters < 1000) return `${meters.toFixed(2)} m`;
+    return `${(meters / 1000).toFixed(3)} km`;
+  };
+
+  // 2. Agrupamento de Pontos por Data (Memoizado para performance)
+  const groupedPoints = useMemo(() => {
+    const groups = {};
+    
+    // Ordena pontos do mais recente para o mais antigo
+    const sortedPoints = [...project.points].sort((a, b) => 
+      new Date(b.timestamp || b.created_at) - new Date(a.timestamp || a.created_at)
+    );
+
+    sortedPoints.forEach(point => {
+      const date = new Date(point.timestamp || point.created_at).toLocaleDateString('pt-BR', {
+        weekday: 'long', 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric'
+      });
+      
+      if (!groups[date]) {
+        groups[date] = [];
+      }
+      groups[date].push(point);
+    });
+
+    return groups;
+  }, [project.points]);
+
+  // 3. Gerador de PDF Detalhado e Separado por Dias
   const generatePDF = () => {
     const doc = new jsPDF();
     
-    // Fundo Escuro (Simulado com retângulo)
+    // --- DESIGN DO PDF ---
+    
+    // Fundo
     doc.setFillColor(15, 23, 42); // Slate 900
     doc.rect(0, 0, 210, 297, 'F');
 
-    // Cabeçalho Futurista
+    // Cabeçalho Principal
     doc.setTextColor(34, 211, 238); // Cyan
     doc.setFontSize(22);
     doc.setFont("helvetica", "bold");
-    doc.text("RELATÓRIO DE PROJETO", 20, 20);
-    
-    doc.setDrawColor(34, 211, 238);
-    doc.setLineWidth(0.5);
-    doc.line(20, 25, 190, 25);
-
-    // Info Principal
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(12);
-    doc.text(`PROJETO: ${project.name.toUpperCase()}`, 20, 40);
-    doc.text(`RESPONSÁVEL: ${userName?.toUpperCase() || 'N/A'}`, 20, 50);
-    doc.text(`DATA: ${new Date().toLocaleDateString('pt-BR')}`, 140, 40);
-
-    // Card de Estatísticas (Desenhado manualmente)
-    doc.setFillColor(30, 41, 59); // Slate 800
-    doc.roundedRect(20, 60, 170, 40, 3, 3, 'F');
+    doc.text("RELATÓRIO DE ACOMPANHAMENTO", 105, 20, { align: "center" });
     
     doc.setFontSize(10);
     doc.setTextColor(148, 163, 184); // Slate 400
-    doc.text("DISTÂNCIA TOTAL", 30, 75);
-    doc.text("PONTOS TOTAIS", 80, 75);
-    doc.text("ATUALIZAÇÃO HOJE", 130, 75);
+    doc.text("Gerado via Jamaaw App", 105, 26, { align: "center" });
 
-    doc.setFontSize(16);
-    doc.setTextColor(56, 189, 248); // Sky Blue
-    doc.text(`${totalDistanceKm} km`, 30, 85);
-    doc.text(`${project.points.length}`, 80, 85);
-    doc.setTextColor(52, 211, 153); // Emerald
-    doc.text(`+${pointsToday} pts`, 130, 85);
+    // Linha divisória
+    doc.setDrawColor(34, 211, 238);
+    doc.setLineWidth(0.5);
+    doc.line(20, 30, 190, 30);
 
-    // Tabela de Pontos Recentes
-    doc.setFontSize(12);
+    // Resumo Geral
+    doc.setFillColor(30, 41, 59); // Slate 800
+    doc.roundedRect(20, 35, 170, 25, 3, 3, 'F');
+
     doc.setTextColor(255, 255, 255);
-    doc.text("REGISTRO DE ATIVIDADE (Últimos 20 Pontos)", 20, 115);
+    doc.setFontSize(12);
+    doc.setFont("helvetica", "bold");
+    doc.text(`PROJETO: ${project.name.toUpperCase()}`, 25, 45);
+    doc.text(`EXTENSÃO TOTAL: ${formatSmartDistance(project.total_distance)}`, 25, 53);
+    
+    doc.setFontSize(10);
+    doc.setTextColor(148, 163, 184);
+    doc.text(`Total de Pontos: ${project.points.length}`, 130, 45);
+    doc.text(`Status: ${project.tracking_mode === 'manual' ? 'Manual' : 'Automático'}`, 130, 53);
 
-    const tableData = project.points.slice(-20).reverse().map((p, i) => [
-      project.points.length - i,
-      new Date(p.timestamp || p.created_at).toLocaleTimeString(),
-      p.lat.toFixed(6),
-      p.lng.toFixed(6),
-      p.connectedFrom ? 'Conexão' : 'Ponto Base'
-    ]);
+    let finalY = 70;
 
-    autoTable(doc, {
-      startY: 120,
-      head: [['ID', 'HORA', 'LATITUDE', 'LONGITUDE', 'TIPO']],
-      body: tableData,
-      theme: 'grid',
-      headStyles: { fillColor: [6, 182, 212], textColor: [0, 0, 0], fontStyle: 'bold' },
-      styles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], lineColor: [51, 65, 85] },
-      alternateRowStyles: { fillColor: [15, 23, 42] },
+    // --- LOOP POR CADA DIA (TABELAS SEPARADAS) ---
+    Object.entries(groupedPoints).forEach(([date, points]) => {
+      
+      // Verifica se precisa de nova página
+      if (finalY > 250) {
+        doc.addPage();
+        doc.setFillColor(15, 23, 42);
+        doc.rect(0, 0, 210, 297, 'F');
+        finalY = 20;
+      }
+
+      // Cabeçalho do Dia
+      doc.setFontSize(14);
+      doc.setTextColor(56, 189, 248); // Sky Blue
+      doc.setFont("helvetica", "bold");
+      doc.text(date.toUpperCase(), 20, finalY);
+      
+      // Linha fina abaixo da data
+      doc.setDrawColor(56, 189, 248);
+      doc.setLineWidth(0.1);
+      doc.line(20, finalY + 2, 100, finalY + 2);
+
+      finalY += 10;
+
+      // Dados da Tabela
+      const tableBody = points.map((p, index) => [
+        points.length - index, // ID Sequencial do dia
+        new Date(p.timestamp || p.created_at).toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'}),
+        p.lat.toFixed(6),
+        p.lng.toFixed(6),
+        // Tenta pegar o email do ponto, se não tiver, usa o do projeto, ou "N/A"
+        p.user_email || (p.user_id === project.user_id ? currentUserEmail : 'Colaborador')
+      ]);
+
+      // Renderiza Tabela
+      autoTable(doc, {
+        startY: finalY,
+        head: [['#', 'HORA', 'LATITUDE', 'LONGITUDE', 'RESPONSÁVEL']],
+        body: tableBody,
+        theme: 'grid',
+        headStyles: { 
+          fillColor: [6, 182, 212], // Cyan header
+          textColor: [0, 0, 0], 
+          fontStyle: 'bold',
+          fontSize: 8
+        },
+        styles: { 
+          fillColor: [30, 41, 59], // Slate 800 rows
+          textColor: [226, 232, 240], // Slate 200 text
+          lineColor: [51, 65, 85], // Slate 700 borders
+          fontSize: 8
+        },
+        alternateRowStyles: { 
+          fillColor: [15, 23, 42] // Slate 900 alternate
+        },
+        margin: { left: 20, right: 20 }
+      });
+
+      finalY = doc.lastAutoTable.finalY + 15; // Espaço para o próximo dia
     });
 
-    // Rodapé
+    // Rodapé da última página
     const pageHeight = doc.internal.pageSize.height;
     doc.setFontSize(8);
     doc.setTextColor(100, 116, 139);
-    doc.text("Gerado via Jamaaw App - Sistema de Rastreamento Profissional", 105, pageHeight - 10, { align: 'center' });
+    doc.text("Documento Oficial - Jamaaw App", 105, pageHeight - 10, { align: 'center' });
 
     doc.save(`Relatorio_${project.name.replace(/\s+/g, '_')}.pdf`);
   };
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="fixed z-[10000] left-[50%] top-[50%] translate-x-[-50%] translate-y-[-50%] w-[90vw] max-w-lg p-0 border-none bg-transparent shadow-none outline-none">
+      {/* CORREÇÃO DO X DUPLICADO: 
+         Adicionei a classe [&>button]:hidden para esconder o botão padrão do Radix UI.
+      */}
+      <DialogContent className="fixed z-[10000] left-[50%] top-[50%] translate-x-[-50%] translate-y-[-50%] w-[95vw] max-w-2xl h-[85vh] p-0 border-none bg-transparent shadow-none outline-none [&>button]:hidden">
         
-        <div className="flex flex-col bg-slate-950/90 backdrop-blur-xl border border-cyan-500/30 rounded-3xl overflow-hidden shadow-2xl relative">
+        <div className="flex flex-col h-full bg-slate-950/95 backdrop-blur-xl border border-cyan-500/30 rounded-3xl overflow-hidden shadow-2xl relative">
           
-          {/* Header Decorativo */}
-          <div className="h-2 bg-gradient-to-r from-cyan-500 via-blue-500 to-purple-600 w-full" />
-          
-          <div className="p-6">
-            <div className="flex justify-between items-start mb-6">
+          {/* Header Fixo */}
+          <div className="flex-none p-6 border-b border-white/5 bg-gradient-to-r from-slate-900 to-slate-800">
+            <div className="flex justify-between items-start">
               <div>
                 <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                  <FileText className="text-cyan-400" /> Relatório de Obra
+                  <FileText className="text-cyan-400" /> Relatório Detalhado
                 </h2>
-                <p className="text-xs text-slate-400 mt-1 uppercase tracking-widest">
-                  {project.name}
-                </p>
+                <div className="flex items-center gap-2 mt-2">
+                  <span className="text-xs font-bold bg-cyan-500/20 text-cyan-400 px-2 py-0.5 rounded uppercase tracking-wider">
+                    {project.name}
+                  </span>
+                  <span className="text-xs text-slate-400">
+                    {new Date().toLocaleDateString('pt-BR')}
+                  </span>
+                </div>
               </div>
-              <Button size="icon" variant="ghost" onClick={onClose} className="rounded-full hover:bg-white/10 text-slate-400">
-                <X size={20} />
+              <Button 
+                size="icon" 
+                variant="ghost" 
+                onClick={onClose} 
+                className="rounded-full hover:bg-white/10 text-slate-400 -mr-2"
+              >
+                <X size={24} />
               </Button>
             </div>
 
-            {/* Grid de Estatísticas (Visual Bonito) */}
-            <div className="grid grid-cols-2 gap-4 mb-6">
-              {/* Card Hoje */}
-              <div className="col-span-2 bg-gradient-to-r from-slate-900 to-slate-800 p-4 rounded-2xl border border-white/5 flex justify-between items-center relative overflow-hidden group">
-                <div className="absolute right-0 top-0 w-24 h-24 bg-green-500/10 rounded-full blur-2xl -mr-10 -mt-10" />
-                <div>
-                  <p className="text-[10px] text-slate-400 uppercase font-bold mb-1">Adicionados Hoje</p>
-                  <p className="text-3xl font-black text-green-400">{pointsToday}</p>
-                </div>
-                <div className="h-10 w-10 rounded-full bg-green-500/20 flex items-center justify-center text-green-400">
-                  <Activity size={20} />
+            {/* Card de Resumo Topo */}
+            <div className="mt-6 grid grid-cols-2 gap-3">
+              <div className="bg-slate-900 p-3 rounded-2xl border border-white/5 flex flex-col">
+                <span className="text-[10px] text-slate-500 uppercase font-bold mb-1">Extensão Total</span>
+                <div className="flex items-baseline gap-1">
+                  <MapPin size={14} className="text-blue-400" />
+                  <span className="text-lg font-bold text-white">
+                    {formatSmartDistance(project.total_distance)}
+                  </span>
                 </div>
               </div>
-
-              {/* Distância */}
-              <div className="bg-slate-900 p-4 rounded-2xl border border-white/5 flex flex-col justify-center">
-                <MapPin size={16} className="text-blue-400 mb-2" />
-                <p className="text-xl font-bold text-white">{totalDistanceKm} <span className="text-xs text-slate-500">km</span></p>
-                <p className="text-[10px] text-slate-500 uppercase">Extensão Total</p>
-              </div>
-
-              {/* Usuário */}
-              <div className="bg-slate-900 p-4 rounded-2xl border border-white/5 flex flex-col justify-center">
-                <User size={16} className="text-purple-400 mb-2" />
-                <p className="text-sm font-bold text-white truncate">{userName?.split('@')[0] || 'Eu'}</p>
-                <p className="text-[10px] text-slate-500 uppercase">Responsável</p>
+              <div className="bg-slate-900 p-3 rounded-2xl border border-white/5 flex flex-col">
+                <span className="text-[10px] text-slate-500 uppercase font-bold mb-1">Total Pontos</span>
+                <div className="flex items-baseline gap-1">
+                  <Activity size={14} className="text-green-400" />
+                  <span className="text-lg font-bold text-white">{project.points.length}</span>
+                </div>
               </div>
             </div>
+          </div>
 
-            {/* Ação Principal */}
+          {/* Lista Scrollável Separada por Dias */}
+          <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+            {Object.entries(groupedPoints).map(([date, points], groupIndex) => (
+              <div key={date} className="mb-6 animate-in slide-in-from-bottom-2 duration-500" style={{ animationDelay: `${groupIndex * 100}ms` }}>
+                
+                {/* Cabeçalho do Dia */}
+                <div className="flex items-center gap-2 mb-3 px-2 sticky top-0 bg-slate-950/80 backdrop-blur-md py-2 z-10">
+                  <Calendar className="w-4 h-4 text-purple-400" />
+                  <h3 className="text-sm font-bold text-purple-200 uppercase tracking-wide">
+                    {date}
+                  </h3>
+                  <span className="ml-auto text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full">
+                    {points.length} ações
+                  </span>
+                </div>
+
+                {/* Lista de Pontos do Dia */}
+                <div className="space-y-2">
+                  {points.map((p, i) => (
+                    <div key={i} className="flex items-center gap-3 p-3 rounded-xl bg-slate-900/50 border border-white/5 hover:bg-slate-800/50 transition-colors">
+                      <div className="flex flex-col items-center min-w-[40px]">
+                        <span className="text-xs font-mono text-cyan-500 font-bold">
+                          {new Date(p.timestamp || p.created_at).toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'})}
+                        </span>
+                      </div>
+                      
+                      <div className="w-px h-8 bg-white/10 mx-1" />
+                      
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-xs text-white font-medium">Ponto Adicionado</span>
+                          {p.connectedFrom && (
+                            <span className="text-[9px] bg-blue-500/20 text-blue-300 px-1.5 rounded">Conexão</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1 text-[10px] text-slate-500">
+                          <User size={10} />
+                          <span className="truncate max-w-[150px]">
+                            {/* Mostra email ou fallback */}
+                            {p.user_email || (p.user_id === project.user_id ? currentUserEmail : 'Colaborador')}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="text-right">
+                        <div className="text-[10px] font-mono text-slate-400 bg-black/20 px-2 py-1 rounded">
+                          lat: {p.lat.toFixed(4)}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Footer Fixo */}
+          <div className="flex-none p-4 bg-slate-900 border-t border-white/5">
             <Button 
               onClick={generatePDF}
               className="w-full h-12 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold rounded-xl shadow-lg shadow-cyan-900/20 group"
             >
               <Download className="mr-2 group-hover:animate-bounce" size={18} />
-              Baixar Relatório PDF
+              Baixar PDF Completo
             </Button>
-            
-            <p className="text-[10px] text-center text-slate-500 mt-4">
-              O PDF inclui tabela detalhada e dados técnicos.
-            </p>
           </div>
+
         </div>
       </DialogContent>
     </Dialog>
