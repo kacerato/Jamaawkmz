@@ -3,8 +3,6 @@ import {
   FolderOpen, Download, Trash2, Play, Users, 
   Copy, Plus, Check, Search, X, MapPin 
 } from 'lucide-react';
-import ProjectReport from './ProjectReport'; // Adicione no ProjectManager
-import { FileText } from 'lucide-react'; // Adicione ícone
 import { Button } from '@/components/ui/button';
 import { 
   Dialog, 
@@ -28,7 +26,6 @@ const ProjectManager = ({
   const [joinId, setJoinId] = useState('');
   const [copiedId, setCopiedId] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [reportProject, setReportProject] = useState(null); // Projeto selecionado para relatório
 
   const myProjects = projects.filter(p => p.user_id === currentUserId);
   const sharedProjects = projects.filter(p => p.user_id !== currentUserId);
@@ -85,17 +82,6 @@ const ProjectManager = ({
             {copiedId === project.id ? <Check size={16} className="text-green-400" /> : <Copy size={16} />}
           </button>
         </div>
-        
-        { /* Botão Relatório */ }
-<Button 
-  size="icon" 
-  variant="ghost" 
-  onClick={() => setReportProject(project)}
-  className="h-9 w-9 rounded-xl text-slate-400 hover:text-cyan-400 hover:bg-cyan-950/30"
-  title="Gerar Relatório"
->
-  <FileText size={16} />
-</Button>
 
         <div className="flex items-center gap-2 mt-4 pt-3 border-t border-white/5">
           <Button 
@@ -137,6 +123,7 @@ const ProjectManager = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
+      // Em ProjectManager.jsx
 
 <DialogContent 
   className="fixed z-[10000] left-[50%] top-[50%] translate-x-[-50%] translate-y-[-50%] w-[90vw] max-w-md h-[80vh] p-0 border-none bg-transparent shadow-none outline-none [&>button]:hidden data-[state=open]:animate-in ..." 
@@ -242,14 +229,6 @@ const ProjectManager = ({
           
           <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-slate-950/90 to-transparent pointer-events-none" />
         </div>
-        
-        {/* Modal de Relatório */}
-<ProjectReport 
-  isOpen={!!reportProject} 
-  onClose={() => setReportProject(null)} 
-  project={reportProject}
-  userName={currentUserId} // Ou passe o email se tiver disponível
-/>
       </DialogContent>
     </Dialog>
   );
