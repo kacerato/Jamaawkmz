@@ -409,21 +409,7 @@ const ProjectCard = React.memo(({ project, isSelected, onToggle, onLoad, onEdit,
   );
 });
 
-const focusOnProject = (project) => {
-  if (!project.points || project.points.length === 0) return;
 
-  const firstPoint = project.points[0];
-  setShowLoadedProjects(false); // Fecha o menu
-
-  if (mapRef.current) {
-    mapRef.current.flyTo({
-      center: [firstPoint.lng, firstPoint.lat],
-      zoom: 16,
-      speed: 1.5,
-      essential: true
-    });
-  }
-};
 
 // Sub-componente para o conteúdo do popup de ponto de rastreamento com efeito Glow
 const TrackingPointPopupContent = ({ pointInfo, onClose, onSelectStart, selectedStartPoint, manualPoints }) => {
@@ -1119,6 +1105,33 @@ function App() {
       if (event.target) {
         event.target.value = ''; // Limpa o input
       }
+    }
+  };
+  
+  // Função para focar a câmera no projeto
+  const focusOnProject = (project) => {
+    // Verificação de segurança
+    if (!project || !project.points || project.points.length === 0) {
+      // Se não tiver pontos, apenas fecha o menu
+      setShowLoadedProjects(false);
+      return;
+    }
+    
+    // Pega o primeiro ponto para centralizar
+    const firstPoint = project.points[0];
+    
+    // Fecha o menu de projetos carregados
+    // Se esta linha estava dando erro, agora vai funcionar porque está no escopo correto
+    setShowLoadedProjects(false); 
+    
+    // Move a câmera do mapa
+    if (mapRef.current) {
+      mapRef.current.flyTo({
+        center: [firstPoint.lng, firstPoint.lat],
+        zoom: 16,
+        speed: 1.5,
+        essential: true // Garante que a animação aconteça mesmo se o usuário estiver interagindo
+      });
     }
   };
   
