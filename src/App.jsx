@@ -44,6 +44,7 @@ import GlowNotification from './components/GlowNotification';
 import ToolsDock from './components/ToolsDock';
 import { Input } from '@/components/ui/input.jsx'
 import { Label } from '@/components/ui/label.jsx'
+import LoadedProjectsManager from './components/LoadedProjectsManager';
 import { Textarea } from '@/components/ui/textarea.jsx'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select.jsx'
 import ProjectManager from './components/ProjectManager';
@@ -407,6 +408,22 @@ const ProjectCard = React.memo(({ project, isSelected, onToggle, onLoad, onEdit,
     prevProps.tracking === nextProps.tracking
   );
 });
+
+const focusOnProject = (project) => {
+  if (!project.points || project.points.length === 0) return;
+
+  const firstPoint = project.points[0];
+  setShowLoadedProjects(false); // Fecha o menu
+
+  if (mapRef.current) {
+    mapRef.current.flyTo({
+      center: [firstPoint.lng, firstPoint.lat],
+      zoom: 16,
+      speed: 1.5,
+      essential: true
+    });
+  }
+};
 
 // Sub-componente para o conteúdo do popup de ponto de rastreamento com efeito Glow
 const TrackingPointPopupContent = ({ pointInfo, onClose, onSelectStart, selectedStartPoint, manualPoints }) => {
@@ -3698,138 +3715,18 @@ const exportProjectAsKML = (project = currentProject) => {
   onJoinProject={handleJoinProject}
 />
 
-      <Dialog open={showLoadedProjects} onOpenChange={setShowLoadedProjects}>
-        <DialogContent className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white border-slate-700/50 w-[95vw] max-w-2xl mx-auto shadow-2xl max-h-[80vh] overflow-hidden fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[10000]">
-          <DialogHeader>
-            <DialogTitle className="text-cyan-400 text-xl font-bold flex items-center gap-2">
-              <Layers className="w-5 h-5" />
-              Projetos Carregados ({loadedProjects.length})
-            </DialogTitle>
-            <DialogDescription className="text-gray-400 text-sm">
-              Projetos ativos no mapa - Clique para ver detalhes
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="max-h-[60vh] overflow-y-auto custom-scrollbar">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-2">
-              {loadedProjects.map(project => (
-                <div
-                  key={project.id}
-                  className="bg-slate-800 rounded-lg border border-slate-700 hover:border-cyan-500 transition-all group relative overflow-hidden"
-                >
-                  <div 
-                    className="h-2 w-full"
-                    style={{ backgroundColor: project.color }}
-                  ></div>
-                  
-                  <div className="p-4">
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-bold text-white text-lg mb-1 truncate">
-                          {project.name}
-                        </h3>
-                        <div className="flex items-center gap-2 text-sm text-gray-400">
-                          <span>{project.points.length} pontos</span>
-                          <span>•</span>
-                          <span>manual</span>
-                        </div>
-                      </div>
-                      
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => removeLoadedProject(project.id)}
-                        className="text-red-400 hover:text-red-300 hover:bg-red-500/20"
-                      >
-                        <X className="w-4 h-4" />
-                      </Button>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-3 mb-3">
-                      <div className="text-center">
-                        <div className="text-cyan-400 font-bold text-xl">
-                          {project.points.length}
-                        </div>
-                        <div className="text-gray-400 text-xs">Pontos</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-green-400 font-bold text-xl">
-                          {formatDistanceDetailed(project.totalDistance || project.total_distance || 0)}
-                        </div>
-                        <div className="text-gray-400 text-xs">Distância</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-purple-400 font-bold text-xl">
-                          {project.bairro || 'Vários'}
-                        </div>
-                        <div className="text-gray-400 text-xs">Bairro</div>
-                      </div>
-                    </div>
-
-                    <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        onClick={() => {
-                          setPointPopupInfo({ 
-                            project, 
-                            showOverview: true 
-                          });
-                          setShowLoadedProjects(false);
-                        }}
-                        className="flex-1 bg-cyan-500 hover:bg-cyan-600 text-white text-xs"
-                      >
-                        <Info className="w-3 h-3 mr-1" />
-                        Detalhes
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => exportProjectAsKML(project)}
-                        className="border-green-500 text-green-400 hover:bg-green-500/20 text-xs"
-                      >
-                        <Download className="w-3 h-3" />
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {loadedProjects.length > 0 && (
-              <div className="mt-4 p-3 bg-slate-800/50 rounded-lg border border-slate-700">
-                <div className="flex items-center justify-between">
-                  <span className="text-cyan-400 text-sm font-medium">Distância Total:</span>
-                  <span className="text-white font-bold text-lg">
-                    {formatDistanceDetailed(totalDistanceAllProjects)}
-                  </span>
-                </div>
-                <div className="text-xs text-gray-400 mt-1">
-                  Soma de todos os projetos carregados
-                </div>
-              </div>
-            )}
-          </div>
-          
-          <div className="flex gap-2 pt-4 border-t border-slate-700/50">
-            <Button
-              onClick={() => setShowLoadedProjects(false)}
-              className="flex-1 bg-gradient-to-r from-gray-500 to-slate-600 hover:from-gray-600 hover:to-slate-700"
-            >
-              Fechar
-            </Button>
-            <Button
-              onClick={() => {
-                setShowLoadedProjects(false);
-                setShowProjectsList(true);
-              }}
-              className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600"
-            >
-              <FolderOpen className="w-4 h-4 mr-2" />
-              Adicionar Projetos
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <LoadedProjectsManager
+  isOpen={showLoadedProjects}
+  onClose={() => setShowLoadedProjects(false)}
+  loadedProjects={loadedProjects}
+  onRemoveProject={removeLoadedProject}
+  onFocusProject={focusOnProject}
+  onShowDetails={(p) => {
+    setPointPopupInfo({ project: p, showOverview: true });
+    setShowLoadedProjects(false);
+  }}
+  totalDistanceAll={totalDistanceAllProjects}
+/>
 
       <Dialog open={showBatchBairroDialog} onOpenChange={setShowBatchBairroDialog}>
         <DialogContent className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white border-slate-700/50 max-w-md mx-auto shadow-2xl">
