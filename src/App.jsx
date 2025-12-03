@@ -3124,50 +3124,58 @@ if (!autoSave) {
             </React.Fragment>
           ))}
 
+         {/* TRAÇADO MANUAL (Linha Azul) - CORRIGIDO */}
           {manualPoints.length > 0 && (
             <Source 
               id="manual-route" 
               type="geojson" 
               data={{
                 type: 'FeatureCollection',
-                features: [
-                  {
-                    type: 'Feature',
-                    geometry: {
-                      type: 'LineString',
-                      coordinates: manualPoints
-                        .filter(point => point.connectedFrom === null)
-                        .map(point => [point.lng, point.lat])
+                features: manualPoints.map((point, index) => {
+                  // CASO 1: Conexão Explícita (Novo Ponto de Partida / Ramificação)
+                  if (point.connectedFrom) {
+                    const parent = manualPoints.find(p => p.id === point.connectedFrom);
+                    if (parent) {
+                      return {
+                        type: 'Feature',
+                        geometry: {
+                          type: 'LineString',
+                          coordinates: [
+                            [parent.lng, parent.lat],
+                            [point.lng, point.lat]
+                          ]
+                        }
+                      };
                     }
-                  },
-                  ...manualPoints
-                    .filter(point => point.connectedFrom !== null)
-                    .map(point => {
-                      const parentPoint = manualPoints.find(p => p.id === point.connectedFrom);
-                      if (parentPoint) {
-                        return {
-                          type: 'Feature',
-                          geometry: {
-                            type: 'LineString',
-                            coordinates: [
-                              [parentPoint.lng, parentPoint.lng],
-                              [point.lng, point.lng]
-                            ]
-                          }
-                        };
+                  }
+                  // CASO 2: Sequencial (Sem pai definido, conecta ao anterior da lista)
+                  else if (index > 0) {
+                    const prev = manualPoints[index - 1];
+                    // Só conecta se o anterior também não for o início de um novo galho desconexo
+                    // (Opcional: removemos a verificação complexa para garantir que sempre feche o traço sequencial)
+                    return {
+                      type: 'Feature',
+                      geometry: {
+                        type: 'LineString',
+                        coordinates: [
+                          [prev.lng, prev.lat],
+                          [point.lng, point.lat]
+                        ]
                       }
-                      return null;
-                    })
-                    .filter(feature => feature !== null)
-                ]
+                    };
+                  }
+                  return null;
+                }).filter(Boolean)
               }}
             >
               <Layer
                 type="line"
                 paint={{
-                  'line-color': '#1e3a8a',
+                  'line-color': '#1e3a8a', // Azul escuro
                   'line-width': 4,
-                  'line-opacity': 0.8
+                  'line-opacity': 0.8,
+                  'line-cap': 'round',     // Deixa as pontas arredondadas (mais bonito)
+                  'line-join': 'round'     // Deixa as curvas suaves
                 }}
               />
             </Source>
