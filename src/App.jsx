@@ -35,7 +35,8 @@ import {
   CheckCircle,
   Users,
   Hash,
-  ArrowRight
+  ArrowRight,
+  Trash2 // ADICIONADO
 } from 'lucide-react'
 import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.jsx'
@@ -2068,88 +2069,88 @@ if (!autoSave) {
     }
   };
   
-  // SUBSTITUA A FUNÇÃO handleFileImport NO APP.JSX
-const handleFileImport = async (event) => {
-  const file = event.target.files[0];
-  if (!file) return;
-  
-  setImportProgress(0);
-  setShowImportProgress(true);
-  setImportCurrentAction('Processando arquivo...');
-  setUploading(true);
-  
-  try {
-    let kmlText;
-    if (file.name.endsWith('.kmz')) {
-      const zip = new(JSZip.default || JSZip)();
-      const contents = await zip.loadAsync(file);
-      const kmlFile = Object.keys(contents.files).find(name => name.endsWith('.kml'));
-      if (!kmlFile) throw new Error('KML não encontrado no KMZ');
-      kmlText = await contents.files[kmlFile].async('text');
-    } else {
-      kmlText = await file.text();
-    }
-    
-    // Limpeza prévia (Opcional, depende se você quer somar ou substituir)
-    // Se quiser limpar antes: setMarkers([]); 
-    
-    const parser = new DOMParser();
-    const xmlDoc = parser.parseFromString(kmlText, 'text/xml');
-    const placemarks = Array.from(xmlDoc.getElementsByTagName('Placemark'));
-    
-    // PROCESSAMENTO EM LOTE (INSTANTÂNEO)
-    const newMarkers = placemarks.map((placemark, i) => {
-      const coordsText = placemark.getElementsByTagName('coordinates')[0]?.textContent?.trim();
-      if (!coordsText) return null;
-      
-      const [lng, lat] = coordsText.split(',').map(Number);
-      if (isNaN(lat) || isNaN(lng)) return null;
-      
-      return {
-        id: generateUUID(),
-        name: placemark.getElementsByTagName('name')[0]?.textContent || `Ponto ${i + 1}`,
-        lat,
-        lng,
-        descricao: placemark.getElementsByTagName('description')[0]?.textContent || '',
-        bairro: '', // Será detectado depois se necessário
-        created_at: new Date().toISOString(),
-        user_id: user?.id
-      };
-    }).filter(Boolean); // Remove nulos
-    
-    // Atualiza o estado UMA VEZ só
-    setMarkers(prev => [...prev, ...newMarkers]);
-    
-    // Salva no Cache Local imediatamente
-    if (user) {
-      localStorage.setItem(`jamaaw_markers_${user.id}`, JSON.stringify(newMarkers));
-    }
-    
-    // Upload para Supabase em Background (Não trava a UI)
-    if (isOnline && user && newMarkers.length > 0) {
-      setImportCurrentAction('Sincronizando com a nuvem...');
-      // Envia em lotes de 50 para não estourar o request
-      const batchSize = 50;
-      for (let i = 0; i < newMarkers.length; i += batchSize) {
-        const batch = newMarkers.slice(i, i + batchSize);
-        await supabase.from('marcacoes').insert(batch);
+  // ============================ NOVA FUNÇÃO handleFileImport ============================
+  const handleFileImport = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    setImportProgress(0);
+    setShowImportProgress(true);
+    setImportCurrentAction('Processando arquivo...');
+    setUploading(true);
+
+    try {
+      let kmlText;
+      if (file.name.endsWith('.kmz')) {
+        const zip = new (JSZip.default || JSZip)();
+        const contents = await zip.loadAsync(file);
+        const kmlFile = Object.keys(contents.files).find(name => name.endsWith('.kml'));
+        if (!kmlFile) throw new Error('KML não encontrado no KMZ');
+        kmlText = await contents.files[kmlFile].async('text');
+      } else {
+        kmlText = await file.text();
       }
+
+      // Limpeza prévia (Opcional, depende se você quer somar ou substituir)
+      // Se quiser limpar antes: setMarkers([]); 
+
+      const parser = new DOMParser();
+      const xmlDoc = parser.parseFromString(kmlText, 'text/xml');
+      const placemarks = Array.from(xmlDoc.getElementsByTagName('Placemark'));
+
+      // PROCESSAMENTO EM LOTE (INSTANTÂNEO)
+      const newMarkers = placemarks.map((placemark, i) => {
+        const coordsText = placemark.getElementsByTagName('coordinates')[0]?.textContent?.trim();
+        if (!coordsText) return null;
+
+        const [lng, lat] = coordsText.split(',').map(Number);
+        if (isNaN(lat) || isNaN(lng)) return null;
+
+        return {
+          id: generateUUID(),
+          name: placemark.getElementsByTagName('name')[0]?.textContent || `Ponto ${i + 1}`,
+          lat,
+          lng,
+          descricao: placemark.getElementsByTagName('description')[0]?.textContent || '',
+          bairro: '', // Será detectado depois se necessário
+          created_at: new Date().toISOString(),
+          user_id: user?.id
+        };
+      }).filter(Boolean); // Remove nulos
+
+      // Atualiza o estado UMA VEZ só
+      setMarkers(prev => [...prev, ...newMarkers]);
+      
+      // Salva no Cache Local imediatamente
+      if (user) {
+        localStorage.setItem(`jamaaw_markers_${user.id}`, JSON.stringify(newMarkers));
+      }
+
+      // Upload para Supabase em Background (Não trava a UI)
+      if (isOnline && user && newMarkers.length > 0) {
+        setImportCurrentAction('Sincronizando com a nuvem...');
+        // Envia em lotes de 50 para não estourar o request
+        const batchSize = 50;
+        for (let i = 0; i < newMarkers.length; i += batchSize) {
+          const batch = newMarkers.slice(i, i + batchSize);
+          await supabase.from('marcacoes').insert(batch);
+        }
+      }
+
+      setImportProgress(100);
+      setImportSuccess(true);
+      
+      // Fecha o popup rápido
+      setTimeout(() => setShowImportProgress(false), 1500);
+
+    } catch (error) {
+      console.error('Erro na importação:', error);
+      setImportError('Falha ao ler o arquivo.');
+    } finally {
+      setUploading(false);
+      if (event.target) event.target.value = '';
     }
-    
-    setImportProgress(100);
-    setImportSuccess(true);
-    
-    // Fecha o popup rápido
-    setTimeout(() => setShowImportProgress(false), 1500);
-    
-  } catch (error) {
-    console.error('Erro na importação:', error);
-    setImportError('Falha ao ler o arquivo.');
-  } finally {
-    setUploading(false);
-    if (event.target) event.target.value = '';
-  }
-};
+  };
   
   const handleClearImportedMarkers = async () => {
     if (!confirm('Tem certeza que deseja limpar todas as marcações importadas? Esta ação não pode ser desfeita.')) {
@@ -2654,7 +2655,8 @@ const handleFileImport = async (event) => {
     addPoint(finalPosition);
   }
   
-const addPoint = (position) => {
+  // 1. ATUALIZE A FUNÇÃO addPoint
+  const addPoint = (position) => {
   const newPoint = {
     ...position,
     id: generateUUID(),
@@ -3426,7 +3428,8 @@ const addPoint = (position) => {
           <Download className="w-5 h-5 mr-3 text-slate-500" />
           <span>Exportar Tudo</span>
         </Button>
-        {/* Adicione isso no Menu Lateral, seção Dados */}
+
+        {/* BOTÃO ADICIONADO: Limpar Marcações */}
         <Button
           variant="ghost"
           className="w-full justify-start h-12 text-red-400 hover:text-red-300 hover:bg-red-950/20 rounded-xl transition-all"
@@ -3539,6 +3542,7 @@ const addPoint = (position) => {
         bairros={bairros}
       />
 
+      
 
       {showProjectDetails && currentProject && (
         <div className="absolute bottom-20 right-4 z-50 animate-scale-in">
