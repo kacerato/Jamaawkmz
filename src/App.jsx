@@ -2657,63 +2657,26 @@ if (!autoSave) {
   
   // 1. ATUALIZE A FUNÇÃO addPoint
   const addPoint = (position) => {
-    const newPoint = {
-      ...position,
-      id: generateUUID(), // AGORA GERA UUID
-      timestamp: Date.now(),
-      connectedFrom: selectedStartPoint ? selectedStartPoint.id : null
-    }
-    
-    setManualPoints(prev => {
-      const updatedPoints = [...prev, newPoint]
-      const newTotalDistance = calculateTotalDistanceWithBranches(updatedPoints);
-      setTotalDistance(newTotalDistance);
-      return updatedPoints
-    })
-    
-    if (selectedStartPoint) {
-      setSelectedStartPoint(newPoint);
-    }
+  const newPoint = {
+    ...position,
+    id: generateUUID(),
+    timestamp: Date.now(),
+    connectedFrom: selectedStartPoint ? selectedStartPoint.id : null,
+    user_id: user.id,
+    user_email: user.email // <--- ADICIONE ESTA LINHA OBRIGATORIAMENTE
   }
   
-  // Substitua a função undoLastPoint existente por esta:
-  const undoLastPoint = () => {
-    if (manualPoints.length > 0) {
-      // 1. Identifica o ponto que será removido
-      const pointToRemove = manualPoints[manualPoints.length - 1];
-      
-      // 2. Cria a nova lista sem ele
-      const newPoints = manualPoints.slice(0, -1);
-      
-      // 3. Atualiza a lista e a distância
-      setManualPoints(newPoints);
-      const newTotalDistance = calculateTotalDistanceWithBranches(newPoints);
-      setTotalDistance(newTotalDistance);
-      
-      // 4. CORREÇÃO DO TRAÇADO:
-      // Se o ponto removido era o "Ativo" (onde o próximo se conectaria),
-      // precisamos mover o "Ativo" para trás.
-      if (selectedStartPoint && selectedStartPoint.id === pointToRemove.id) {
-        if (newPoints.length > 0) {
-          // Tenta encontrar o "Pai" do ponto removido (para manter a lógica de ramificação)
-          const parentPoint = pointToRemove.connectedFrom ?
-            newPoints.find(p => p.id === pointToRemove.connectedFrom) :
-            null;
-          
-          // Se tiver pai, volta para o pai. Se não, volta para o último ponto da lista.
-          const newActivePoint = parentPoint || newPoints[newPoints.length - 1];
-          
-          setSelectedStartPoint(newActivePoint);
-          
-          // Feedback visual opcional
-          // console.log("Voltando conexão para:", newActivePoint.id);
-        } else {
-          // Se apagou tudo, reseta o ponto inicial
-          setSelectedStartPoint(null);
-        }
-      }
-    }
-  };
+  setManualPoints(prev => {
+    const updatedPoints = [...prev, newPoint]
+    const newTotalDistance = calculateTotalDistanceWithBranches(updatedPoints);
+    setTotalDistance(newTotalDistance);
+    return updatedPoints
+  })
+  
+  if (selectedStartPoint) {
+    setSelectedStartPoint(newPoint);
+  }
+}
   
   const pauseTracking = async () => {
     try {
@@ -3389,7 +3352,10 @@ if (!autoSave) {
         <Button
           variant="ghost"
           className="w-full justify-start h-12 text-slate-300 hover:text-white hover:bg-white/5 rounded-xl transition-all group"
-          onClick={() => { setSidebarOpen(false); setShowRulerPopup(true); }}
+          onClick={() => { 
+  setSidebarOpen(false); 
+  startTracking('touch'); // Inicia o modo de toque (Medir) diretamente
+}}
         >
           <Ruler className="w-5 h-5 mr-3 text-purple-500 group-hover:scale-110 transition-transform" />
           <span>Medir</span>
@@ -3537,143 +3503,7 @@ if (!autoSave) {
         bairros={bairros}
       />
 
-      {!tracking && showRulerPopup && (
-        <div className="absolute top-20 right-4 z-10">
-          <Card className="bg-gradient-to-br from-slate-800/95 to-slate-700/95 backdrop-blur-sm border-slate-600/50 shadow-2xl text-white w-80">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-lg font-bold text-white flex items-center gap-2">
-                  <Ruler className="w-5 h-5 text-cyan-400" />
-                  Ferramentas de Medição
-                </CardTitle>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setShowRulerPopup(false)}
-                  className="h-6 w-6 p-0 text-gray-400 hover:text-white"
-                >
-                  <X className="w-3 h-3" />
-                </Button>
-              </div>
-              <p className="text-xs text-gray-400 mt-1">Ferramentas profissionais de medição</p>
-              </CardHeader>
-            
-            <CardContent
-            className="space-y-4">
-              <Button
-                onClick={handleARMode}
-                className="w-full bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-600 hover:to-rose-700 text-white font-medium py-3 text-base"
-              >
-                <Camera className="w-4 h-4 mr-2" />
-                Realidade Aumentada
-              </Button>
-
-              <div className="bg-slate-700/30 rounded-lg p-3 border border-slate-600/50">
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="text-gray-400">Modo Ativo:</span>
-                    <span className="font-medium text-cyan-400">
-                      Manual (GPS)
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="text-gray-400">Precisão:</span>
-                    <span className="font-medium text-cyan-400">
-                      Alta (GPS)
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="text-gray-400">Melhor para:</span>
-                    <span className="font-medium text-cyan-400">
-                      Pontos exatos em campo
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-2 border-t border-white/5 mt-2">
-                <Button
-                  onClick={startNewProject}
-                  variant="outline"
-                  className="w-full h-10 border-slate-700 bg-slate-800/50 hover:bg-slate-700 text-cyan-400 hover:text-cyan-300 flex items-center justify-center gap-2"
-                >
-                  <Plus className="w-4 h-4" />
-                  Novo Projeto
-                </Button>
-              </div>
-
-              <Button
-                onClick={() => startTracking('gps')}
-                className="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-medium py-3 text-base mb-2"
-              >
-                <Navigation className="w-4 h-4 mr-2" />
-                {loadedProjects.length === 1 ? 
-                  `Continuar (GPS) "${loadedProjects[0].name}"` : 
-                  currentProject && manualPoints.length > 0 ? 
-                    `Continuar (GPS) "${currentProject.name}"` : 
-                    'Rastreamento via GPS'
-                }
-              </Button>
-
-              <Button
-                onClick={() => startTracking('touch')}
-                className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-medium py-3 text-base"
-              >
-                <MousePointerClick className="w-4 h-4 mr-2" />
-                Rastreamento por Toque
-              </Button>
-
-              <div className="text-xs text-gray-400 text-center mt-1 mb-3">
-                Toque no mapa para desenhar o trajeto manualmente
-              </div>
-
-              {(loadedProjects.length === 1 || (currentProject && manualPoints.length > 0)) && (
-                <Button
-                  onClick={startNewProject}
-                  variant="outline"
-                  className="w-full mt-2 border-cyan-500 text-cyan-400 hover:bg-cyan-500/10"
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Iniciar Projeto Completamente Novo
-                </Button>
-              )}
-
-              {projects.length > 0 && (
-                <div className="pt-2 border-t border-slate-700/50">
-                  <p className="text-xs text-gray-400 mb-2">Projetos Recentes</p>
-                  <div className="space-y-1 max-h-24 overflow-y-auto">
-                    {projects.slice(0, 2).map(project => (
-                      <div
-                        key={project.id}
-                        className="flex items-center justify-between p-2 bg-slate-700/30 rounded-lg hover:bg-slate-700/50 cursor-pointer transition-colors"
-                        onClick={() => loadProject(project)}
-                      >
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-white truncate">{project.name}</p>
-                          <p className="text-xs text-gray-400">
-                            {safeToFixed(((project.totalDistance || project.total_distance) || 0) / 1000, 2)} km • {project.points.length} pontos
-                          </p>
-                        </div>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-6 w-6 p-0 text-cyan-400 hover:text-cyan-300"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            exportProjectAsKML(project);
-                          }}
-                        >
-                          <Download className="w-3 h-3" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      )}
+     
 
       {showProjectDetails && currentProject && (
         <div className="absolute bottom-20 right-4 z-50 animate-scale-in">
