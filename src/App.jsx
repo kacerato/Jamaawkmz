@@ -2068,138 +2068,88 @@ if (!autoSave) {
     }
   };
   
-  const handleFileImport = async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
+  // SUBSTITUA A FUNÇÃO handleFileImport NO APP.JSX
+const handleFileImport = async (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+  
+  setImportProgress(0);
+  setShowImportProgress(true);
+  setImportCurrentAction('Processando arquivo...');
+  setUploading(true);
+  
+  try {
+    let kmlText;
+    if (file.name.endsWith('.kmz')) {
+      const zip = new(JSZip.default || JSZip)();
+      const contents = await zip.loadAsync(file);
+      const kmlFile = Object.keys(contents.files).find(name => name.endsWith('.kml'));
+      if (!kmlFile) throw new Error('KML não encontrado no KMZ');
+      kmlText = await contents.files[kmlFile].async('text');
+    } else {
+      kmlText = await file.text();
+    }
     
-    setImportProgress(0);
-    setImportCurrentStep(1);
-    setImportTotalSteps(4);
-    setImportCurrentAction('Iniciando importação de marcações...');
-    setImportSuccess(false);
-    setImportError(null);
-    setShowImportProgress(true);
+    // Limpeza prévia (Opcional, depende se você quer somar ou substituir)
+    // Se quiser limpar antes: setMarkers([]); 
     
-    setUploading(true);
-    try {
-      updateImportProgress(20, 1, 'Lendo arquivo...');
+    const parser = new DOMParser();
+    const xmlDoc = parser.parseFromString(kmlText, 'text/xml');
+    const placemarks = Array.from(xmlDoc.getElementsByTagName('Placemark'));
+    
+    // PROCESSAMENTO EM LOTE (INSTANTÂNEO)
+    const newMarkers = placemarks.map((placemark, i) => {
+      const coordsText = placemark.getElementsByTagName('coordinates')[0]?.textContent?.trim();
+      if (!coordsText) return null;
       
-      let kmlText;
+      const [lng, lat] = coordsText.split(',').map(Number);
+      if (isNaN(lat) || isNaN(lng)) return null;
       
-      if (file.name.endsWith('.kmz')) {
-        updateImportProgress(40, 2, 'Extraindo KML do KMZ...');
-        // Garante que funcione tanto em desenvolvimento quanto após o build (produção)
-        const zip = new(JSZip.default || JSZip)();
-        const contents = await zip.loadAsync(file);
-        const kmlFile = Object.keys(contents.files).find(name => name.endsWith('.kml'));
-        if (!kmlFile) {
-          throw new Error('Arquivo KML não encontrado no KMZ');
-        }
-        kmlText = await contents.files[kmlFile].async('text');
-      } else {
-        updateImportProgress(40, 2, 'Lendo arquivo KML...');
-        kmlText = await file.text();
-      }
-      
-      if (isOnline && user) {
-        updateImportProgress(60, 3, 'Limpando marcações antigas...');
-        try {
-          const { error } = await supabase
-            .from('marcacoes')
-            .delete()
-            .eq('user_id', user.id);
-          
-          if (error && error.code !== '42P01') {
-            console.error('Erro ao limpar marcações antigas:', error);
-          }
-        } catch (error) {
-          console.error('Erro ao limpar marcações antigas:', error);
-        }
-      }
-      
-      setMarkers([]);
-      
-      updateImportProgress(80, 4, 'Processando novas marcações...');
-      const parser = new DOMParser();
-      const xmlDoc = parser.parseFromString(kmlText, 'text/xml');
-      const placemarks = xmlDoc.getElementsByTagName('Placemark');
-      
-      const newMarkers = [];
-      const totalPlacemarks = placemarks.length;
-      
-      for (let i = 0; i < totalPlacemarks; i++) {
-        const placemark = placemarks[i];
-        const name = placemark.getElementsByTagName('name')[0]?.textContent || `Marcação ${i + 1}`;
-        const coordinates = placemark.getElementsByTagName('coordinates')[0]?.textContent.trim();
-        
-        if (coordinates) {
-          const [lng, lat] = coordinates.split(',').map(Number);
-          
-          const description = placemark.getElementsByTagName('description')[0]?.textContent || '';
-          
-          const marker = {
-            name,
-            lat,
-            lng,
-            descricao: description,
-            bairro: '',
-            rua: '',
-            fotos: []
-          }
-          
-          if (isOnline) {
-            const savedMarker = await saveMarkerToSupabase(marker);
-            if (savedMarker) {
-              newMarkers.push(savedMarker);
-            } else {
-              newMarkers.push({ ...marker, id: generateUUID() }); // UUID para offline
-            }
-          } else {
-            newMarkers.push({ ...marker, id: generateUUID() }); // UUID para offline
-            setSyncPending(true);
-          }
-        }
-        
-        const progress = 80 + (i / totalPlacemarks) * 15;
-        updateImportProgress(progress, 4, `Processando ${i + 1}/${totalPlacemarks} marcações...`);
-        
-        if (i % 20 === 0) {
-          await new Promise(resolve => setTimeout(resolve, 10));
-        }
-      }
-      
-      setMarkers(newMarkers);
-      setAdjustBoundsForMarkers(true);
-      
-      if (user) {
-        try {
-          await Preferences.set({
-            key: `jamaaw_markers_${user.id}`,
-            value: JSON.stringify(newMarkers)
-          });
-        } catch (e) {
-          localStorage.setItem(`jamaaw_markers_${user.id}`, JSON.stringify(newMarkers));
-        }
-      }
-      
-      updateImportProgress(100, 4, 'Importação concluída!');
-      setImportSuccess(true);
-      
-      setTimeout(() => {
-        setShowImportProgress(false);
-      }, 2000);
-      
-    } catch (error) {
-      console.error('Erro ao importar arquivo:', error);
-      setImportError('Erro ao importar arquivo. Verifique o formato.');
-      setImportProgress(100);
-    } finally {
-      setUploading(false);
-      if (event.target) {
-        event.target.value = '';
+      return {
+        id: generateUUID(),
+        name: placemark.getElementsByTagName('name')[0]?.textContent || `Ponto ${i + 1}`,
+        lat,
+        lng,
+        descricao: placemark.getElementsByTagName('description')[0]?.textContent || '',
+        bairro: '', // Será detectado depois se necessário
+        created_at: new Date().toISOString(),
+        user_id: user?.id
+      };
+    }).filter(Boolean); // Remove nulos
+    
+    // Atualiza o estado UMA VEZ só
+    setMarkers(prev => [...prev, ...newMarkers]);
+    
+    // Salva no Cache Local imediatamente
+    if (user) {
+      localStorage.setItem(`jamaaw_markers_${user.id}`, JSON.stringify(newMarkers));
+    }
+    
+    // Upload para Supabase em Background (Não trava a UI)
+    if (isOnline && user && newMarkers.length > 0) {
+      setImportCurrentAction('Sincronizando com a nuvem...');
+      // Envia em lotes de 50 para não estourar o request
+      const batchSize = 50;
+      for (let i = 0; i < newMarkers.length; i += batchSize) {
+        const batch = newMarkers.slice(i, i + batchSize);
+        await supabase.from('marcacoes').insert(batch);
       }
     }
-  };
+    
+    setImportProgress(100);
+    setImportSuccess(true);
+    
+    // Fecha o popup rápido
+    setTimeout(() => setShowImportProgress(false), 1500);
+    
+  } catch (error) {
+    console.error('Erro na importação:', error);
+    setImportError('Falha ao ler o arquivo.');
+  } finally {
+    setUploading(false);
+    if (event.target) event.target.value = '';
+  }
+};
   
   const handleClearImportedMarkers = async () => {
     if (!confirm('Tem certeza que deseja limpar todas as marcações importadas? Esta ação não pode ser desfeita.')) {
@@ -3471,6 +3421,20 @@ if (!autoSave) {
         >
           <Download className="w-5 h-5 mr-3 text-slate-500" />
           <span>Exportar Tudo</span>
+        </Button>
+        {/* Adicione isso no Menu Lateral, seção Dados */}
+        <Button
+          variant="ghost"
+          className="w-full justify-start h-12 text-red-400 hover:text-red-300 hover:bg-red-950/20 rounded-xl transition-all"
+          onClick={() => { 
+            setSidebarOpen(false); 
+            if(confirm('ATENÇÃO: Isso apagará todas as marcações do mapa. Continuar?')) {
+               handleClearAllMarkers();
+            }
+          }}
+        >
+          <Trash2 className="w-5 h-5 mr-3" />
+          <span>Limpar Marcações</span>
         </Button>
       </div>
     </div>
