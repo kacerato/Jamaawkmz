@@ -4,11 +4,45 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { Filesystem, Directory } from '@capacitor/filesystem';
+import { Capacitor } from '@capacitor/core';
 
 const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
   if (!project) return null;
 
-  // 1. Formatação Inteligente de Distância
+  // --- 1. FUNÇÕES AUXILIARES DE CÁLCULO ---
+
+  // Fórmula de Haversine para calcular distância entre dois pontos
+  const getDistance = (p1, p2) => {
+    const R = 6371e3; // Raio da terra em metros
+    const φ1 = p1.lat * Math.PI / 180;
+    const φ2 = p2.lat * Math.PI / 180;
+    const Δφ = (p2.lat - p1.lat) * Math.PI / 180;
+    const Δλ = (p2.lng - p1.lng) * Math.PI / 180;
+
+    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return R * c; // em metros
+  };
+
+  // Calcula distância total de um array de pontos
+  const calculateGroupDistance = (points) => {
+    if (points.length < 2) return 0;
+    let total = 0;
+    // Ordena cronologicamente para o cálculo fazer sentido (do mais antigo para o novo)
+    const chronoPoints = [...points].sort((a, b) => 
+      new Date(a.timestamp || a.created_at) - new Date(b.timestamp || b.created_at)
+    );
+    
+    for (let i = 0; i < chronoPoints.length - 1; i++) {
+      total += getDistance(chronoPoints[i], chronoPoints[i+1]);
+    }
+    return total;
+  };
+
   const formatSmartDistance = (meters) => {
     if (!meters || isNaN(meters)) return "0 m";
     if (meters < 1) return `${(meters * 100).toFixed(0)} cm`;
@@ -16,10 +50,9 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
     return `${(meters / 1000).toFixed(3)} km`;
   };
 
-  // 2. Agrupamento por Data
+  // --- 2. AGRUPAMENTO POR DATA ---
   const groupedPoints = useMemo(() => {
     const groups = {};
-    // Ordena do mais recente para o antigo
     const sortedPoints = [...project.points].sort((a, b) => 
       new Date(b.timestamp || b.created_at) - new Date(a.timestamp || a.created_at)
     );
@@ -34,7 +67,31 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
     return groups;
   }, [project.points]);
 
-  // 3. Geração do PDF Simplificado
+  // --- 3. LÓGICA DE SALVAMENTO HÍBRIDA (WEB/ANDROID) ---
+  const handleSavePdf = async (doc, filename) => {
+    try {
+      if (Capacitor.getPlatform() === 'web') {
+        // Web: Download normal do navegador
+        doc.save(filename);
+      } else {
+        // Android/iOS: Salvar no Sistema de Arquivos
+        const base64Data = doc.output('datauristring').split(',')[1];
+        
+        await Filesystem.writeFile({
+          path: filename,
+          data: base64Data,
+          directory: Directory.Documents,
+        });
+
+        alert(`Relatório salvo com sucesso na pasta Documentos:\n${filename}`);
+      }
+    } catch (error) {
+      console.error('Erro ao salvar PDF:', error);
+      alert('Erro ao salvar o arquivo PDF. Verifique as permissões.');
+    }
+  };
+
+  // --- 4. GERAÇÃO DO PDF ---
   const generatePDF = () => {
     const doc = new jsPDF();
     
@@ -56,19 +113,18 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
 
     startY += 15;
 
-    // Resumo
+    // Resumo do Projeto
     doc.setFillColor(30, 41, 59);
     doc.roundedRect(20, startY, 170, 25, 3, 3, 'F');
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(12);
     doc.setFont("helvetica", "bold");
     doc.text(`PROJETO: ${project.name.toUpperCase()}`, 25, startY + 10);
-    doc.text(`EXTENSÃO: ${formatSmartDistance(project.total_distance)}`, 25, startY + 18);
+    doc.text(`EXTENSÃO TOTAL: ${formatSmartDistance(project.total_distance)}`, 25, startY + 18);
     
     doc.setFontSize(10);
     doc.setTextColor(148, 163, 184);
     doc.text(`Total de Pontos: ${project.points.length}`, 130, startY + 10);
-    // Usa o email do usuário atual se o do projeto não estiver disponível
     const ownerEmail = currentUserEmail?.split('@')[0] || 'Eu';
     doc.text(`Responsável: ${ownerEmail}`, 130, startY + 18);
 
@@ -77,6 +133,10 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
     // --- TABELAS POR DIA ---
     Object.entries(groupedPoints).forEach(([date, points]) => {
       
+      // Calcula a distância ESPECÍFICA deste dia
+      const dailyDist = calculateGroupDistance(points);
+
+      // Nova página se necessário
       if (startY > 250) {
         doc.addPage();
         doc.setFillColor(15, 23, 42);
@@ -84,14 +144,20 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
         startY = 20;
       }
 
-      // Título da Data
+      // Título da Data + Metragem do Dia
       doc.setFontSize(14);
-      doc.setTextColor(56, 189, 248);
+      doc.setTextColor(56, 189, 248); // Azul claro
       doc.setFont("helvetica", "bold");
       doc.text(date.toUpperCase(), 20, startY);
+      
+      // Metragem do dia alinhada à direita
+      doc.setFontSize(10);
+      doc.setTextColor(34, 211, 238); // Cyan neon
+      doc.text(`PRODUÇÃO DO DIA: ${formatSmartDistance(dailyDist)}`, 190, startY, { align: "right" });
+
       doc.setDrawColor(56, 189, 248);
       doc.setLineWidth(0.1);
-      doc.line(20, startY + 2, 100, startY + 2);
+      doc.line(20, startY + 2, 190, startY + 2); // Linha vai até o final agora
 
       startY += 10;
 
@@ -99,13 +165,13 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
       const tableBody = points.map((p, index) => [
         points.length - index,
         new Date(p.timestamp || p.created_at).toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'}),
-        `${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}`, // Coordenadas em vez de endereço
+        `${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}`,
         p.user_email || currentUserEmail || 'N/A'
       ]);
 
       autoTable(doc, {
         startY: startY,
-        head: [['#', 'HORA', 'COORDENADAS (Lat, Lng)', 'RESPONSÁVEL']],
+        head: [['#', 'HORA', 'COORDENADAS', 'RESPONSÁVEL']],
         body: tableBody,
         theme: 'grid',
         headStyles: { fillColor: [6, 182, 212], textColor: [0, 0, 0], fontStyle: 'bold', fontSize: 8 },
@@ -127,12 +193,13 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
         doc.text(`Página ${i} de ${pageCount}`, 105, 290, {align: 'center'});
     }
 
-    doc.save(`Relatorio_${project.name.replace(/\s+/g, '_')}.pdf`);
+    // Chama a função de salvamento segura para APK
+    const safeName = `Relatorio_${project.name.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+    handleSavePdf(doc, safeName);
   };
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      {/* Botão X duplicado removido com [&>button]:hidden */}
       <DialogContent className="fixed z-[10000] left-[50%] top-[50%] translate-x-[-50%] translate-y-[-50%] w-[95vw] max-w-2xl h-[85vh] p-0 border-none bg-transparent shadow-none outline-none [&>button]:hidden">
         
         <div className="flex flex-col h-full bg-slate-950/95 backdrop-blur-xl border border-cyan-500/30 rounded-3xl overflow-hidden shadow-2xl relative">
@@ -178,40 +245,50 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
 
           {/* Lista de Pontos */}
           <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
-            {Object.entries(groupedPoints).map(([date, points], groupIndex) => (
-              <div key={date} className="mb-6 animate-in slide-in-from-bottom-2 duration-500" style={{ animationDelay: `${groupIndex * 100}ms` }}>
-                
-                <div className="flex items-center gap-2 mb-3 px-2 sticky top-0 bg-slate-950/80 backdrop-blur-md py-2 z-10 border-b border-white/5">
-                  <Calendar className="w-4 h-4 text-cyan-400" />
-                  <h3 className="text-sm font-bold text-cyan-100 uppercase tracking-wide">{date}</h3>
-                </div>
+            {Object.entries(groupedPoints).map(([date, points], groupIndex) => {
+              // Cálculo visual da distância do dia também na tela
+              const dailyDist = calculateGroupDistance(points);
+              
+              return (
+                <div key={date} className="mb-6 animate-in slide-in-from-bottom-2 duration-500" style={{ animationDelay: `${groupIndex * 100}ms` }}>
+                  
+                  {/* Cabeçalho do Dia na Lista */}
+                  <div className="flex items-center justify-between mb-3 px-2 sticky top-0 bg-slate-950/80 backdrop-blur-md py-2 z-10 border-b border-white/5">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-cyan-400" />
+                      <h3 className="text-sm font-bold text-cyan-100 uppercase tracking-wide">{date}</h3>
+                    </div>
+                    <span className="text-[10px] font-bold bg-slate-800 text-cyan-400 px-2 py-0.5 rounded-full border border-cyan-500/20">
+                      {formatSmartDistance(dailyDist)}
+                    </span>
+                  </div>
 
-                <div className="space-y-2">
-                  {points.map((p, i) => (
-                    <div key={i} className="flex flex-col p-3 rounded-xl bg-slate-900/50 border border-white/5 hover:bg-slate-800/50 transition-colors">
-                      <div className="flex justify-between items-start mb-2">
-                        <div className="flex items-center gap-2">
-                          <Clock size={12} className="text-slate-500" />
-                          <span className="text-xs font-mono text-white">
-                            {new Date(p.timestamp || p.created_at).toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'})}
+                  <div className="space-y-2">
+                    {points.map((p, i) => (
+                      <div key={i} className="flex flex-col p-3 rounded-xl bg-slate-900/50 border border-white/5 hover:bg-slate-800/50 transition-colors">
+                        <div className="flex justify-between items-start mb-2">
+                          <div className="flex items-center gap-2">
+                            <Clock size={12} className="text-slate-500" />
+                            <span className="text-xs font-mono text-white">
+                              {new Date(p.timestamp || p.created_at).toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'})}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-slate-400 font-mono bg-black/30 px-1.5 rounded truncate max-w-[150px]">
+                            {p.user_email || '---'}
                           </span>
                         </div>
-                        {/* E-mail do responsável */}
-                        <span className="text-[10px] text-slate-400 font-mono bg-black/30 px-1.5 rounded truncate max-w-[150px]">
-                          {p.user_email || '---'}
-                        </span>
+                        
+                        <div className="flex items-start gap-2">
+                          <span className="text-[10px] font-mono text-purple-300">
+                            {p.lat.toFixed(5)}, {p.lng.toFixed(5)}
+                          </span>
+                        </div>
                       </div>
-                      
-                      <div className="flex items-start gap-2">
-                        <span className="text-[10px] font-mono text-purple-300">
-                          {p.lat.toFixed(5)}, {p.lng.toFixed(5)}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Footer */}
