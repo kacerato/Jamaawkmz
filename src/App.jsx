@@ -1319,108 +1319,118 @@ if (!autoSave) {
   };
   
   const startTracking = async (mode = 'gps') => {
-    if (loadedProjects.length === 1 && loadedProjects[0].points.length > 0) {
-      const project = loadedProjects[0];
+  // 1. REGRA DE SEGURANÇA: Múltiplos Projetos
+  if (loadedProjects.length > 1) {
+    showFeedback('Bloqueado', 'Você tem múltiplos projetos carregados. Para iniciar o rastreamento, mantenha apenas UM projeto ativo no mapa ou inicie um novo.', 'error');
+    return;
+  }
+  
+  // 2. Continuação de Projeto Único
+  if (loadedProjects.length === 1) {
+    const project = loadedProjects[0];
+    
+    // Se não for o projeto atual, define ele
+    if (!currentProject || currentProject.id !== project.id) {
       setCurrentProject(project);
       setManualPoints(project.points);
       setTotalDistance(project.totalDistance || project.total_distance || 0);
       setProjectName(project.name);
     }
-    else if (currentProject && manualPoints.length > 0) {
-      // Mantém o projeto atual
-    }
-    else {
-      setManualPoints([]);
-      setTotalDistance(0);
-      setCurrentProject(null);
-      setProjectName('');
-      setSelectedStartPoint(null);
-    }
-    
-    setTrackingInputMode(mode); // Define se é GPS ou Toque
-    setTracking(true);
-    setPaused(false);
-    setShowTrackingControls(true);
-    setShowRulerPopup(false);
-    
-    // Reseta filtros apenas se for GPS, ou mantém lógica de Kalman
-    kalmanLatRef.current = new KalmanFilter(0.1, 0.1);
-    kalmanLngRef.current = new KalmanFilter(0.1, 0.1);
-  };
+  }
+  // 3. Novo Projeto (Limpo)
+  else if (!currentProject) {
+    setManualPoints([]);
+    setTotalDistance(0);
+    setProjectName('');
+    setSelectedStartPoint(null);
+  }
+  
+  setTrackingInputMode(mode);
+  setTracking(true);
+  setPaused(false);
+  setShowTrackingControls(true);
+  setShowRulerPopup(false);
+  
+  // Reinicia filtros
+  kalmanLatRef.current = new KalmanFilter(0.1, 0.1);
+  kalmanLngRef.current = new KalmanFilter(0.1, 0.1);
+};
   
   const loadProject = async (project) => {
-    // 1. Se o GPS estiver realmente ligado, impede.
-    if (tracking && !paused) {
-      showFeedback('Erro', 'O rastreamento GPS está ativo. Pare o rastreamento antes de carregar um projeto.', 'error');
+  if (tracking && !paused) {
+    showFeedback('Atenção', 'Pare o rastreamento atual antes de carregar um projeto.', 'warning');
+    return;
+  }
+  
+  if (manualPoints.length > 0) {
+    if (currentProject && currentProject.id === project.id) {
+      setShowProjectsList(false);
       return;
     }
-    
-    // 2. Se houver pontos no mapa (mas GPS desligado), pede confirmação para limpar.
-    if (manualPoints.length > 0) {
-      // Se for o mesmo projeto que já está carregado, não faz nada
-      if (currentProject && currentProject.id === project.id) {
-        setShowProjectsList(false); // Só fecha o menu
-        return;
-      }
-      
-      if (!confirm('Existem pontos desenhados no mapa atual. Deseja descartá-los para carregar este projeto?')) {
-        return;
-      }
-    }
-    
-    // 3. Carrega o projeto
-    if (!project || !project.points) {
-      console.error('Projeto inválido:', project);
-      showFeedback('Erro', 'Projeto inválido ou corrompido.', 'error');
+    if (!confirm('Existem pontos não salvos no mapa. Deseja descartá-los?')) {
       return;
     }
-    
-    // Limpa estado atual
+  }
+  
+  // Fecha o menu imediatamente para sensação de resposta rápida
+  setShowProjectsList(false);
+  
+  // Usa requestAnimationFrame para não travar a UI enquanto processa
+  requestAnimationFrame(async () => {
+    // 1. Limpa e Prepara
     setManualPoints([]);
     setTotalDistance(0);
     setSelectedStartPoint(null);
-    setTracking(false); // Garante que tracking está off
+    setTracking(false);
     setPaused(false);
     
-    // Configura novo projeto
-    setCurrentProject(project); // Define como projeto atual para edições futuras
+    // 2. Define o projeto (Estado React)
+    setCurrentProject(project);
     
-    // Adiciona à lista de carregados (visualização)
     const exists = loadedProjects.find(p => p.id === project.id);
+    
     if (!exists) {
+      // Detecta bairro se necessário (Sem bloquear)
       let bairroDetectado = project.bairro;
       if (!project.bairro || project.bairro === 'Vários') {
-        try {
-          // Tenta detectar bairro se não tiver
-          bairroDetectado = await BairroDetectionService.detectBairroForProject(project.points);
-        } catch (e) { console.log(e); }
+        // Não usamos await aqui para não travar o carregamento visual
+        BairroDetectionService.detectBairroForProject(project.points).then(b => {
+          if (b) {
+            // Atualiza silenciosamente depois
+            console.log("Bairro detectado em background:", b);
+          }
+        });
       }
       
       const projectWithColor = {
         ...project,
         bairro: bairroDetectado || 'Vários',
         color: project.color || generateRandomColor(),
-        points: project.points.map(point => ({
-          ...point,
-          projectId: project.id,
-          projectName: project.name
-        }))
+        // Mapeia pontos apenas com dados essenciais para leveza
+        points: project.points
       };
       
+      // Atualiza a lista visual
       setLoadedProjects(prev => [...prev, projectWithColor]);
       
-      // Centraliza o mapa no primeiro ponto do projeto carregado
+      // 3. Move a câmera SUAVEMENTE apenas depois que os dados foram processados
       if (project.points.length > 0 && mapRef.current) {
-        mapRef.current.flyTo({
-          center: [project.points[0].lng, project.points[0].lat],
-          zoom: 15,
-          duration: 1000
-        });
+        // Calcula o centro aproximado para um voo mais curto e suave
+        const firstPoint = project.points[0];
+        
+        setTimeout(() => {
+          mapRef.current.flyTo({
+            center: [firstPoint.lng, firstPoint.lat],
+            zoom: 16,
+            speed: 1.2, // Velocidade média para não dar "soco" visual
+            curve: 1,
+            essential: true
+          });
+        }, 100); // Pequeno delay para garantir que o mapa renderizou os pontos
       }
     }
-    
-    setShowProjectsList(false);
-  };
+  });
+};
   
   const loadMultipleProjects = async () => {
     if (!canLoadProjects()) {
@@ -2819,56 +2829,95 @@ if (!autoSave) {
     }
   };
   
-  const exportProjectAsKML = (project = currentProject) => {
-    if (!project) return;
-    
-    // Pequeno delay para garantir que a UI não trave
-    setTimeout(() => {
-      // Cria a string de coordenadas para a linha única
-      const coordinatesString = project.points
-        .map(point => `${point.lng},${point.lat},0`)
-        .join('\n          ');
+  // Função de Exportação Avançada (Suporte a Ramificações/Galhos)
+const exportProjectAsKML = (project = currentProject) => {
+  if (!project) return;
+  
+  // Pequeno delay para não travar a UI
+  setTimeout(() => {
+    // Gera as linhas baseadas na conexão real (Pai -> Filho)
+    // Isso garante que ramificações apareçam corretamente no Google Earth
+    const linesKML = project.points.map((point, index) => {
+      // Pula o primeiro ponto (não tem linha chegando nele)
+      if (index === 0) return '';
       
-      const kml = `<?xml version="1.0" encoding="UTF-8"?>
+      let parent = null;
+      
+      // 1. Se tem pai explícito (ramificação), busca ele
+      if (point.connectedFrom) {
+        parent = project.points.find(p => p.id === point.connectedFrom);
+      }
+      // 2. Se não tem pai explícito, conecta ao anterior (sequencial)
+      else {
+        parent = project.points[index - 1];
+      }
+      
+      // Se achou um pai, desenha a linha entre eles
+      if (parent) {
+        return `
+          <Placemark>
+            <styleUrl>#lineStyle</styleUrl>
+            <LineString>
+              <coordinates>
+                ${parent.lng},${parent.lat},0
+                ${point.lng},${point.lat},0
+              </coordinates>
+            </LineString>
+          </Placemark>`;
+      }
+      return '';
+    }).join('\n');
+    
+    // Gera os Marcadores (Postes)
+    const pointsKML = project.points.map((point, index) => `
+        <Placemark>
+          <name>${index + 1}</name>
+          <description>Lat: ${point.lat}, Lng: ${point.lng}</description>
+          <styleUrl>#pointStyle</styleUrl>
+          <Point>
+            <coordinates>${point.lng},${point.lat},0</coordinates>
+          </Point>
+        </Placemark>
+      `).join('\n');
+    
+    const kmlContent = `<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2">
   <Document>
     <name>${escapeXml(project.name)}</name>
-    <description>Traçado via Jamaaw App - Total: ${project.points.length} pontos</description>
+    <description>Projeto gerado via Jamaaw App - ${project.points.length} pontos</description>
     
-    <Style id="trailStyle">
+    <Style id="lineStyle">
       <LineStyle>
-        <color>ff1e3a8a</color>
-        <width>4</width>
+        <color>ff00ffff</color> <width>4</width>
       </LineStyle>
     </Style>
+    
+    <Style id="pointStyle">
+      <IconStyle>
+        <scale>0.8</scale>
+        <Icon>
+          <href>http://maps.google.com/mapfiles/kml/paddle/wht-circle.png</href>
+        </Icon>
+      </IconStyle>
+    </Style>
 
-    <Placemark>
-      <name>Traçado - ${escapeXml(project.name)}</name>
-      <styleUrl>#trailStyle</styleUrl>
-      <LineString>
-        <coordinates>
-          ${coordinatesString}
-        </coordinates>
-      </LineString>
-    </Placemark>
+    <Folder>
+      <name>Traçado (Linhas)</name>
+      ${linesKML}
+    </Folder>
 
-    ${project.points.map((point, index) => `
-    <Placemark>
-      <name>${index + 1}</name>
-      <description>${escapeXml(point.descricao || '')}</description>
-      <Point>
-        <coordinates>${point.lng},${point.lat},0</coordinates>
-      </Point>
-    </Placemark>
-    `).join('')}
+    <Folder>
+      <name>Postes (Pontos)</name>
+      ${pointsKML}
+    </Folder>
 
   </Document>
 </kml>`;
-      
-      const friendlyName = project.name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
-      downloadKML(kml, `projeto_${friendlyName}.kml`);
-    }, 100);
-  };
+    
+    const friendlyName = project.name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+    downloadKML(kmlContent, `projeto_${friendlyName}.kml`);
+  }, 50);
+};
   
   const handleBoundsAdjustedForMarkers = () => {
     setAdjustBoundsForMarkers(false);
