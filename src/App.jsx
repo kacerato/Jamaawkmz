@@ -2831,45 +2831,22 @@ if (!autoSave) {
   
   // Função de Exportação Avançada (Suporte a Ramificações/Galhos)
 // Função de Exportação Profissional para Google Earth
+// Função de Exportação KML Corrigida e Simplificada
 const exportProjectAsKML = (project = currentProject) => {
   if (!project) return;
   
   setTimeout(() => {
-    // Formatação de distância para o KML
+    // 1. Formata a Distância (Simples e Direto)
     const dist = project.total_distance || project.totalDistance || 0;
-    const distFormatted = dist < 1000 ?
-      `${dist.toFixed(2)} metros` :
+    const distTexto = dist < 1000 ?
+      `${Math.round(dist)} metros` :
       `${(dist / 1000).toFixed(3)} km`;
     
-    // HTML estilizado para o balão do Google Earth
-    const descriptionHTML = `
-        <![CDATA[
-          <div style="font-family: Arial, sans-serif; min-width: 250px;">
-            <h2 style="color: #06B6D4; margin-bottom: 5px;">${project.name}</h2>
-            <hr style="border: 0; border-top: 1px solid #ccc; margin: 10px 0;">
-            <table style="width: 100%; border-collapse: collapse;">
-              <tr>
-                <td style="padding: 5px; color: #666;">Distância Total:</td>
-                <td style="padding: 5px; font-weight: bold; text-align: right;">${distFormatted}</td>
-              </tr>
-              <tr>
-                <td style="padding: 5px; color: #666;">Total de Postes:</td>
-                <td style="padding: 5px; font-weight: bold; text-align: right;">${project.points.length}</td>
-              </tr>
-              <tr>
-                <td style="padding: 5px; color: #666;">Bairro:</td>
-                <td style="padding: 5px; font-weight: bold; text-align: right;">${project.bairro || 'N/A'}</td>
-              </tr>
-            </table>
-            <br>
-            <p style="font-size: 10px; color: #999; text-align: center;">Gerado via Jamaaw App</p>
-          </div>
-        ]]>
-      `;
-    
-    // Gera as linhas (Traçado)
+    // 2. Prepara a Linha do Traçado (Respeitando conexões/galhos)
     const linesKML = project.points.map((point, index) => {
       if (index === 0) return '';
+      
+      // Lógica para encontrar quem conecta com quem
       let parent = point.connectedFrom ?
         project.points.find(p => p.id === point.connectedFrom) :
         project.points[index - 1];
@@ -2877,9 +2854,10 @@ const exportProjectAsKML = (project = currentProject) => {
       if (parent) {
         return `
           <Placemark>
-            <name>Segmento ${index}</name>
+            <name>Traçado ${index}</name>
             <styleUrl>#lineStyle</styleUrl>
             <LineString>
+              <tessellate>1</tessellate>
               <coordinates>
                 ${parent.lng},${parent.lat},0
                 ${point.lng},${point.lat},0
@@ -2890,37 +2868,39 @@ const exportProjectAsKML = (project = currentProject) => {
       return '';
     }).join('\n');
     
-    // Gera os Pontos (Postes)
+    // 3. Prepara os Pontos (Ícones)
     const pointsKML = project.points.map((point, index) => `
         <Placemark>
           <name>${index + 1}</name>
           <description>Lat: ${point.lat}, Lng: ${point.lng}</description>
-          <styleUrl>#pointStyle</styleUrl>
+          <styleUrl>#iconStyle</styleUrl>
           <Point>
             <coordinates>${point.lng},${point.lat},0</coordinates>
           </Point>
         </Placemark>
       `).join('\n');
     
+    // 4. Monta o KML Final
     const kmlContent = `<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2">
   <Document>
     <name>${escapeXml(project.name)}</name>
-    <description>${descriptionHTML}</description> 
+    <description>Distância Total: ${distTexto}</description>
     
     <Style id="lineStyle">
       <LineStyle>
-        <color>ff00ffff</color>
+        <color>ff00ffff</color> 
         <width>4</width>
       </LineStyle>
     </Style>
     
-    <Style id="pointStyle">
+    <Style id="iconStyle">
       <IconStyle>
-        <scale>0.8</scale>
+        <scale>1.1</scale>
         <Icon>
-          <href>http://googleusercontent.com/maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href>
+          <href>http://maps.google.com/mapfiles/kml/pushpin/ylw-pushpin.png</href>
         </Icon>
+        <hotSpot x="20" y="2" xunits="pixels" yunits="pixels"/>
       </IconStyle>
       <LabelStyle>
         <scale>0.8</scale>
@@ -2928,18 +2908,13 @@ const exportProjectAsKML = (project = currentProject) => {
     </Style>
 
     <Folder>
-      <name>Dados do Projeto</name>
-      <description>${descriptionHTML}</description>
-      
-      <Folder>
-        <name>Rede (Linhas)</name>
-        ${linesKML}
-      </Folder>
+      <name>Traçado Completo (${distTexto})</name>
+      ${linesKML}
+    </Folder>
 
-      <Folder>
-        <name>Estruturas (Pontos)</name>
-        ${pointsKML}
-      </Folder>
+    <Folder>
+      <name>Pontos (${project.points.length})</name>
+      ${pointsKML}
     </Folder>
 
   </Document>
