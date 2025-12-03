@@ -2830,32 +2830,54 @@ if (!autoSave) {
   };
   
   // Função de Exportação Avançada (Suporte a Ramificações/Galhos)
+// Função de Exportação Profissional para Google Earth
 const exportProjectAsKML = (project = currentProject) => {
   if (!project) return;
   
-  // Pequeno delay para não travar a UI
   setTimeout(() => {
-    // Gera as linhas baseadas na conexão real (Pai -> Filho)
-    // Isso garante que ramificações apareçam corretamente no Google Earth
+    // Formatação de distância para o KML
+    const dist = project.total_distance || project.totalDistance || 0;
+    const distFormatted = dist < 1000 ?
+      `${dist.toFixed(2)} metros` :
+      `${(dist / 1000).toFixed(3)} km`;
+    
+    // HTML estilizado para o balão do Google Earth
+    const descriptionHTML = `
+        <![CDATA[
+          <div style="font-family: Arial, sans-serif; min-width: 250px;">
+            <h2 style="color: #06B6D4; margin-bottom: 5px;">${project.name}</h2>
+            <hr style="border: 0; border-top: 1px solid #ccc; margin: 10px 0;">
+            <table style="width: 100%; border-collapse: collapse;">
+              <tr>
+                <td style="padding: 5px; color: #666;">Distância Total:</td>
+                <td style="padding: 5px; font-weight: bold; text-align: right;">${distFormatted}</td>
+              </tr>
+              <tr>
+                <td style="padding: 5px; color: #666;">Total de Postes:</td>
+                <td style="padding: 5px; font-weight: bold; text-align: right;">${project.points.length}</td>
+              </tr>
+              <tr>
+                <td style="padding: 5px; color: #666;">Bairro:</td>
+                <td style="padding: 5px; font-weight: bold; text-align: right;">${project.bairro || 'N/A'}</td>
+              </tr>
+            </table>
+            <br>
+            <p style="font-size: 10px; color: #999; text-align: center;">Gerado via Jamaaw App</p>
+          </div>
+        ]]>
+      `;
+    
+    // Gera as linhas (Traçado)
     const linesKML = project.points.map((point, index) => {
-      // Pula o primeiro ponto (não tem linha chegando nele)
       if (index === 0) return '';
+      let parent = point.connectedFrom ?
+        project.points.find(p => p.id === point.connectedFrom) :
+        project.points[index - 1];
       
-      let parent = null;
-      
-      // 1. Se tem pai explícito (ramificação), busca ele
-      if (point.connectedFrom) {
-        parent = project.points.find(p => p.id === point.connectedFrom);
-      }
-      // 2. Se não tem pai explícito, conecta ao anterior (sequencial)
-      else {
-        parent = project.points[index - 1];
-      }
-      
-      // Se achou um pai, desenha a linha entre eles
       if (parent) {
         return `
           <Placemark>
+            <name>Segmento ${index}</name>
             <styleUrl>#lineStyle</styleUrl>
             <LineString>
               <coordinates>
@@ -2868,7 +2890,7 @@ const exportProjectAsKML = (project = currentProject) => {
       return '';
     }).join('\n');
     
-    // Gera os Marcadores (Postes)
+    // Gera os Pontos (Postes)
     const pointsKML = project.points.map((point, index) => `
         <Placemark>
           <name>${index + 1}</name>
@@ -2884,11 +2906,12 @@ const exportProjectAsKML = (project = currentProject) => {
 <kml xmlns="http://www.opengis.net/kml/2.2">
   <Document>
     <name>${escapeXml(project.name)}</name>
-    <description>Projeto gerado via Jamaaw App - ${project.points.length} pontos</description>
+    <description>${descriptionHTML}</description> 
     
     <Style id="lineStyle">
       <LineStyle>
-        <color>ff00ffff</color> <width>4</width>
+        <color>ff00ffff</color>
+        <width>4</width>
       </LineStyle>
     </Style>
     
@@ -2896,19 +2919,27 @@ const exportProjectAsKML = (project = currentProject) => {
       <IconStyle>
         <scale>0.8</scale>
         <Icon>
-          <href>http://maps.google.com/mapfiles/kml/paddle/wht-circle.png</href>
+          <href>http://googleusercontent.com/maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href>
         </Icon>
       </IconStyle>
+      <LabelStyle>
+        <scale>0.8</scale>
+      </LabelStyle>
     </Style>
 
     <Folder>
-      <name>Traçado (Linhas)</name>
-      ${linesKML}
-    </Folder>
+      <name>Dados do Projeto</name>
+      <description>${descriptionHTML}</description>
+      
+      <Folder>
+        <name>Rede (Linhas)</name>
+        ${linesKML}
+      </Folder>
 
-    <Folder>
-      <name>Postes (Pontos)</name>
-      ${pointsKML}
+      <Folder>
+        <name>Estruturas (Pontos)</name>
+        ${pointsKML}
+      </Folder>
     </Folder>
 
   </Document>
