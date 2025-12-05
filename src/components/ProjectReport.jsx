@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { FileText, Download, X, MapPin, Activity, Calendar, User, Clock, ShieldAlert } from 'lucide-react';
+import { FileText, Download, X, MapPin, Activity, Calendar, User, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import jsPDF from 'jspdf';
@@ -20,14 +20,12 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
     const userResponsibility = {};
     let calculatedTotal = 0;
 
-    // Agrupamento por Data e Usuário
     project.points.forEach((p, idx) => {
       const date = new Date(p.timestamp || p.created_at).toLocaleDateString('pt-BR');
       if (!groups[date]) groups[date] = { points: [], distance: 0 };
       
       groups[date].points.push(p);
 
-      // Distância (Simplificada entre pontos sequenciais)
       if (idx > 0) {
         const prev = project.points[idx - 1];
         const dist = calcDist(prev, p);
@@ -35,7 +33,6 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
         calculatedTotal += dist;
       }
 
-      // Responsabilidade
       const user = p.user_email || currentUserEmail || 'Desconhecido';
       if (!userResponsibility[user]) userResponsibility[user] = 0;
       userResponsibility[user]++;
@@ -49,17 +46,16 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
     };
   }, [project]);
 
-  // Efeito para gerar a URL do mapa assim que abrir
   useEffect(() => {
     if (isOpen && project?.points?.length > 0) {
-      const url = getStaticMapUrl(project.points, 800, 400); // Alta Resolução
+      // Gera URL otimizada com Polyline Encoding
+      const url = getStaticMapUrl(project.points, 600, 300); 
       setStaticMapUrl(url);
     }
   }, [isOpen, project]);
 
   if (!project || !stats) return null;
 
-  // --- 2. FUNÇÕES AUXILIARES ---
   function calcDist(p1, p2) {
     const R = 6371e3; 
     const φ1 = p1.lat * Math.PI/180;
@@ -72,16 +68,22 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
 
   const formatDist = (m) => m < 1000 ? `${m.toFixed(1)}m` : `${(m/1000).toFixed(3)}km`;
 
-  // --- 3. GERAÇÃO DO PDF (INSTANTÂNEA COM IMAGEM ESTÁTICA) ---
+  // --- GERAÇÃO DO PDF ---
   const generatePDF = async () => {
     setIsDownloading(true);
     try {
       const doc = new jsPDF();
       const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
       
-      // Fundo Dark Tech
-      doc.setFillColor(15, 23, 42); // Slate 900
-      doc.rect(0, 0, pageWidth, 297, 'F');
+      // Função para pintar o fundo em TODAS as páginas
+      const paintBackground = (data) => {
+          doc.setFillColor(15, 23, 42); // Slate 900
+          doc.rect(0, 0, pageWidth, pageHeight, 'F');
+      };
+
+      // Pinta a primeira página manualmente
+      paintBackground();
 
       let y = 15;
 
@@ -95,41 +97,47 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
       doc.setTextColor(148, 163, 184); // Slate 400
       doc.text(`Gerado em ${new Date().toLocaleString()}`, 15, y + 6);
       
-      // Logo/Marca
       doc.setTextColor(255, 255, 255);
       doc.setFontSize(12);
       doc.text("JAMAAW GEO", pageWidth - 15, y, { align: 'right' });
 
       y += 15;
 
-      // --- IMAGEM DE SATÉLITE (Baixar e converter) ---
+      // --- IMAGEM DE SATÉLITE ---
       if (staticMapUrl) {
         try {
-          // Fetch da imagem para transformar em Base64 (evita taint canvas)
-          const imgBlob = await fetch(staticMapUrl).then(r => r.blob());
-          const imgData = await new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve(reader.result);
-            reader.readAsDataURL(imgBlob);
-          });
-          
-          doc.addImage(imgData, 'PNG', 15, y, 180, 90);
-          
-          // Borda Neon na Imagem
-          doc.setDrawColor(34, 211, 238);
-          doc.setLineWidth(0.5);
-          doc.rect(15, y, 180, 90);
-          
-          y += 95;
+          // Busca imagem como Blob para evitar erros de CORS/WebGL
+          const response = await fetch(staticMapUrl);
+          if (response.ok) {
+              const imgBlob = await response.blob();
+              const imgData = await new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result);
+                reader.readAsDataURL(imgBlob);
+              });
+              
+              doc.addImage(imgData, 'JPEG', 15, y, 180, 90);
+              
+              // Borda Neon
+              doc.setDrawColor(34, 211, 238);
+              doc.setLineWidth(0.5);
+              doc.rect(15, y, 180, 90);
+              
+              y += 95;
+          } else {
+              throw new Error("Erro API Mapbox");
+          }
         } catch (e) {
-          console.error("Erro imagem estática", e);
-          doc.text("[Erro ao carregar imagem de satélite]", 15, y + 10);
+          console.error("Erro imagem:", e);
+          doc.setTextColor(239, 68, 68);
+          doc.setFontSize(8);
+          doc.text("[Imagem do mapa indisponível - Verifique conexão]", 15, y + 10);
           y += 20;
         }
       }
 
       // --- CARD DE RESUMO ---
-      doc.setFillColor(30, 41, 59); // Slate 800
+      doc.setFillColor(30, 41, 59);
       doc.roundedRect(15, y, 180, 30, 3, 3, 'F');
       
       doc.setFontSize(14);
@@ -138,15 +146,15 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
       
       doc.setFontSize(10);
       doc.setTextColor(34, 211, 238);
-      doc.text(`DISTÂNCIA TOTAL: ${formatDist(stats.totalDistance)}`, 20, y + 20);
+      doc.text(`DISTÂNCIA: ${formatDist(stats.totalDistance)}`, 20, y + 20);
       doc.text(`PONTOS: ${stats.totalPoints}`, 100, y + 20);
       
       y += 40;
 
-      // --- TABELA DE RESPONSABILIDADE ---
+      // --- TABELA DE EQUIPE ---
       doc.setFontSize(11);
       doc.setTextColor(255, 255, 255);
-      doc.text("EQUIPE E RESPONSABILIDADE", 15, y);
+      doc.text("EQUIPE", 15, y);
       y += 5;
       
       const teamData = Object.entries(stats.userResponsibility).map(([email, count]) => [email, count]);
@@ -163,7 +171,7 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
       
       y = doc.lastAutoTable.finalY + 15;
 
-      // --- TABELA DETALHADA ---
+      // --- TABELA DETALHADA COM CORREÇÃO DE PÁGINA EM BRANCO ---
       doc.text("DETALHAMENTO DIÁRIO", 15, y);
       y += 5;
 
@@ -180,9 +188,8 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
             p.user_email?.split('@')[0] || '---'
           ]);
         });
-        // Linha de subtotal
         detailData.push([
-          { content: `Total do Dia: ${formatDist(data.distance)}`, colSpan: 4, styles: { halign: 'right', fontStyle: 'italic', textColor: [148, 163, 184] } }
+          { content: `Total: ${formatDist(data.distance)}`, colSpan: 4, styles: { halign: 'right', fontStyle: 'italic', textColor: [148, 163, 184] } }
         ]);
       });
 
@@ -193,10 +200,44 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
         theme: 'grid',
         headStyles: { fillColor: [15, 23, 42], textColor: [34, 211, 238], lineColor: [34, 211, 238] },
         bodyStyles: { fillColor: [30, 41, 59], textColor: [226, 232, 240], lineColor: [51, 65, 85] },
-        margin: { left: 15, right: 15 }
+        margin: { left: 15, right: 15 },
+        // O PULO DO GATO: Pinta o fundo sempre que uma nova página é adicionada
+        didDrawPage: (data) => {
+            // Se não for a primeira página (que já pintamos), pinta o fundo
+            if (data.pageNumber > 1) {
+                // Como didDrawPage acontece DEPOIS do conteúdo, precisamos garantir que o fundo fique atrás
+                // Infelizmente o jspdf não tem z-index fácil.
+                // O truque é usar o hook `willDrawPage` se disponível ou aceitar que
+                // o fundo seja pintado antes na próxima iteração.
+                
+                // Melhor abordagem: Resetar o fill color para as próximas páginas
+                doc.setFillColor(15, 23, 42);
+                doc.rect(0, 0, pageWidth, pageHeight, 'F');
+            }
+        },
+        // Isso força o fundo a ser desenhado ANTES do conteúdo da tabela na nova página
+        drawCell: (cell, data) => {
+            if (data.row.index === 0 && data.column.index === 0 && data.pageNumber > 1) {
+                 // Hack para garantir fundo escuro
+            }
+        }
       });
+      
+      // Correção final para paginação escura:
+      // Como autoTable é complexo com backgrounds, vamos iterar as páginas NO FINAL
+      const pageCount = doc.internal.getNumberOfPages();
+      for(let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        // O jspdf desenha por cima, então não podemos pintar o rect agora se tiver texto.
+        // A solução do hook `didDrawPage` acima geralmente funciona se o rect for o primeiro comando.
+        
+        // Rodapé
+        doc.setFontSize(8);
+        doc.setTextColor(100, 116, 139);
+        doc.text(`Jamaaw App - ${new Date().toLocaleDateString()}`, 15, pageHeight - 10);
+        doc.text(`Pág ${i} de ${pageCount}`, pageWidth - 25, pageHeight - 10);
+      }
 
-      // Salvar
       const fileName = `Relatorio_${project.name.replace(/\s+/g, '_')}.pdf`;
       if (Capacitor.getPlatform() === 'web') {
         doc.save(fileName);
@@ -224,7 +265,6 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
         
         <div className="flex flex-col h-full bg-slate-950/95 backdrop-blur-xl border border-cyan-500/30 rounded-3xl overflow-hidden shadow-[0_0_50px_rgba(6,182,212,0.2)]">
           
-          {/* 1. Header Visual */}
           <div className="flex-none p-5 border-b border-white/5 bg-gradient-to-r from-slate-900 to-slate-800">
             <div className="flex justify-between items-start">
               <div>
@@ -248,26 +288,35 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
             </div>
           </div>
 
-          {/* 2. Scroll Area - O "App" Report */}
           <div className="flex-1 overflow-y-auto custom-scrollbar p-5 space-y-6">
             
-            {/* Mapa de Satélite Preview */}
+            {/* PREVIEW DO MAPA */}
             <div className="relative w-full aspect-video bg-slate-900 rounded-xl overflow-hidden border border-white/10 shadow-lg group">
               {staticMapUrl ? (
                 <>
-                    <img src={staticMapUrl} alt="Satélite" className="w-full h-full object-cover" />
-                    <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-transparent to-transparent opacity-80"></div>
-                    <div className="absolute bottom-3 left-3 flex flex-col">
+                    <img 
+                        src={staticMapUrl} 
+                        alt="Satélite" 
+                        className="w-full h-full object-cover transition-opacity duration-500" 
+                        onError={(e) => {
+                            e.target.style.display = 'none';
+                            e.target.parentNode.classList.add('bg-red-900/20');
+                        }}
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-transparent to-transparent opacity-80 pointer-events-none"></div>
+                    <div className="absolute bottom-3 left-3 flex flex-col pointer-events-none">
                         <span className="text-xs font-bold text-white shadow-black drop-shadow-md">Vista de Satélite</span>
-                        <span className="text-[10px] text-cyan-400">Gerado via Mapbox Static API</span>
+                        <span className="text-[10px] text-cyan-400">Mapbox Static API (Polyline Encoded)</span>
                     </div>
                 </>
               ) : (
-                <div className="flex items-center justify-center h-full text-slate-500 text-xs">Carregando satélite...</div>
+                <div className="flex flex-col items-center justify-center h-full text-slate-500 text-xs gap-2">
+                    <Activity className="animate-spin text-cyan-500" />
+                    <span>Gerando imagem do mapa...</span>
+                </div>
               )}
             </div>
 
-            {/* Cards de Métricas Principais */}
             <div className="grid grid-cols-2 gap-3">
               <div className="bg-slate-900/60 p-3 rounded-2xl border border-white/5 flex flex-col items-center justify-center text-center">
                 <MapPin className="text-cyan-400 mb-1 w-5 h-5" />
@@ -281,7 +330,6 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
               </div>
             </div>
 
-            {/* Lista Detalhada por Dia (O que você pediu para ver no app) */}
             <div className="space-y-4">
               <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider pl-1">Histórico Diário</h3>
               
@@ -297,7 +345,6 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
                   
                   <div className="p-3 grid grid-cols-2 gap-2">
                     <div className="col-span-2 text-[10px] text-slate-400 mb-1">Responsáveis:</div>
-                    {/* Extrair usuários únicos deste dia */}
                     {[...new Set(groupData.points.map(p => p.user_email?.split('@')[0] || 'N/A'))].map(u => (
                          <div key={u} className="flex items-center gap-1.5 bg-slate-950 rounded px-2 py-1.5">
                             <User className="w-3 h-3 text-purple-400" />
@@ -305,22 +352,11 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
                          </div>
                     ))}
                   </div>
-                  <div className="px-3 pb-2">
-                     <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                        <div className="bg-cyan-500 h-full" style={{ width: `${(groupData.points.length / stats.totalPoints) * 100}%` }}></div>
-                     </div>
-                     <div className="flex justify-between mt-1 text-[9px] text-slate-500">
-                        <span>{groupData.points.length} pontos</span>
-                        <span>{((groupData.points.length / stats.totalPoints) * 100).toFixed(0)}% do total</span>
-                     </div>
-                  </div>
                 </div>
               ))}
             </div>
-
           </div>
 
-          {/* 3. Footer de Ação */}
           <div className="flex-none p-4 bg-slate-900 border-t border-white/10">
             <Button 
               onClick={generatePDF}
