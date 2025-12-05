@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Play, Pause, Square, MapPin, Save, Navigation, Undo, MousePointerClick, X, Edit2, Check } from 'lucide-react';
+import { Play, Pause, Square, MapPin, Save, Navigation, Undo, MousePointerClick, X } from 'lucide-react';
 
 const ControlesRastreamento = ({
   tracking,
@@ -26,9 +26,7 @@ const ControlesRastreamento = ({
   undoLastPoint,
   formatDistanceDetailed,
   selectedStartPoint,
-  resetStartPoint,
-  isEditing,
-  onToggleEditing
+  resetStartPoint
 }) => {
   
   const safeManualPoints = manualPoints || [];
@@ -142,8 +140,8 @@ const ControlesRastreamento = ({
             </div>
           </div>
 
-          {/* Grid de Controles - Aumentado para 5 colunas */}
-          <div className="grid grid-cols-5 gap-2 mb-3">
+          {/* Grid de Controles */}
+          <div className="grid grid-cols-4 gap-2 mb-3">
             {/* Botão Pausar/Continuar */}
             <Button
               onClick={pauseTracking}
@@ -175,18 +173,6 @@ const ControlesRastreamento = ({
               className="h-12 rounded-xl bg-slate-800 border border-slate-700 text-orange-400 hover:bg-orange-500/10 hover:border-orange-500/50 hover:text-orange-300 transition-all duration-300"
             >
               <Undo className="w-5 h-5" />
-            </Button>
-
-            {/* Botão de Alternar Edição */}
-            <Button
-              onClick={() => onToggleEditing(!isEditing)}
-              className={`h-12 rounded-xl border transition-all ${
-                isEditing 
-                  ? 'bg-yellow-500 text-black border-yellow-600 animate-pulse' 
-                  : 'bg-slate-800 border-slate-700 text-slate-300'
-              }`}
-            >
-              {isEditing ? <Check className="w-5 h-5" /> : <Edit2 className="w-5 h-5" />}
             </Button>
 
             {/* Botão Add Ponto (Principal) */}
