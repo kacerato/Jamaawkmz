@@ -7,16 +7,33 @@ import autoTable from 'jspdf-autotable';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Capacitor } from '@capacitor/core';
 
-// Token público padrão (ou use o seu próprio)
 const MAPBOX_TOKEN = 'pk.eyJ1Ijoia2FjZXJhdG8iLCJhIjoiY21oZG1nNnViMDRybjJub2VvZHV1aHh3aiJ9.l7tCaIPEYqcqDI8_aScm7Q';
 
 const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
+  // 1. HOOKS NO TOPO (Regra de Ouro do React)
   const [loadingPdf, setLoadingPdf] = useState(false);
 
-  if (!project) return null;
+  // 2. USEMEMO ANTES DE QUALQUER RETURN
+  const groupedPoints = useMemo(() => {
+    if (!project || !project.points) return {}; // Proteção interna
 
-  // --- FUNÇÕES AUXILIARES ---
-  
+    const groups = {};
+    // Clona e ordena para não mutar o original
+    const sortedPoints = [...project.points].sort((a, b) => 
+      new Date(b.timestamp || b.created_at).getTime() - new Date(a.timestamp || a.created_at).getTime()
+    );
+    
+    sortedPoints.forEach(point => {
+      const date = new Date(point.timestamp || point.created_at).toLocaleDateString('pt-BR', {
+        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+      });
+      if (!groups[date]) groups[date] = [];
+      groups[date].push(point);
+    });
+    return groups;
+  }, [project]); // Só recalcula se 'project' mudar
+
+  // 3. FUNÇÕES AUXILIARES (Definições)
   const getDistance = (p1, p2) => {
     const R = 6371e3;
     const φ1 = p1.lat * Math.PI / 180;
@@ -28,9 +45,11 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
   };
 
   const calculateGroupDistance = (points) => {
-    if (points.length < 2) return 0;
+    if (!points || points.length < 2) return 0;
     let total = 0;
-    const chronoPoints = [...points].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    const chronoPoints = [...points].sort((a, b) => 
+      new Date(a.timestamp || a.created_at).getTime() - new Date(b.timestamp || b.created_at).getTime()
+    );
     for (let i = 0; i < chronoPoints.length - 1; i++) {
       total += getDistance(chronoPoints[i], chronoPoints[i+1]);
     }
@@ -39,30 +58,18 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
 
   const formatSmartDistance = (meters) => {
     if (!meters || isNaN(meters)) return "0 m";
+    if (meters < 1) return `${(meters * 100).toFixed(0)} cm`;
     if (meters < 1000) return `${meters.toFixed(2)} m`;
     return `${(meters / 1000).toFixed(3)} km`;
   };
 
-  const groupedPoints = useMemo(() => {
-    const groups = {};
-    const sortedPoints = [...project.points].sort((a, b) => new Date(b.timestamp || b.created_at) - new Date(a.timestamp || a.created_at));
-    
-    sortedPoints.forEach(point => {
-      const date = new Date(point.timestamp || point.created_at).toLocaleDateString('pt-BR', {
-        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
-      });
-      if (!groups[date]) groups[date] = [];
-      groups[date].push(point);
-    });
-    return groups;
-  }, [project.points]);
-
-  // --- GERADOR DE IMAGEM DO MAPA ---
   const getMapSnapshot = () => {
     return new Promise((resolve) => {
-      if (project.points.length === 0) resolve(null);
+      if (!project || project.points.length === 0) {
+        resolve(null);
+        return;
+      }
 
-      // 1. Calcula Bounding Box (Área do projeto)
       let minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
       project.points.forEach(p => {
         if (p.lat < minLat) minLat = p.lat;
@@ -71,14 +78,10 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
         if (p.lng > maxLng) maxLng = p.lng;
       });
 
-      // 2. Monta URL da API Estática do Mapbox
-      // Usa estilo "satellite-streets" para ficar profissional
-      // Adiciona padding=50 para os pontos não ficarem colados na borda
       const width = 800;
       const height = 400;
       const url = `https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/static/[${minLng},${minLat},${maxLng},${maxLat}]/${width}x${height}?padding=50&access_token=${MAPBOX_TOKEN}`;
 
-      // 3. Converte para Base64 (Necessário para o PDF)
       const img = new Image();
       img.crossOrigin = "Anonymous";
       img.src = url;
@@ -90,166 +93,134 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
         ctx.drawImage(img, 0, 0);
         resolve(canvas.toDataURL('image/jpeg', 0.8));
       };
-      img.onerror = () => resolve(null); // Se falhar, segue sem mapa
+      img.onerror = () => resolve(null);
     });
   };
 
-  // --- GERADOR DE PDF ---
   const generatePDF = async () => {
+    if (!project) return;
+    
     setLoadingPdf(true);
-    const doc = new jsPDF();
-    const mapImage = await getMapSnapshot();
-    
-    // --- LAYOUT DO PDF ---
-    
-    // 1. Cabeçalho com Design Moderno
-    doc.setFillColor(15, 23, 42); // Slate 900 (Topo escuro)
-    doc.rect(0, 0, 210, 40, 'F');
-    
-    doc.setTextColor(6, 182, 212); // Cyan
-    doc.setFontSize(24);
-    doc.setFont("helvetica", "bold");
-    doc.text("RELATÓRIO TÉCNICO", 15, 20);
-    
-    doc.setFontSize(10);
-    doc.setTextColor(148, 163, 184); // Slate 400
-    doc.text("Gerado via Jamaaw App", 15, 28);
-    
-    // Data no canto direito
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(10);
-    doc.text(`EMISSÃO: ${new Date().toLocaleDateString('pt-BR')}`, 195, 20, { align: 'right' });
-
-    let currentY = 50;
-
-    // 2. Imagem do Mapa (Se carregou)
-    if (mapImage) {
-      // Sombra simulada
-      doc.setFillColor(240, 240, 240);
-      doc.rect(16, currentY + 1, 178, 80, 'F');
-      
-      // Imagem
-      doc.addImage(mapImage, 'JPEG', 15, currentY, 180, 80);
-      
-      // Borda fina
-      doc.setDrawColor(6, 182, 212);
-      doc.setLineWidth(0.5);
-      doc.rect(15, currentY, 180, 80);
-      
-      // Legenda do Mapa
-      doc.setFillColor(15, 23, 42);
-      doc.rect(15, currentY + 74, 180, 6, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(8);
-      doc.text("VISTA AÉREA DA ÁREA DE OPERAÇÃO", 105, currentY + 78, { align: 'center' });
-
-      currentY += 90;
-    }
-
-    // 3. Card de Resumo (Estilo Dashboard)
-    // Fundo do card
-    doc.setFillColor(248, 250, 252); // Slate 50
-    doc.setDrawColor(226, 232, 240); // Slate 200
-    doc.roundedRect(15, currentY, 180, 25, 2, 2, 'FD');
-
-    // Dados do Card
-    doc.setFontSize(9);
-    doc.setTextColor(100, 116, 139);
-    doc.text("PROJETO", 20, currentY + 8);
-    doc.text("EXTENSÃO TOTAL", 100, currentY + 8);
-    doc.text("TOTAL PONTOS", 160, currentY + 8);
-
-    doc.setFontSize(12);
-    doc.setTextColor(15, 23, 42);
-    doc.setFont("helvetica", "bold");
-    doc.text(project.name.substring(0, 35).toUpperCase(), 20, currentY + 18);
-    
-    doc.setTextColor(16, 185, 129); // Verde
-    doc.text(formatSmartDistance(project.total_distance), 100, currentY + 18);
-    
-    doc.setTextColor(6, 182, 212); // Cyan
-    doc.text(String(project.points.length), 160, currentY + 18);
-
-    currentY += 35;
-
-    // 4. Tabelas por Dia
-    Object.entries(groupedPoints).forEach(([date, points]) => {
-      const dailyDist = calculateGroupDistance(points);
-
-      // Quebra de página inteligente
-      if (currentY > 250) {
-        doc.addPage();
-        currentY = 20;
-      }
-
-      // Cabeçalho da Seção (Dia)
-      doc.setFillColor(6, 182, 212); // Tarja Azul
-      doc.rect(15, currentY, 2, 10, 'F');
-      
-      doc.setFontSize(12);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(15, 23, 42);
-      doc.text(date.toUpperCase(), 20, currentY + 7);
-      
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(100, 116, 139);
-      doc.text(`Produção: ${formatSmartDistance(dailyDist)}`, 195, currentY + 7, { align: 'right' });
-
-      currentY += 12;
-
-      // Tabela de Dados
-      const tableBody = points.map((p, index) => [
-        points.length - index,
-        new Date(p.timestamp || p.created_at).toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'}),
-        `${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}`,
-        p.user_email || currentUserEmail || 'N/A'
-      ]);
-
-      autoTable(doc, {
-        startY: currentY,
-        head: [['#', 'HORA', 'COORDENADAS GPS', 'RESPONSÁVEL']],
-        body: tableBody,
-        theme: 'plain',
-        headStyles: { 
-          fillColor: [241, 245, 249], 
-          textColor: [71, 85, 105], 
-          fontStyle: 'bold',
-          fontSize: 8,
-          lineWidth: 0 // Sem borda no header
-        },
-        styles: { 
-          fontSize: 8,
-          textColor: [51, 65, 85],
-          cellPadding: 3,
-          lineWidth: { bottom: 0.1 }, // Linha fina apenas embaixo
-          lineColor: [226, 232, 240]
-        },
-        columnStyles: {
-          0: { cellWidth: 15, fontStyle: 'bold' },
-          1: { cellWidth: 25 },
-          2: { cellWidth: 60, font: 'courier' }, // Fonte mono para coords
-          3: { cellWidth: 'auto' }
-        },
-        margin: { left: 15, right: 15 }
-      });
-
-      currentY = doc.lastAutoTable.finalY + 15;
-    });
-
-    // Rodapé
-    const pageCount = doc.internal.getNumberOfPages();
-    for(let i = 1; i <= pageCount; i++) {
-      doc.setPage(i);
-      doc.setFontSize(8);
-      doc.setTextColor(150);
-      doc.text(`Página ${i} de ${pageCount}`, 105, 290, {align: 'center'});
-    }
-
-    // Salvar (Compatível com Android/Capacitor)
-    const safeName = `Relatorio_${project.name.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
     
     try {
+      const doc = new jsPDF();
+      const mapImage = await getMapSnapshot();
+      
+      // Fundo Dark
+      doc.setFillColor(15, 23, 42); 
+      doc.rect(0, 0, 210, 40, 'F');
+      
+      doc.setTextColor(6, 182, 212);
+      doc.setFontSize(24);
+      doc.setFont("helvetica", "bold");
+      doc.text("RELATÓRIO TÉCNICO", 15, 20);
+      
+      doc.setFontSize(10);
+      doc.setTextColor(148, 163, 184);
+      doc.text("Gerado via Jamaaw App", 15, 28);
+      
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(10);
+      doc.text(`EMISSÃO: ${new Date().toLocaleDateString('pt-BR')}`, 195, 20, { align: 'right' });
+
+      let currentY = 50;
+
+      if (mapImage) {
+        doc.setFillColor(240, 240, 240);
+        doc.rect(16, currentY + 1, 178, 80, 'F');
+        doc.addImage(mapImage, 'JPEG', 15, currentY, 180, 80);
+        doc.setDrawColor(6, 182, 212);
+        doc.setLineWidth(0.5);
+        doc.rect(15, currentY, 180, 80);
+        
+        doc.setFillColor(15, 23, 42);
+        doc.rect(15, currentY + 74, 180, 6, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(8);
+        doc.text("VISTA AÉREA DA ÁREA DE OPERAÇÃO", 105, currentY + 78, { align: 'center' });
+
+        currentY += 90;
+      }
+
+      // Card Resumo
+      doc.setFillColor(248, 250, 252);
+      doc.setDrawColor(226, 232, 240);
+      doc.roundedRect(15, currentY, 180, 25, 2, 2, 'FD');
+
+      doc.setFontSize(9);
+      doc.setTextColor(100, 116, 139);
+      doc.text("PROJETO", 20, currentY + 8);
+      doc.text("EXTENSÃO TOTAL", 100, currentY + 8);
+      doc.text("TOTAL PONTOS", 160, currentY + 8);
+
+      doc.setFontSize(12);
+      doc.setTextColor(15, 23, 42);
+      doc.setFont("helvetica", "bold");
+      doc.text(project.name.substring(0, 35).toUpperCase(), 20, currentY + 18);
+      
+      doc.setTextColor(16, 185, 129);
+      doc.text(formatSmartDistance(project.total_distance), 100, currentY + 18);
+      
+      doc.setTextColor(6, 182, 212);
+      doc.text(String(project.points.length), 160, currentY + 18);
+
+      currentY += 35;
+
+      // Tabelas Diárias
+      Object.entries(groupedPoints).forEach(([date, points]) => {
+        const dailyDist = calculateGroupDistance(points);
+
+        if (currentY > 250) {
+          doc.addPage();
+          currentY = 20;
+        }
+
+        doc.setFillColor(6, 182, 212);
+        doc.rect(15, currentY, 2, 10, 'F');
+        
+        doc.setFontSize(12);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(15, 23, 42);
+        doc.text(date.toUpperCase(), 20, currentY + 7);
+        
+        doc.setFontSize(10);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(100, 116, 139);
+        doc.text(`Produção: ${formatSmartDistance(dailyDist)}`, 195, currentY + 7, { align: 'right' });
+
+        currentY += 12;
+
+        const tableBody = points.map((p, index) => [
+          points.length - index,
+          new Date(p.timestamp || p.created_at).toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'}),
+          `${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}`,
+          p.user_email || currentUserEmail || 'N/A'
+        ]);
+
+        autoTable(doc, {
+          startY: currentY,
+          head: [['#', 'HORA', 'COORDENADAS GPS', 'RESPONSÁVEL']],
+          body: tableBody,
+          theme: 'plain',
+          headStyles: { fillColor: [241, 245, 249], textColor: [71, 85, 105], fontStyle: 'bold', fontSize: 8, lineWidth: 0 },
+          styles: { fontSize: 8, textColor: [51, 65, 85], cellPadding: 3, lineWidth: { bottom: 0.1 }, lineColor: [226, 232, 240] },
+          columnStyles: { 0: { cellWidth: 15, fontStyle: 'bold' }, 1: { cellWidth: 25 }, 2: { cellWidth: 60, font: 'courier' }, 3: { cellWidth: 'auto' } },
+          margin: { left: 15, right: 15 }
+        });
+
+        currentY = doc.lastAutoTable.finalY + 15;
+      });
+
+      const pageCount = doc.internal.getNumberOfPages();
+      for(let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setTextColor(150);
+        doc.text(`Página ${i} de ${pageCount}`, 105, 290, {align: 'center'});
+      }
+
+      const safeName = `Relatorio_${project.name.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+      
       if (Capacitor.getPlatform() === 'web') {
         doc.save(safeName);
       } else {
@@ -259,15 +230,19 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
           data: base64,
           directory: Directory.Documents,
         });
-        alert('PDF salvo em Documentos!');
+        alert('PDF salvo em Documentos com sucesso!');
       }
-    } catch (e) {
-      console.error(e);
-      alert('Erro ao salvar PDF: ' + e.message);
+
+    } catch (error) {
+      console.error(error);
+      alert('Erro ao gerar PDF: ' + error.message);
+    } finally {
+      setLoadingPdf(false);
     }
-    
-    setLoadingPdf(false);
   };
+
+  // 4. GUARDA DE RENDERIZAÇÃO (Agora está no lugar certo, DEPOIS dos hooks)
+  if (!project) return null;
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -275,7 +250,6 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
         
         <div className="bg-slate-900 border border-slate-700 rounded-3xl overflow-hidden shadow-2xl flex flex-col">
           
-          {/* Header UI */}
           <div className="p-6 border-b border-slate-800 bg-slate-950">
             <div className="flex justify-between items-center mb-2">
               <h2 className="text-xl font-bold text-white flex items-center gap-2">
@@ -290,10 +264,8 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
             </p>
           </div>
 
-          {/* Conteúdo UI */}
           <div className="p-6 bg-slate-900 flex flex-col gap-4">
             
-            {/* Preview Visual */}
             <div className="bg-slate-950/50 p-4 rounded-2xl border border-slate-800 flex items-center gap-4">
               <div className="w-12 h-12 rounded-xl bg-cyan-500/10 flex items-center justify-center text-cyan-400 border border-cyan-500/20">
                 <ImageIcon size={24} />
