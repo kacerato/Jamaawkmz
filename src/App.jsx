@@ -36,7 +36,10 @@ import {
   Users,
   Hash,
   ArrowRight,
-  Trash2 // ADICIONADO
+  Trash2,
+  Lock,
+  Unlock,
+  AlertCircle // ADICIONADO
 } from 'lucide-react'
 import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.jsx'
@@ -66,9 +69,10 @@ import ModernPopup from './components/ModernPopup'
 import ImportProgressPopup from './components/ImportProgressPopup'
 import MultipleSelectionPopup from './components/MultipleSelectionPopup'
 import BairroDetectionService from './components/BairroDetectionService'
+import ProjectLockService from './services/ProjectLockService' // NOVO SERVIÇO
 import 'mapbox-gl/dist/mapbox-gl.css'
 import './App.css'
-import ProjectReport from './components/ProjectReport'; // NOVA IMPORTAÇÃO
+import ProjectReport from './components/ProjectReport';
 
 const DEFAULT_BAIRROS = [
   'Ponta Verde',
@@ -285,17 +289,15 @@ const PoleMarker = React.memo(({ point, index, color, onClick, isActive }) => {
       anchor="bottom"
       onClick={onClick}
     >
-      <div className="pole-marker-container" style={{ willChange: 'transform' }}> {/* will-change ajuda a GPU */}
-        {/* Imagem do Poste */}
+      <div className="pole-marker-container" style={{ willChange: 'transform' }}>
         <img 
           src={electricPoleIcon} 
           alt={`Ponto ${index}`} 
           className="pole-image"
-          loading="lazy" // Ajuda a não travar o carregamento inicial
-          style={{ pointerEvents: 'none' }} // Melhora a rolagem
+          loading="lazy"
+          style={{ pointerEvents: 'none' }}
         />
         
-        {/* Número do Ponto */}
         <div 
           className={`pole-number-plate ${isActive ? 'pole-active' : ''}`}
           style={{ 
@@ -309,7 +311,6 @@ const PoleMarker = React.memo(({ point, index, color, onClick, isActive }) => {
     </Marker>
   );
 }, (prevProps, nextProps) => {
-  // Otimização agressiva: Só re-renderiza se o ID, Cor ou Estado Ativo mudar
   return (
     prevProps.point.id === nextProps.point.id &&
     prevProps.color === nextProps.color &&
@@ -405,7 +406,6 @@ const ProjectCard = React.memo(({ project, isSelected, onToggle, onLoad, onEdit,
     </div>
   );
 }, (prevProps, nextProps) => {
-  // Esta função diz ao React quando NÃO re-renderizar
   return (
     prevProps.isSelected === nextProps.isSelected &&
     prevProps.project.id === nextProps.project.id &&
@@ -414,13 +414,10 @@ const ProjectCard = React.memo(({ project, isSelected, onToggle, onLoad, onEdit,
   );
 });
 
-
-
 // Sub-componente para o conteúdo do popup de ponto de rastreamento com efeito Glow
 const TrackingPointPopupContent = ({ pointInfo, onClose, onSelectStart, selectedStartPoint, manualPoints }) => {
   const cardRef = useRef(null);
   
-  // Lógica do Efeito Glow (Mouse Move)
   const handleMouseMove = (e) => {
     if (!cardRef.current) return;
     const { left, top } = cardRef.current.getBoundingClientRect();
@@ -431,7 +428,6 @@ const TrackingPointPopupContent = ({ pointInfo, onClose, onSelectStart, selected
     cardRef.current.style.setProperty('--mouse-y', `${y}px`);
   };
   
-  // Encontra o índice real do ponto no array principal
   const pointIndex = manualPoints.findIndex(p => p.id === pointInfo.point.id) + 1;
   
   return (
@@ -444,7 +440,6 @@ const TrackingPointPopupContent = ({ pointInfo, onClose, onSelectStart, selected
         '--mouse-y': '50%',
       }}
     >
-      {/* Camada de Glow do Background */}
       <div 
         className="pointer-events-none absolute -inset-px rounded-2xl opacity-0 transition duration-300 group-hover:opacity-100"
         style={{
@@ -452,7 +447,6 @@ const TrackingPointPopupContent = ({ pointInfo, onClose, onSelectStart, selected
         }}
       />
 
-      {/* Camada de Glow da Borda (Shine Border) */}
       <div 
         className="pointer-events-none absolute -inset-px rounded-2xl opacity-0 transition duration-300 group-hover:opacity-100"
         style={{
@@ -465,9 +459,7 @@ const TrackingPointPopupContent = ({ pointInfo, onClose, onSelectStart, selected
         }}
       />
 
-      {/* Conteúdo Real */}
       <div className="relative p-4 bg-slate-900/80 backdrop-blur-xl h-full rounded-2xl">
-        {/* Header */}
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             <div className="flex items-center justify-center w-8 h-8 rounded-full bg-cyan-500/20 border border-cyan-500/30 shadow-[0_0_10px_rgba(6,182,212,0.2)]">
@@ -492,7 +484,6 @@ const TrackingPointPopupContent = ({ pointInfo, onClose, onSelectStart, selected
           </Button>
         </div>
 
-        {/* Coordenadas */}
         <div className="grid grid-cols-2 gap-2 mb-4">
           <div className="bg-slate-950/50 p-2 rounded-lg border border-slate-800/50 flex flex-col">
             <span className="text-[9px] uppercase text-slate-500 font-semibold mb-0.5 flex items-center gap-1">
@@ -512,7 +503,6 @@ const TrackingPointPopupContent = ({ pointInfo, onClose, onSelectStart, selected
           </div>
         </div>
 
-        {/* Botão de Ação Principal (Usar como Início) */}
         <Button
           onClick={() => {
             onSelectStart(pointInfo.point);
@@ -628,6 +618,9 @@ function App() {
   // Novo estado para modo de entrada do rastreamento
   const [trackingInputMode, setTrackingInputMode] = useState('gps');
   
+  // NOVO: Estado para controle de lock
+  const [projectLock, setProjectLock] = useState(null);
+  
   const kalmanLatRef = useRef(new KalmanFilter(0.1, 0.1));
   const kalmanLngRef = useRef(new KalmanFilter(0.1, 0.1));
   
@@ -658,17 +651,30 @@ function App() {
         name: marker.name,
         bairro: marker.bairro,
         descricao: marker.descricao,
-        // Usa a cor definida ou vermelho padrão
         color: marker.color || '#ef4444' 
       }
     }))
   }), [filteredMarkers]);
   
+  // NOVO: Efeito para manter o lock ativo enquanto edita
+  useEffect(() => {
+    let interval;
+    if (tracking && currentProject && isOnline && user) {
+      // Tenta renovar o lock a cada 2 minutos
+      interval = setInterval(async () => {
+        const success = await ProjectLockService.heartbeat(currentProject.id, user.id);
+        if (!success) {
+          showFeedback('Atenção', 'Perda de conexão com o servidor de bloqueio.', 'warning');
+        }
+      }, 120000); // 2 minutos
+    }
+    return () => clearInterval(interval);
+  }, [tracking, currentProject, isOnline, user]);
+  
   // Dentro do componente App
   const loadProjectsFromSupabase = async () => {
     if (!user) return [];
     try {
-      // 1. Busca meus projetos
       const { data: myProjects, error: err1 } = await supabase
         .from('projetos')
         .select('*')
@@ -676,7 +682,6 @@ function App() {
       
       if (err1) throw err1;
       
-      // 2. Busca projetos onde sou membro
       const { data: memberData, error: err2 } = await supabase
         .from('project_members')
         .select('project_id')
@@ -698,7 +703,6 @@ function App() {
       
       const allProjects = [...(myProjects || []), ...(sharedProjects || [])];
       
-      // Ordena por data
       allProjects.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
       
       localStorage.setItem('jamaaw_projects', JSON.stringify(allProjects));
@@ -710,11 +714,9 @@ function App() {
     }
   };
   
-  // Função para detectar bairros de projetos que ainda estão como "Vários"
   const refreshProjectNeighborhoods = async () => {
     if (!projects || projects.length === 0) return;
     
-    // Filtra projetos que precisam de atualização (bairro 'Vários' ou vazio) e têm pontos
     const projectsToUpdate = projects.filter(p =>
       (!p.bairro || p.bairro === 'Vários') &&
       p.points &&
@@ -725,22 +727,18 @@ function App() {
     
     console.log(`Detectando bairros para ${projectsToUpdate.length} projetos...`);
     
-    // Cria uma cópia dos projetos atuais para não mutar o estado diretamente
     let updatedProjectsList = [...projects];
     let hasUpdates = false;
     
     for (const project of projectsToUpdate) {
       try {
-        // Usa o serviço existente para detectar
         const detectedBairro = await BairroDetectionService.detectBairroForProject(project.points);
         
         if (detectedBairro && detectedBairro !== 'Vários') {
-          // Atualiza o projeto na lista local
           updatedProjectsList = updatedProjectsList.map(p =>
             p.id === project.id ? { ...p, bairro: detectedBairro } : p
           );
           
-          // Atualiza no Supabase se estiver online
           if (isOnline && user && !project.id.toString().startsWith('offline_')) {
             await supabase
               .from('projetos')
@@ -749,7 +747,6 @@ function App() {
           }
           
           hasUpdates = true;
-          // Pequeno delay para não bloquear a UI ou exceder limites da API
           await new Promise(resolve => setTimeout(resolve, 200));
         }
       } catch (error) {
@@ -783,19 +780,13 @@ function App() {
           
           const updatedProject = payload.new;
           
-          // Se eu sou quem editou, ignora (já atualizei localmente)
-          // (Isso evita glitches visuais, embora não seja estritamente necessário se o estado for bem gerenciado)
-          
-          // Atualiza estado do projeto atual
           setCurrentProject(prev => ({ ...prev, ...updatedProject }));
           
-          // Se estiver rastreando e os pontos mudarem externamente, atualiza manualPoints
           if (updatedProject.points) {
             setManualPoints(updatedProject.points);
             setTotalDistance(updatedProject.total_distance);
           }
           
-          // Atualiza na lista geral também
           setProjects(prev => prev.map(p => p.id === updatedProject.id ? updatedProject : p));
         }
       )
@@ -806,12 +797,11 @@ function App() {
     };
   }, [currentProject?.id, isOnline]);
   
-  // Efeito para rodar a detecção quando abrir a lista de projetos
   useEffect(() => {
     if (showProjectsList) {
       refreshProjectNeighborhoods();
     }
-  }, [showProjectsList]); // Roda sempre que showProjectsList mudar para true
+  }, [showProjectsList]);
   
   const selectPointAsStart = (point) => {
     setSelectedStartPoint(point);
@@ -906,6 +896,11 @@ function App() {
   
   const handleLogout = async () => {
     try {
+      // Libera qualquer lock ativo
+      if (currentProject && isOnline && user) {
+        await ProjectLockService.releaseLock(currentProject.id, user.id);
+      }
+      
       localStorage.removeItem('supabase.auth.token');
       sessionStorage.removeItem('supabase.auth.token');
       localStorage.removeItem('jamaaw_projects');
@@ -961,7 +956,6 @@ function App() {
     const file = event.target.files[0];
     if (!file) return;
     
-    // Resetar estados de progresso
     setImportProgress(0);
     setImportCurrentStep(1);
     setImportTotalSteps(5);
@@ -985,7 +979,6 @@ function App() {
       if (fileName.endsWith('.kmz')) {
         updateImportProgress(20, 2, 'Extraindo KML do arquivo KMZ...');
         
-        // Usa JSZip para abrir o KMZ
         const zip = new(JSZip.default || JSZip)();
         const contents = await zip.loadAsync(file);
         const kmlFile = Object.keys(contents.files).find(name => name.toLowerCase().endsWith('.kml'));
@@ -1011,7 +1004,6 @@ function App() {
       const nameElement = xmlDoc.getElementsByTagName('name')[0];
       let projectName = nameElement?.textContent || `Projeto Importado ${new Date().toLocaleDateString('pt-BR')}`;
       
-      // Verifica duplicidade
       updateImportProgress(60, 4, 'Verificando nome do projeto...');
       const existingProject = projects.find(p => p.name === projectName);
       let shouldOverwrite = false;
@@ -1034,7 +1026,6 @@ function App() {
       updateImportProgress(70, 4, 'Extraindo pontos geográficos...');
       
       const points = [];
-      // Lógica de extração de LineStrings
       const lineStrings = xmlDoc.getElementsByTagName('LineString');
       if (lineStrings.length > 0) {
         for (let i = 0; i < lineStrings.length; i++) {
@@ -1056,7 +1047,6 @@ function App() {
         }
       }
       
-      // Fallback para Placemarks se não houver LineString
       if (points.length === 0) {
         const placemarks = xmlDoc.getElementsByTagName('Placemark');
         for (let i = 0; i < placemarks.length; i++) {
@@ -1076,33 +1066,29 @@ function App() {
       
       updateImportProgress(90, 5, 'Finalizando importação...');
       
-      const totalDistanceVal = calculateTotalDistance(points); // Certifique-se que esta função existe no App
+      const totalDistanceVal = calculateTotalDistance(points);
       
       const project = {
-        id: existingProject && shouldOverwrite ? existingProject.id : generateUUID(), // Usa UUID novo se não for sobrescrever
+        id: existingProject && shouldOverwrite ? existingProject.id : generateUUID(),
         name: projectName,
         points: points,
-        total_distance: totalDistanceVal, // Nome da coluna no Supabase
-        totalDistance: totalDistanceVal, // Compatibilidade local
+        total_distance: totalDistanceVal,
+        totalDistance: totalDistanceVal,
         bairro: 'Importado',
         tracking_mode: 'manual',
         created_at: new Date().toISOString(),
         user_id: user?.id
       };
       
-      // Salva no banco ou local
       if (isOnline && user) {
-        // Se for sobrescrever, usa update, senão insert
         if (existingProject && shouldOverwrite) {
           await supabase.from('projetos').update(project).eq('id', project.id);
         } else {
           await supabase.from('projetos').insert([project]);
         }
-        // Atualiza a lista
-        const updatedList = await loadProjectsFromSupabase(); // Chama a função que criamos no passo anterior
+        const updatedList = await loadProjectsFromSupabase();
         setProjects(updatedList);
       } else {
-        // Modo Offline
         let updatedProjects;
         if (existingProject && shouldOverwrite) {
           updatedProjects = projects.map(p => p.id === existingProject.id ? project : p);
@@ -1117,7 +1103,7 @@ function App() {
       setImportSuccess(true);
       
       setTimeout(() => {
-        loadProject(project); // Carrega o projeto no mapa
+        loadProject(project);
         setShowImportProgress(false);
       }, 1500);
       
@@ -1128,34 +1114,27 @@ function App() {
     } finally {
       setUploading(false);
       if (event.target) {
-        event.target.value = ''; // Limpa o input
+        event.target.value = '';
       }
     }
   };
   
-  // Função para focar a câmera no projeto
   const focusOnProject = (project) => {
-    // Verificação de segurança
     if (!project || !project.points || project.points.length === 0) {
-      // Se não tiver pontos, apenas fecha o menu
       setShowLoadedProjects(false);
       return;
     }
     
-    // Pega o primeiro ponto para centralizar
     const firstPoint = project.points[0];
     
-    // Fecha o menu de projetos carregados
-    // Se esta linha estava dando erro, agora vai funcionar porque está no escopo correto
-    setShowLoadedProjects(false); 
+    setShowLoadedProjects(false);
     
-    // Move a câmera do mapa
     if (mapRef.current) {
       mapRef.current.flyTo({
         center: [firstPoint.lng, firstPoint.lat],
         zoom: 16,
         speed: 1.5,
-        essential: true // Garante que a animação aconteça mesmo se o usuário estiver interagindo
+        essential: true
       });
     }
   };
@@ -1194,13 +1173,11 @@ function App() {
       projectNameToUse = `Rastreamento ${new Date().toLocaleString('pt-BR')}`;
     }
     
-    // CORREÇÃO AUTOMÁTICA DE IDs: Converte IDs numéricos antigos para UUIDs antes de salvar
     const sanitizedPoints = finalPoints.map(p => ({
       ...p,
       id: typeof p.id === 'number' || !isNaN(p.id) ? generateUUID() : p.id,
-      // Atualiza connectedFrom se for um ID numérico
       connectedFrom: p.connectedFrom && (typeof p.connectedFrom === 'number' || !isNaN(p.connectedFrom)) ?
-        null // Reseta para evitar referências quebradas - será recalculado se necessário
+        null
         :
         p.connectedFrom
     }));
@@ -1231,7 +1208,6 @@ function App() {
           
           if (error) throw error;
           
-          // Verificação de segurança: Se o RLS falhar ou usuário não tiver permissão, data vem vazio
           if (!data || data.length === 0) {
             throw new Error("Permissão negada ou projeto não encontrado para atualização.");
           }
@@ -1247,13 +1223,12 @@ function App() {
         setProjects(updatedProjects);
         localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
         
-        // Atualiza também o projeto na camada visual (loadedProjects)
         setLoadedProjects(prev => {
           const exists = prev.find(p => p.id === savedProject.id);
           if (exists) {
             return prev.map(p =>
               p.id === savedProject.id ?
-              { ...savedProject, color: p.color } // Mantém a cor original visual
+              { ...savedProject, color: p.color }
               :
               p
             );
@@ -1294,13 +1269,12 @@ function App() {
         setProjects(updatedProjects);
         localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
         
-        // Atualiza também o projeto na camada visual (loadedProjects)
         setLoadedProjects(prev => {
           const exists = prev.find(p => p.id === savedProject.id);
           if (exists) {
             return prev.map(p =>
               p.id === savedProject.id ?
-              { ...savedProject, color: p.color } // Mantém a cor original visual
+              { ...savedProject, color: p.color }
               :
               p
             );
@@ -1333,13 +1307,15 @@ function App() {
         localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
       }
       
-      // Se for edição, mantém como atual. Se for novo save, LIMPA o atual.
+      // Se for salvamento manual (não autoSave), libera o lock
+      if (!autoSave && currentProject && isOnline && user) {
+        await ProjectLockService.releaseLock(currentProject.id, user.id);
+      }
+
 if (!autoSave) {
   if (editingProject) {
-    // Se estava editando, mantém atualizado
     setCurrentProject(savedProject);
   } else {
-    // SE SALVOU UM NOVO, DESCONECTA TUDO (Resolve o bug do fantasma)
     setCurrentProject(null);
   }
 }
@@ -1353,12 +1329,10 @@ if (!autoSave) {
     setPaused(false);
     setShowTrackingControls(false);
     
-    // Limpa visualmente o mapa
     setManualPoints([]);
     setTotalDistance(0);
     setSelectedStartPoint(null);
     
-    // Garante que o histórico de posição também limpe
     setPositionHistory([]);
   }
   
@@ -1373,128 +1347,135 @@ if (!autoSave) {
     }
   };
   
+  // ATUALIZADA: Função startTracking com sistema de lock
   const startTracking = async (mode = 'gps') => {
-  // 1. Verificação de Segurança (Múltiplos Projetos)
-  if (loadedProjects.length > 1) {
-    showFeedback('Bloqueado', 'Múltiplos projetos ativos. Deixe apenas UM projeto no mapa para continuar o traçado.', 'error');
-    return;
-  }
-  
-  // 2. Lógica de Continuação (CORRIGIDA)
-  if (loadedProjects.length === 1) {
-    const project = loadedProjects[0];
+    // 1. Verificação de Segurança (Múltiplos Projetos)
+    if (loadedProjects.length > 1) {
+      showFeedback('Bloqueado', 'Múltiplos projetos ativos. Deixe apenas UM projeto no mapa para continuar o traçado.', 'error');
+      return;
+    }
     
-    // Define o projeto atual e carrega os pontos na memória de edição
-    setCurrentProject(project);
-    setManualPoints(project.points); // Garante que a lista não comece do zero
-    setTotalDistance(project.totalDistance || project.total_distance || 0);
-    setProjectName(project.name);
-    
-    // --- A CORREÇÃO MÁGICA ---
-    // Pega o último ponto do array e define como "Ponto Ativo"
-    if (project.points && project.points.length > 0) {
-      const lastPoint = project.points[project.points.length - 1];
-      setSelectedStartPoint(lastPoint); // <--- ISSO CONECTA O TRAÇO
+    // 2. Lógica de Continuação (COM SISTEMA DE LOCK)
+    if (loadedProjects.length === 1) {
+      const project = loadedProjects[0];
       
-      // Feedback visual para o usuário saber que conectou
-      showFeedback('Conectado', `Rastreamento continuado a partir do Ponto ${project.points.length}`, 'success');
-    }
-  }
-  // 3. Novo Projeto (Do zero)
-  else if (!currentProject) {
-    setManualPoints([]);
-    setTotalDistance(0);
-    setProjectName('');
-    setSelectedStartPoint(null);
-  }
-  
-  // Configurações de UI
-  setTrackingInputMode(mode);
-  setTracking(true);
-  setPaused(false);
-  setShowTrackingControls(true);
-  setShowRulerPopup(false); // Fecha menus antigos se houver
-  
-  // Reseta filtros do GPS
-  kalmanLatRef.current = new KalmanFilter(0.1, 0.1);
-  kalmanLngRef.current = new KalmanFilter(0.1, 0.1);
-};
-  
-  const loadProject = async (project) => {
-  if (tracking && !paused) {
-    showFeedback('Atenção', 'Pare o rastreamento atual antes de carregar um projeto.', 'warning');
-    return;
-  }
-  
-  if (manualPoints.length > 0) {
-    if (currentProject && currentProject.id === project.id) {
-      setShowProjectsList(false);
-      return;
-    }
-    if (!confirm('Existem pontos não salvos no mapa. Deseja descartá-los?')) {
-      return;
-    }
-  }
-  
-  // Fecha o menu imediatamente para sensação de resposta rápida
-  setShowProjectsList(false);
-  
-  // Usa requestAnimationFrame para não travar a UI enquanto processa
-  requestAnimationFrame(async () => {
-    // 1. Limpa e Prepara
-    setManualPoints([]);
-    setTotalDistance(0);
-    setSelectedStartPoint(null);
-    setTracking(false);
-    setPaused(false);
-    
-    // 2. Define o projeto (Estado React)
-    setCurrentProject(project);
-    
-    const exists = loadedProjects.find(p => p.id === project.id);
-    
-    if (!exists) {
-      // Detecta bairro se necessário (Sem bloquear)
-      let bairroDetectado = project.bairro;
-      if (!project.bairro || project.bairro === 'Vários') {
-        // Não usamos await aqui para não travar o carregamento visual
-        BairroDetectionService.detectBairroForProject(project.points).then(b => {
-          if (b) {
-            // Atualiza silenciosamente depois
-            console.log("Bairro detectado em background:", b);
+      // Verifica se o projeto já está sendo editado por outro usuário (se online)
+      if (isOnline && user) {
+        const hasLock = await ProjectLockService.acquireLock(project.id, user.id);
+        if (!hasLock) {
+          // Se não conseguir o lock, verifica quem está usando
+          const status = await ProjectLockService.checkLockStatus(project.id, user.id);
+          if (status.isLocked) {
+            showFeedback('Projeto Travado', `Este projeto está sendo editado por ${status.lockedBy}. Modo leitura ativado.`, 'error');
+            // Impede a edição e retorna
+            return;
           }
-        });
+        }
       }
       
-      const projectWithColor = {
-        ...project,
-        bairro: bairroDetectado || 'Vários',
-        color: project.color || generateRandomColor(),
-        // Mapeia pontos apenas com dados essenciais para leveza
-        points: project.points
-      };
+      // Define o projeto atual e carrega os pontos na memória de edição
+      setCurrentProject(project);
+      setManualPoints(project.points);
+      setTotalDistance(project.totalDistance || project.total_distance || 0);
+      setProjectName(project.name);
       
-      // Atualiza a lista visual
-      setLoadedProjects(prev => [...prev, projectWithColor]);
-      
-      // 3. Move a câmera SUAVEMENTE apenas depois que os dados foram processados
-      if (project.points.length > 0 && mapRef.current) {
-        // Calcula o centro aproximado para um voo mais curto e suave
-        const firstPoint = project.points[0];
+      if (project.points && project.points.length > 0) {
+        const lastPoint = project.points[project.points.length - 1];
+        setSelectedStartPoint(lastPoint);
         
-        setTimeout(() => {
-          mapRef.current.flyTo({
-            center: [firstPoint.lng, firstPoint.lat],
-            zoom: 16,
-            speed: 1.2, // Velocidade média para não dar "soco" visual
-            curve: 1,
-            essential: true
-          });
-        }, 100); // Pequeno delay para garantir que o mapa renderizou os pontos
+        showFeedback('Conectado', `Rastreamento continuado a partir do Ponto ${project.points.length}`, 'success');
       }
     }
-  });
-};
+    // 3. Novo Projeto (Do zero)
+    else if (!currentProject) {
+      setManualPoints([]);
+      setTotalDistance(0);
+      setProjectName('');
+      setSelectedStartPoint(null);
+    }
+    
+    // Configurações de UI
+    setTrackingInputMode(mode);
+    setTracking(true);
+    setPaused(false);
+    setShowTrackingControls(true);
+    setShowRulerPopup(false);
+    
+    // Reseta filtros do GPS
+    kalmanLatRef.current = new KalmanFilter(0.1, 0.1);
+    kalmanLngRef.current = new KalmanFilter(0.1, 0.1);
+  };
+  
+  // ATUALIZADA: Função loadProject com sistema de lock
+  const loadProject = async (project) => {
+    // Libera o lock do projeto atual, se houver
+    if (currentProject && isOnline && user) {
+      await ProjectLockService.releaseLock(currentProject.id, user.id);
+    }
+
+    if (tracking && !paused) {
+      showFeedback('Atenção', 'Pare o rastreamento atual antes de carregar um projeto.', 'warning');
+      return;
+    }
+    
+    if (manualPoints.length > 0) {
+      if (currentProject && currentProject.id === project.id) {
+        setShowProjectsList(false);
+        return;
+      }
+      if (!confirm('Existem pontos não salvos no mapa. Deseja descartá-los?')) {
+        return;
+      }
+    }
+    
+    setShowProjectsList(false);
+    
+    requestAnimationFrame(async () => {
+      setManualPoints([]);
+      setTotalDistance(0);
+      setSelectedStartPoint(null);
+      setTracking(false);
+      setPaused(false);
+      
+      setCurrentProject(project);
+      
+      const exists = loadedProjects.find(p => p.id === project.id);
+      
+      if (!exists) {
+        let bairroDetectado = project.bairro;
+        if (!project.bairro || project.bairro === 'Vários') {
+          BairroDetectionService.detectBairroForProject(project.points).then(b => {
+            if (b) {
+              console.log("Bairro detectado em background:", b);
+            }
+          });
+        }
+        
+        const projectWithColor = {
+          ...project,
+          bairro: bairroDetectado || 'Vários',
+          color: project.color || generateRandomColor(),
+          points: project.points
+        };
+        
+        setLoadedProjects(prev => [...prev, projectWithColor]);
+        
+        if (project.points.length > 0 && mapRef.current) {
+          const firstPoint = project.points[0];
+          
+          setTimeout(() => {
+            mapRef.current.flyTo({
+              center: [firstPoint.lng, firstPoint.lat],
+              zoom: 16,
+              speed: 1.2,
+              curve: 1,
+              essential: true
+            });
+          }, 100);
+        }
+      }
+    });
+  };
   
   const loadMultipleProjects = async () => {
     if (!canLoadProjects()) {
@@ -1705,7 +1686,6 @@ if (!autoSave) {
     if (!user) return false;
     
     try {
-      // Mantém o .eq('user_id', user.id) para que apenas o dono possa deletar
       const { error } = await supabase
         .from('projetos')
         .delete()
@@ -1776,7 +1756,6 @@ if (!autoSave) {
               loadedProjects = data || [];
               console.log('Projetos carregados:', loadedProjects.length);
               
-              // Garante que o localStorage está atualizado
               localStorage.setItem('jamaaw_projects', JSON.stringify(loadedProjects));
               
             } catch (supabaseError) {
@@ -2116,7 +2095,6 @@ if (!autoSave) {
     }
     
     try {
-      // Usa a função RPC segura que criamos no SQL
       const { data, error } = await supabase.rpc('join_project', {
         p_id: projectId
       });
@@ -2125,16 +2103,14 @@ if (!autoSave) {
       
       if (data.success) {
         showFeedback('Sucesso', data.message, 'success');
-        // Atualiza a lista imediatamente
         const updatedList = await loadProjectsFromSupabase();
         setProjects(updatedList);
       } else {
-        showFeedback('Erro', data.message, 'error'); // Ex: "Projeto não encontrado" ou "Já é membro"
+        showFeedback('Erro', data.message, 'error');
       }
       
     } catch (error) {
       console.error("Erro ao importar:", error);
-      // Tratamento amigável para erro de ID inválido (ex: texto incompleto)
       if (error.code === '22P02') {
         showFeedback('Erro', 'ID inválido. Certifique-se de copiar o código completo.', 'error');
       } else {
@@ -2143,7 +2119,6 @@ if (!autoSave) {
     }
   };
   
-  // ============================ NOVA FUNÇÃO handleFileImport ============================
   const handleFileImport = async (event) => {
     const file = event.target.files[0];
     if (!file) return;
@@ -2165,14 +2140,10 @@ if (!autoSave) {
         kmlText = await file.text();
       }
 
-      // Limpeza prévia (Opcional, depende se você quer somar ou substituir)
-      // Se quiser limpar antes: setMarkers([]); 
-
       const parser = new DOMParser();
       const xmlDoc = parser.parseFromString(kmlText, 'text/xml');
       const placemarks = Array.from(xmlDoc.getElementsByTagName('Placemark'));
 
-      // PROCESSAMENTO EM LOTE (INSTANTÂNEO)
       const newMarkers = placemarks.map((placemark, i) => {
         const coordsText = placemark.getElementsByTagName('coordinates')[0]?.textContent?.trim();
         if (!coordsText) return null;
@@ -2186,24 +2157,20 @@ if (!autoSave) {
           lat,
           lng,
           descricao: placemark.getElementsByTagName('description')[0]?.textContent || '',
-          bairro: '', // Será detectado depois se necessário
+          bairro: '',
           created_at: new Date().toISOString(),
           user_id: user?.id
         };
-      }).filter(Boolean); // Remove nulos
+      }).filter(Boolean);
 
-      // Atualiza o estado UMA VEZ só
       setMarkers(prev => [...prev, ...newMarkers]);
       
-      // Salva no Cache Local imediatamente
       if (user) {
         localStorage.setItem(`jamaaw_markers_${user.id}`, JSON.stringify(newMarkers));
       }
 
-      // Upload para Supabase em Background (Não trava a UI)
       if (isOnline && user && newMarkers.length > 0) {
         setImportCurrentAction('Sincronizando com a nuvem...');
-        // Envia em lotes de 50 para não estourar o request
         const batchSize = 50;
         for (let i = 0; i < newMarkers.length; i += batchSize) {
           const batch = newMarkers.slice(i, i + batchSize);
@@ -2214,7 +2181,6 @@ if (!autoSave) {
       setImportProgress(100);
       setImportSuccess(true);
       
-      // Fecha o popup rápido
       setTimeout(() => setShowImportProgress(false), 1500);
 
     } catch (error) {
@@ -2345,13 +2311,11 @@ if (!autoSave) {
     })
   }
   
-  // App.jsx
   const downloadKML = async (kmlContent, filename) => {
     try {
       console.log('Iniciando download...', filename);
       
       if (Capacitor.getPlatform() === 'web') {
-        // Lógica Web
         const blob = new Blob([kmlContent], {
           type: 'application/vnd.google-earth.kml+xml;charset=utf-8'
         });
@@ -2370,7 +2334,6 @@ if (!autoSave) {
           URL.revokeObjectURL(url);
         }, 1000);
       } else {
-        // Lógica Android/iOS
         await Filesystem.writeFile({
           path: filename,
           data: kmlContent,
@@ -2605,7 +2568,13 @@ if (!autoSave) {
     });
   };
   
+  // ATUALIZADA: Função removeLoadedProject com sistema de lock
   const removeLoadedProject = (projectId) => {
+    // Libera o lock se o projeto sendo removido for o atual
+    if (currentProject && currentProject.id === projectId && isOnline && user) {
+      ProjectLockService.releaseLock(currentProject.id, user.id);
+    }
+
     // 1. Remove da lista visual de projetos carregados
     setLoadedProjects(prev => prev.filter(p => p.id !== projectId));
 
@@ -2729,7 +2698,6 @@ if (!autoSave) {
     addPoint(finalPosition);
   }
   
-  // 1. ATUALIZE A FUNÇÃO addPoint
   const addPoint = (position) => {
   const newPoint = {
     ...position,
@@ -2737,7 +2705,7 @@ if (!autoSave) {
     timestamp: Date.now(),
     connectedFrom: selectedStartPoint ? selectedStartPoint.id : null,
     user_id: user.id,
-    user_email: user.email // <--- ADICIONE ESTA LINHA OBRIGATORIAMENTE
+    user_email: user.email
   }
   
   setManualPoints(prev => {
@@ -2752,39 +2720,26 @@ if (!autoSave) {
   }
 }
   
-  // Substitua a função undoLastPoint existente por esta:
   const undoLastPoint = () => {
     if (manualPoints.length > 0) {
-      // 1. Identifica o ponto que será removido
       const pointToRemove = manualPoints[manualPoints.length - 1];
       
-      // 2. Cria a nova lista sem ele
       const newPoints = manualPoints.slice(0, -1);
       
-      // 3. Atualiza a lista e a distância
       setManualPoints(newPoints);
       const newTotalDistance = calculateTotalDistanceWithBranches(newPoints);
       setTotalDistance(newTotalDistance);
       
-      // 4. CORREÇÃO DO TRAÇADO:
-      // Se o ponto removido era o "Ativo" (onde o próximo se conectaria),
-      // precisamos mover o "Ativo" para trás.
       if (selectedStartPoint && selectedStartPoint.id === pointToRemove.id) {
         if (newPoints.length > 0) {
-          // Tenta encontrar o "Pai" do ponto removido (para manter a lógica de ramificação)
           const parentPoint = pointToRemove.connectedFrom ?
             newPoints.find(p => p.id === pointToRemove.connectedFrom) :
             null;
           
-          // Se tiver pai, volta para o pai. Se não, volta para o último ponto da lista.
           const newActivePoint = parentPoint || newPoints[newPoints.length - 1];
           
           setSelectedStartPoint(newActivePoint);
-          
-          // Feedback visual opcional
-          // console.log("Voltando conexão para:", newActivePoint.id);
         } else {
-          // Se apagou tudo, reseta o ponto inicial
           setSelectedStartPoint(null);
         }
       }
@@ -2807,7 +2762,13 @@ if (!autoSave) {
     setSnappingEnabled(!snappingEnabled);
   };
   
+  // ATUALIZADA: Função stopTracking com sistema de lock
   const stopTracking = async () => {
+    // Libera o lock, se houver
+    if (currentProject && isOnline && user) {
+      await ProjectLockService.releaseLock(currentProject.id, user.id);
+    }
+
     try {
       if (manualPoints.length > 0 && !showProjectDialog) {
         let projectNameToUse = projectName;
@@ -2854,7 +2815,13 @@ if (!autoSave) {
     }
   };
   
+  // ATUALIZADA: Função deleteProject com sistema de lock
   const deleteProject = async (projectId) => {
+    // Libera o lock se o projeto sendo deletado for o atual
+    if (currentProject && currentProject.id === projectId && isOnline && user) {
+      await ProjectLockService.releaseLock(projectId, user.id);
+    }
+
     if (!confirm('Tem certeza que deseja deletar este projeto?')) {
       return;
     }
@@ -2893,28 +2860,24 @@ if (!autoSave) {
     }
   };
   
-  // Função de Exportação KML Corrigida e Simplificada
-const exportProjectAsKML = (project = currentProject) => {
-  if (!project) return;
-  
-  setTimeout(() => {
-    // 1. Formata a Distância (Simples e Direto)
-    const dist = project.total_distance || project.totalDistance || 0;
-    const distTexto = dist < 1000 ?
-      `${Math.round(dist)} metros` :
-      `${(dist / 1000).toFixed(3)} km`;
+  const exportProjectAsKML = (project = currentProject) => {
+    if (!project) return;
     
-    // 2. Prepara a Linha do Traçado (Respeitando conexões/galhos)
-    const linesKML = project.points.map((point, index) => {
-      if (index === 0) return '';
+    setTimeout(() => {
+      const dist = project.total_distance || project.totalDistance || 0;
+      const distTexto = dist < 1000 ?
+        `${Math.round(dist)} metros` :
+        `${(dist / 1000).toFixed(3)} km`;
       
-      // Lógica para encontrar quem conecta com quem
-      let parent = point.connectedFrom ?
-        project.points.find(p => p.id === point.connectedFrom) :
-        project.points[index - 1];
-      
-      if (parent) {
-        return `
+      const linesKML = project.points.map((point, index) => {
+        if (index === 0) return '';
+        
+        let parent = point.connectedFrom ?
+          project.points.find(p => p.id === point.connectedFrom) :
+          project.points[index - 1];
+        
+        if (parent) {
+          return `
           <Placemark>
             <name>Traçado ${index}</name>
             <styleUrl>#lineStyle</styleUrl>
@@ -2926,12 +2889,11 @@ const exportProjectAsKML = (project = currentProject) => {
               </coordinates>
             </LineString>
           </Placemark>`;
-      }
-      return '';
-    }).join('\n');
-    
-    // 3. Prepara os Pontos (Ícones)
-    const pointsKML = project.points.map((point, index) => `
+        }
+        return '';
+      }).join('\n');
+      
+      const pointsKML = project.points.map((point, index) => `
         <Placemark>
           <name>${index + 1}</name>
           <description>Lat: ${point.lat}, Lng: ${point.lng}</description>
@@ -2941,9 +2903,8 @@ const exportProjectAsKML = (project = currentProject) => {
           </Point>
         </Placemark>
       `).join('\n');
-    
-    // 4. Monta o KML Final
-    const kmlContent = `<?xml version="1.0" encoding="UTF-8"?>
+      
+      const kmlContent = `<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2">
   <Document>
     <name>${escapeXml(project.name)}</name>
@@ -2981,11 +2942,11 @@ const exportProjectAsKML = (project = currentProject) => {
 
   </Document>
 </kml>`;
-    
-    const friendlyName = project.name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
-    downloadKML(kmlContent, `projeto_${friendlyName}.kml`);
-  }, 50);
-};
+      
+      const friendlyName = project.name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+      downloadKML(kmlContent, `projeto_${friendlyName}.kml`);
+    }, 50);
+  };
   
   const handleBoundsAdjustedForMarkers = () => {
     setAdjustBoundsForMarkers(false);
@@ -3088,10 +3049,9 @@ const exportProjectAsKML = (project = currentProject) => {
           style={{ width: '100%', height: '100%', position: 'relative' }}
           mapStyle={mapStyles[mapStyle].url}
           mapboxAccessToken={mapboxToken}
-          cursor={tracking && trackingInputMode === 'touch' && !paused ? 'crosshair' : 'auto'} // Muda o cursor para mira
-          preserveDrawingBuffer={true} // ADICIONADO: Permite captura de tela
-          onClick={async (e) => { // Adicione async aqui
-            // 1. Verifica se clicou em um marcador (Layer)
+          cursor={tracking && trackingInputMode === 'touch' && !paused ? 'crosshair' : 'auto'}
+          preserveDrawingBuffer={true}
+          onClick={async (e) => {
             const features = e.target.queryRenderedFeatures(e.point, {
               layers: ['markers-hit-area', 'markers-layer']
             });
@@ -3104,19 +3064,14 @@ const exportProjectAsKML = (project = currentProject) => {
                 lng: feature.geometry.coordinates[0]
               };
               
-              // Abre o popup do marcador
               setPopupMarker(markerData);
-              return; // Impede que crie ponto de rastreio se clicou em marcador
+              return;
             }
 
-            // 2. Lógica de Rastreamento (se não clicou em marcador)
             if (tracking && trackingInputMode === 'touch' && !paused) {
               const { lat, lng } = e.lngLat;
               
-              // Feedback visual imediato (opcional, ou aguarda o snap)
-              
               if (snappingEnabled) {
-                // Tenta alinhar à rua
                 try {
                   const snapped = await RoadSnappingService.snapToRoad(lat, lng);
                   if (snapped.snapped) {
@@ -3129,13 +3084,11 @@ const exportProjectAsKML = (project = currentProject) => {
                   addPoint({ lat, lng });
                 }
               } else {
-                // Modo sem alinhamento
                 addPoint({ lat, lng });
               }
               return;
             }
 
-            // 3. Se clicou fora, fecha o popup do marcador
             setPopupMarker(null); 
           }}
         >
@@ -3149,16 +3102,15 @@ const exportProjectAsKML = (project = currentProject) => {
               paint={{
                 'circle-radius': [
                   'interpolate', ['linear'], ['zoom'],
-                  10, 4, // Zoom longe: raio 4px
-                  15, 8  // Zoom perto: raio 8px
+                  10, 4,
+                  15, 8
                 ],
-                'circle-color': ['get', 'color'], // Pega a cor das propriedades
+                'circle-color': ['get', 'color'],
                 'circle-stroke-width': 2,
                 'circle-stroke-color': '#ffffff',
                 'circle-opacity': 0.9
               }}
             />
-            {/* Camada invisível para aumentar área de clique (Hit Area) */}
             <Layer
               id="markers-hit-area"
               type="circle"
@@ -3170,7 +3122,6 @@ const exportProjectAsKML = (project = currentProject) => {
             />
           </Source>
 
-          {/* 1. Renderização das LINHAS (GeoJSON é rápido, não precisa mudar muito) */}
           {loadedProjects.map(project => (
             <Source 
               key={`source-${project.id}`}
@@ -3215,8 +3166,6 @@ const exportProjectAsKML = (project = currentProject) => {
             </Source>
           ))}
 
-          {/* 2. Renderização dos POSTES OTIMIZADA */}
-          {/* Usamos useMemo aqui implicitamente ao separar a lógica */}
           {loadedProjects.map(project => (
             <React.Fragment key={`markers-${project.id}`}>
               {project.points.map((point, index) => (
@@ -3225,7 +3174,7 @@ const exportProjectAsKML = (project = currentProject) => {
                   point={point}
                   index={index + 1}
                   color={project.color}
-                  isActive={false} // Projetos carregados geralmente não têm "ponto ativo" de edição
+                  isActive={false}
                   onClick={(e) => {
                     e.originalEvent.stopPropagation();
                     setPointPopupInfo({
@@ -3242,7 +3191,6 @@ const exportProjectAsKML = (project = currentProject) => {
             </React.Fragment>
           ))}
 
-         {/* TRAÇADO MANUAL (Linha Azul) - CORRIGIDO */}
           {manualPoints.length > 0 && (
             <Source 
               id="manual-route" 
@@ -3250,7 +3198,6 @@ const exportProjectAsKML = (project = currentProject) => {
               data={{
                 type: 'FeatureCollection',
                 features: manualPoints.map((point, index) => {
-                  // CASO 1: Conexão Explícita (Novo Ponto de Partida / Ramificação)
                   if (point.connectedFrom) {
                     const parent = manualPoints.find(p => p.id === point.connectedFrom);
                     if (parent) {
@@ -3266,11 +3213,8 @@ const exportProjectAsKML = (project = currentProject) => {
                       };
                     }
                   }
-                  // CASO 2: Sequencial (Sem pai definido, conecta ao anterior da lista)
                   else if (index > 0) {
                     const prev = manualPoints[index - 1];
-                    // Só conecta se o anterior também não for o início de um novo galho desconexo
-                    // (Opcional: removemos a verificação complexa para garantir que sempre feche o traço sequencial)
                     return {
                       type: 'Feature',
                       geometry: {
@@ -3289,17 +3233,16 @@ const exportProjectAsKML = (project = currentProject) => {
               <Layer
                 type="line"
                 paint={{
-                  'line-color': '#1e3a8a', // Azul escuro
+                  'line-color': '#1e3a8a',
                   'line-width': 4,
                   'line-opacity': 0.8,
-                  'line-cap': 'round',     // Deixa as pontas arredondadas (mais bonito)
-                  'line-join': 'round'     // Deixa as curvas suaves
+                  'line-cap': 'round',
+                  'line-join': 'round'
                 }}
               />
             </Source>
           )}
 
-          {/* Renderização dos pontos manuais com PoleMarker otimizado */}
           {manualPoints.map((point, index) => (
             <PoleMarker
               key={point.id}
@@ -3345,7 +3288,6 @@ const exportProjectAsKML = (project = currentProject) => {
             </Marker>
           )}
 
-          {/* SUBSTITUA O BLOCO ANTIGO POR ESTE NOVO */}
           {pointPopupInfo && pointPopupInfo.isManualPoint && (
             <Popup
               longitude={pointPopupInfo.point.lng}
@@ -3353,11 +3295,10 @@ const exportProjectAsKML = (project = currentProject) => {
               onClose={() => setPointPopupInfo(null)}
               className="modern-popup"
               closeButton={false}
-              anchor="bottom" // Mudado para bottom para o card ficar acima do ponto
-              offset={20}     // Um pouco mais de offset para não colar no marcador
+              anchor="bottom"
+              offset={20}
               maxWidth="300px"
             >
-              {/* Usa o novo componente com o design Glow, sem descrição */}
               <TrackingPointPopupContent 
                 pointInfo={pointPopupInfo}
                 onClose={() => setPointPopupInfo(null)}
@@ -3376,15 +3317,12 @@ const exportProjectAsKML = (project = currentProject) => {
               className="modern-popup"
               closeButton={false}
               maxWidth="300px"
-              anchor="bottom" // Mudado para bottom para não cobrir o ponto
+              anchor="bottom"
               offset={15}
             >
-              {/* Container Principal com design "Glass" escuro */}
               <div className="w-[260px] bg-slate-900/95 backdrop-blur-md border border-slate-700 rounded-xl shadow-2xl overflow-hidden flex flex-col">
                 
-                {/* Cabeçalho com a cor do projeto */}
                 <div className="relative p-3 flex items-center justify-between bg-slate-800/50 border-b border-slate-700/50">
-                  {/* Barra de cor lateral decorativa */}
                   <div 
                     className="absolute left-0 top-0 bottom-0 w-1"
                     style={{ backgroundColor: pointPopupInfo.color }}
@@ -3407,10 +3345,8 @@ const exportProjectAsKML = (project = currentProject) => {
                   </button>
                 </div>
 
-                {/* Corpo do Popup */}
                 <div className="p-3 space-y-3">
                   
-                  {/* Destaque do Número do Ponto */}
                   <div className="flex items-center gap-3">
                     <div 
                       className="flex items-center justify-center w-10 h-10 rounded-lg bg-slate-800 border border-slate-700 shadow-inner"
@@ -3430,7 +3366,6 @@ const exportProjectAsKML = (project = currentProject) => {
                     </div>
                   </div>
 
-                  {/* Grid de Coordenadas Técnicas */}
                   <div className="grid grid-cols-2 gap-2">
                     <div className="bg-slate-950/50 p-2 rounded border border-slate-800 flex flex-col">
                       <span className="text-[9px] uppercase text-slate-500 font-semibold mb-0.5">Latitude</span>
@@ -3446,7 +3381,6 @@ const exportProjectAsKML = (project = currentProject) => {
                     </div>
                   </div>
 
-                  {/* Botão de Ação Rápida (Copiar) */}
                   <Button
                     size="sm"
                     variant="ghost"
@@ -3454,7 +3388,6 @@ const exportProjectAsKML = (project = currentProject) => {
                     onClick={() => {
                       const coords = `${pointPopupInfo.point.lat}, ${pointPopupInfo.point.lng}`;
                       navigator.clipboard.writeText(coords);
-                      // Feedback visual rápido poderia ser adicionado aqui
                     }}
                   >
                     <span className="flex items-center gap-2">
@@ -3470,127 +3403,121 @@ const exportProjectAsKML = (project = currentProject) => {
       </div>
 
       <div className="absolute top-4 left-4 right-4 z-10 flex items-center gap-2">
-        { /* MENU LATERAL - DESIGNER GLOW AGRESSIVO */ }
-{ /* MENU COMPACTO V3.0 */ }
-<Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-  <SheetTrigger asChild>
-    <Button
-      size="icon"
-      className="bg-slate-950/90 backdrop-blur border border-white/10 text-cyan-400 shadow-xl rounded-xl h-10 w-10 active:scale-90 transition-transform"
-    >
-      <Menu className="w-6 h-6" />
-    </Button>
-  </SheetTrigger>
-  
-  <SheetContent side="left" className="w-[280px] p-0 border-r border-white/5 bg-slate-950 text-white flex flex-col">
-    {/* HEADER DO MENU */}
-    <div className="p-5 border-b border-white/5 bg-gradient-to-b from-cyan-950/20 to-transparent">
-      <div className="flex items-center gap-3 mb-1">
-        <div className="w-10 h-10 rounded-xl bg-cyan-500 flex items-center justify-center text-black shadow-[0_0_15px_rgba(6,182,212,0.5)]">
-          <MapPinned className="w-6 h-6" />
-        </div>
-        <div>
-          <h2 className="font-bold text-lg tracking-tight">Jamaaw</h2>
-          <div className="flex items-center gap-1.5">
-            <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500'}`}></div>
-            <span className="text-[10px] text-slate-400 font-mono uppercase">{isOnline ? 'Online' : 'Offline'}</span>
-          </div>
-        </div>
-      </div>
-    </div>
+        <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+          <SheetTrigger asChild>
+            <Button
+              size="icon"
+              className="bg-slate-950/90 backdrop-blur border border-white/10 text-cyan-400 shadow-xl rounded-xl h-10 w-10 active:scale-90 transition-transform"
+            >
+              <Menu className="w-6 h-6" />
+            </Button>
+          </SheetTrigger>
+          
+          <SheetContent side="left" className="w-[280px] p-0 border-r border-white/5 bg-slate-950 text-white flex flex-col">
+            <div className="p-5 border-b border-white/5 bg-gradient-to-b from-cyan-950/20 to-transparent">
+              <div className="flex items-center gap-3 mb-1">
+                <div className="w-10 h-10 rounded-xl bg-cyan-500 flex items-center justify-center text-black shadow-[0_0_15px_rgba(6,182,212,0.5)]">
+                  <MapPinned className="w-6 h-6" />
+                </div>
+                <div>
+                  <h2 className="font-bold text-lg tracking-tight">Jamaaw</h2>
+                  <div className="flex items-center gap-1.5">
+                    <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500'}`}></div>
+                    <span className="text-[10px] text-slate-400 font-mono uppercase">{isOnline ? 'Online' : 'Offline'}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
 
-    {/* LISTA DE OPÇÕES */}
-    <div className="flex-1 overflow-y-auto py-2 custom-scrollbar">
-      <div className="px-3 space-y-1">
-        <p className="text-[10px] uppercase text-slate-600 font-bold px-2 mt-4 mb-2">Ferramentas</p>
-        
-        <Button
-          variant="ghost"
-          className="w-full justify-start h-12 text-slate-300 hover:text-white hover:bg-white/5 rounded-xl transition-all group"
-          onClick={() => { setSidebarOpen(false); setShowProjectsList(true); }}
-        >
-          <FolderOpen className="w-5 h-5 mr-3 text-cyan-500 group-hover:scale-110 transition-transform" />
-          <span className="flex-1 text-left">Projetos</span>
-          <span className="bg-slate-800 text-slate-400 text-[10px] px-2 py-0.5 rounded-full">{projects.length}</span>
-        </Button>
+            <div className="flex-1 overflow-y-auto py-2 custom-scrollbar">
+              <div className="px-3 space-y-1">
+                <p className="text-[10px] uppercase text-slate-600 font-bold px-2 mt-4 mb-2">Ferramentas</p>
+                
+                <Button
+                  variant="ghost"
+                  className="w-full justify-start h-12 text-slate-300 hover:text-white hover:bg-white/5 rounded-xl transition-all group"
+                  onClick={() => { setSidebarOpen(false); setShowProjectsList(true); }}
+                >
+                  <FolderOpen className="w-5 h-5 mr-3 text-cyan-500 group-hover:scale-110 transition-transform" />
+                  <span className="flex-1 text-left">Projetos</span>
+                  <span className="bg-slate-800 text-slate-400 text-[10px] px-2 py-0.5 rounded-full">{projects.length}</span>
+                </Button>
 
-        <Button
-          variant="ghost"
-          className="w-full justify-start h-12 text-slate-300 hover:text-white hover:bg-white/5 rounded-xl transition-all group"
-          onClick={() => { 
-  setSidebarOpen(false); 
-  startTracking('touch'); // Inicia o modo de toque (Medir) diretamente
-}}
-        >
-          <Ruler className="w-5 h-5 mr-3 text-purple-500 group-hover:scale-110 transition-transform" />
-          <span>Medir</span>
-        </Button>
+                <Button
+                  variant="ghost"
+                  className="w-full justify-start h-12 text-slate-300 hover:text-white hover:bg-white/5 rounded-xl transition-all group"
+                  onClick={() => { 
+                    setSidebarOpen(false); 
+                    startTracking('touch');
+                  }}
+                >
+                  <Ruler className="w-5 h-5 mr-3 text-purple-500 group-hover:scale-110 transition-transform" />
+                  <span>Medir</span>
+                </Button>
 
-        <Button
-          variant="ghost"
-          className="w-full justify-start h-12 text-slate-300 hover:text-white hover:bg-white/5 rounded-xl transition-all group"
-          onClick={() => { setSidebarOpen(false); handleARMode(); }}
-        >
-          <Camera className="w-5 h-5 mr-3 text-yellow-500 group-hover:scale-110 transition-transform" />
-          <span>Realidade Aumentada</span>
-        </Button>
+                <Button
+                  variant="ghost"
+                  className="w-full justify-start h-12 text-slate-300 hover:text-white hover:bg-white/5 rounded-xl transition-all group"
+                  onClick={() => { setSidebarOpen(false); handleARMode(); }}
+                >
+                  <Camera className="w-5 h-5 mr-3 text-yellow-500 group-hover:scale-110 transition-transform" />
+                  <span>Realidade Aumentada</span>
+                </Button>
 
-        <p className="text-[10px] uppercase text-slate-600 font-bold px-2 mt-6 mb-2">Dados</p>
-        
-        <Button
-          variant="ghost"
-          className="w-full justify-start h-12 text-slate-300 hover:text-white hover:bg-white/5 rounded-xl transition-all"
-          onClick={() => { setSidebarOpen(false); fileInputRef.current?.click(); }}
-        >
-          <Upload className="w-5 h-5 mr-3 text-slate-500" />
-          <span>Importar KML</span>
-        </Button>
+                <p className="text-[10px] uppercase text-slate-600 font-bold px-2 mt-6 mb-2">Dados</p>
+                
+                <Button
+                  variant="ghost"
+                  className="w-full justify-start h-12 text-slate-300 hover:text-white hover:bg-white/5 rounded-xl transition-all"
+                  onClick={() => { setSidebarOpen(false); fileInputRef.current?.click(); }}
+                >
+                  <Upload className="w-5 h-5 mr-3 text-slate-500" />
+                  <span>Importar KML</span>
+                </Button>
 
-        <Button
-          variant="ghost"
-          className="w-full justify-start h-12 text-slate-300 hover:text-white hover:bg-white/5 rounded-xl transition-all"
-          onClick={() => { setSidebarOpen(false); handleExport(); }}
-        >
-          <Download className="w-5 h-5 mr-3 text-slate-500" />
-          <span>Exportar Tudo</span>
-        </Button>
+                <Button
+                  variant="ghost"
+                  className="w-full justify-start h-12 text-slate-300 hover:text-white hover:bg-white/5 rounded-xl transition-all"
+                  onClick={() => { setSidebarOpen(false); handleExport(); }}
+                >
+                  <Download className="w-5 h-5 mr-3 text-slate-500" />
+                  <span>Exportar Tudo</span>
+                </Button>
 
-        {/* BOTÃO ADICIONADO: Limpar Marcações */}
-        <Button
-          variant="ghost"
-          className="w-full justify-start h-12 text-red-400 hover:text-red-300 hover:bg-red-950/20 rounded-xl transition-all"
-          onClick={() => { 
-            setSidebarOpen(false); 
-            if(confirm('ATENÇÃO: Isso apagará todas as marcações do mapa. Continuar?')) {
-               handleClearAllMarkers();
-            }
-          }}
-        >
-          <Trash2 className="w-5 h-5 mr-3" />
-          <span>Limpar Marcações</span>
-        </Button>
-      </div>
-    </div>
+                <Button
+                  variant="ghost"
+                  className="w-full justify-start h-12 text-red-400 hover:text-red-300 hover:bg-red-950/20 rounded-xl transition-all"
+                  onClick={() => { 
+                    setSidebarOpen(false); 
+                    if(confirm('ATENÇÃO: Isso apagará todas as marcações do mapa. Continuar?')) {
+                       handleClearAllMarkers();
+                    }
+                  }}
+                >
+                  <Trash2 className="w-5 h-5 mr-3" />
+                  <span>Limpar Marcações</span>
+                </Button>
+              </div>
+            </div>
 
-    {/* FOOTER */}
-    <div className="p-4 border-t border-white/5 bg-slate-900/50">
-      <div className="flex items-center justify-between">
-        <div className="flex flex-col overflow-hidden mr-2">
-          <span className="text-xs font-medium text-white truncate">{user?.email}</span>
-          <span className="text-[10px] text-slate-500">Logado</span>
-        </div>
-        <Button
-          size="icon"
-          variant="ghost"
-          onClick={handleLogout}
-          className="text-red-400 hover:text-white hover:bg-red-500/20 rounded-lg"
-        >
-          <LogOut className="w-5 h-5" />
-        </Button>
-      </div>
-    </div>
-  </SheetContent>
-</Sheet>
+            <div className="p-4 border-t border-white/5 bg-slate-900/50">
+              <div className="flex items-center justify-between">
+                <div className="flex flex-col overflow-hidden mr-2">
+                  <span className="text-xs font-medium text-white truncate">{user?.email}</span>
+                  <span className="text-[10px] text-slate-500">Logado</span>
+                </div>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={handleLogout}
+                  className="text-red-400 hover:text-white hover:bg-red-500/20 rounded-lg"
+                >
+                  <LogOut className="w-5 h-5" />
+                </Button>
+              </div>
+            </div>
+          </SheetContent>
+        </Sheet>
 
         <div className="flex-1 flex items-center gap-3 bg-gradient-to-r from-slate-800 to-slate-700 backdrop-blur-sm rounded-lg px-4 py-2.5 shadow-xl border border-slate-600/50">
           <div className="w-8 h-8 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-lg flex items-center justify-center shadow-lg">
@@ -3637,14 +3564,14 @@ const exportProjectAsKML = (project = currentProject) => {
           <Layers className="w-5 h-5" />
         </Button>
 
-        { /* Dentro do Card do showRulerPopup */ }
-<Button
-  size="icon" // Importante: size="icon" para ficar quadrado/redondo
-  variant="ghost"
-  onClick={() => setShowRulerPopup(false)} // Função que fecha
-  className="h-8 w-8 text-slate-400 hover:text-white hover:bg-white/10 rounded-full"
->
-  <X className="w-5 h-5" /> </Button>
+        <Button
+          size="icon"
+          variant="ghost"
+          onClick={() => setShowRulerPopup(false)}
+          className="h-8 w-8 text-slate-400 hover:text-white hover:bg-white/10 rounded-full"
+        >
+          <X className="w-5 h-5" />
+        </Button>
       </div>
 
       <div className="absolute bottom-40 right-4 z-10">
@@ -3667,8 +3594,6 @@ const exportProjectAsKML = (project = currentProject) => {
         onBatchBairroUpdate={handleBatchBairroUpdate}
         bairros={bairros}
       />
-
-      
 
       {showProjectDetails && currentProject && (
         <div className="absolute bottom-20 right-4 z-50 animate-scale-in">
@@ -3746,38 +3671,37 @@ const exportProjectAsKML = (project = currentProject) => {
         </div>
       )}
 
-    { /* Substituir o bloco antigo do Dialog de projetos por este: */ }
-<ProjectManager
-  isOpen={showProjectsList}
-  onClose={() => setShowProjectsList(false)}
-  projects={projects}
-  currentUserId={user?.id}
-  onLoadProject={(p) => {
-    loadProject(p);
-    setShowProjectsList(false);
-  }}
-  onDeleteProject={deleteProject}
-  onExportProject={exportProjectAsKML}
-  onJoinProject={handleJoinProject}
-  onOpenReport={(project) => {
-    const img = getMapImage(); // Tira o print do estado atual do mapa
-    setReportData({ project, image: img }); // Salva no estado
-    setShowProjectsList(false); // Fecha a lista para focar no relatório
-  }}
-/>
+    <ProjectManager
+      isOpen={showProjectsList}
+      onClose={() => setShowProjectsList(false)}
+      projects={projects}
+      currentUserId={user?.id}
+      onLoadProject={(p) => {
+        loadProject(p);
+        setShowProjectsList(false);
+      }}
+      onDeleteProject={deleteProject}
+      onExportProject={exportProjectAsKML}
+      onJoinProject={handleJoinProject}
+      onOpenReport={(project) => {
+        const img = getMapImage();
+        setReportData({ project, image: img });
+        setShowProjectsList(false);
+      }}
+    />
 
       <LoadedProjectsManager
-  isOpen={showLoadedProjects}
-  onClose={() => setShowLoadedProjects(false)}
-  loadedProjects={loadedProjects}
-  onRemoveProject={removeLoadedProject}
-  onFocusProject={focusOnProject}
-  onShowDetails={(p) => {
-    setPointPopupInfo({ project: p, showOverview: true });
-    setShowLoadedProjects(false);
-  }}
-  totalDistanceAll={totalDistanceAllProjects}
-/>
+        isOpen={showLoadedProjects}
+        onClose={() => setShowLoadedProjects(false)}
+        loadedProjects={loadedProjects}
+        onRemoveProject={removeLoadedProject}
+        onFocusProject={focusOnProject}
+        onShowDetails={(p) => {
+          setPointPopupInfo({ project: p, showOverview: true });
+          setShowLoadedProjects(false);
+        }}
+        totalDistanceAll={totalDistanceAllProjects}
+      />
 
       <Dialog open={showBatchBairroDialog} onOpenChange={setShowBatchBairroDialog}>
         <DialogContent className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white border-slate-700/50 max-w-md mx-auto shadow-2xl">
@@ -4097,14 +4021,13 @@ const exportProjectAsKML = (project = currentProject) => {
         </DialogContent> 
       </Dialog>
       
-      {/* NOVO DOCK DE FERRAMENTAS FUTURISTA */}
-<ToolsDock
-  active={tracking} // Se estiver rastreando, o dock some para dar lugar aos controles
-  onStartGPS={() => startTracking('gps')}
-  onStartTouch={() => startTracking('touch')}
-  onStartAR={handleARMode}
-  onNewProject={startNewProject}
-/>
+      <ToolsDock
+        active={tracking}
+        onStartGPS={() => startTracking('gps')}
+        onStartTouch={() => startTracking('touch')}
+        onStartAR={handleARMode}
+        onNewProject={startNewProject}
+      />
 
       {tracking && showTrackingControls && (
         <ControlesRastreamento
@@ -4178,7 +4101,6 @@ const exportProjectAsKML = (project = currentProject) => {
         }}
       />
 
-      {/* Componente ProjectReport adicionado */}
       <ProjectReport
         isOpen={!!reportData}
         onClose={() => setReportData(null)}
@@ -4196,23 +4118,19 @@ const exportProjectAsKML = (project = currentProject) => {
         className="hidden"
       />
       
-      {/* Sistema de Notificação Glow */}
       <GlowNotification 
         notification={notification} 
         onClose={() => setNotification(null)} 
       />
       
-      {/* Inputs invisíveis... */}
-
-     { /* Input invisível para importação de projetos */ } 
-<input
-  ref={projectInputRef}
-  id="project-input"
-  type="file"
-  accept=".kml,.kmz"
-  onChange={handleProjectImport}
-  className="hidden"
-/>
+      <input
+        ref={projectInputRef}
+        id="project-input"
+        type="file"
+        accept=".kml,.kmz"
+        onChange={handleProjectImport}
+        className="hidden"
+      />
 
     </div>
   )
