@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { FileText, Download, X, Calendar, User, MapPin, Activity, Clock, Image as ImageIcon, Map as MapIcon } from 'lucide-react';
+import { FileText, Download, X, Map as MapIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import jsPDF from 'jspdf';
@@ -11,37 +11,42 @@ import { Capacitor } from '@capacitor/core';
 const MAPBOX_TOKEN = 'pk.eyJ1Ijoia2FjZXJhdG8iLCJhIjoiY21oZG1nNnViMDRybjJub2VvZHV1aHh3aiJ9.l7tCaIPEYqcqDI8_aScm7Q';
 
 const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
+  // 1. TODOS OS HOOKS NO TOPO
   const [loadingPdf, setLoadingPdf] = useState(false);
 
-  if (!project) return null;
-
-  // --- FUNÇÕES AUXILIARES ---
-  const formatSmartDistance = (meters) => {
-    if (!meters || isNaN(meters)) return "0 m";
-    if (meters < 1000) return `${meters.toFixed(2)} m`;
-    return `${(meters / 1000).toFixed(3)} km`;
-  };
-
+  // 2. USEMEMO BLINDADO
   const groupedPoints = useMemo(() => {
+    if (!project || !project.points) return {};
+
     const groups = {};
     const sortedPoints = [...project.points].sort((a, b) => 
       new Date(b.timestamp || b.created_at).getTime() - new Date(a.timestamp || a.created_at).getTime()
     );
+    
     sortedPoints.forEach(point => {
       const date = new Date(point.timestamp || point.created_at).toLocaleDateString('pt-BR');
       if (!groups[date]) groups[date] = [];
       groups[date].push(point);
     });
     return groups;
-  }, [project.points]);
+  }, [project]);
+
+  // 3. FUNÇÕES AUXILIARES
+  const formatSmartDistance = (meters) => {
+    if (!meters || isNaN(meters)) return "0 m";
+    if (meters < 1000) return `${meters.toFixed(2)} m`;
+    return `${(meters / 1000).toFixed(3)} km`;
+  };
 
   // --- GERADOR DE SNAPSHOT COM TRAÇADO (GEOJSON) ---
   const getMapSnapshot = () => {
     return new Promise((resolve) => {
-      if (project.points.length === 0) { resolve(null); return; }
+      if (!project || project.points.length === 0) { 
+        resolve(null); 
+        return; 
+      }
 
       // 1. Cria o GeoJSON do Traçado e Pontos
-      // Simplifica coord para 5 casas decimais para economizar URL
       const coordinates = project.points.map(p => [
         parseFloat(p.lng.toFixed(5)), 
         parseFloat(p.lat.toFixed(5))
@@ -53,7 +58,7 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
           {
             type: "Feature",
             properties: {
-              "stroke": "#06b6d4", // Ciano
+              "stroke": "#06b6d4",
               "stroke-width": 4,
               "stroke-opacity": 1
             },
@@ -64,12 +69,11 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
           },
           // Adiciona marcadores (apenas início e fim se tiver muitos para não quebrar URL)
           ...coordinates.map((coord, i) => {
-             // Se tiver mais de 50 pontos, mostra só inicio/fim e a cada 10
              if (coordinates.length > 50 && i !== 0 && i !== coordinates.length -1 && i % 10 !== 0) return null;
              return {
                 type: "Feature",
                 properties: {
-                  "marker-color": "#facc15", // Amarelo
+                  "marker-color": "#facc15",
                   "marker-size": "small"
                 },
                 geometry: {
@@ -81,13 +85,10 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
         ]
       };
 
-      // 2. Prepara URL (Encode do GeoJSON)
+      // 2. Prepara URL
       const jsonString = encodeURIComponent(JSON.stringify(geojson));
-      
-      // Auto-framing (auto) ajusta o zoom para caber tudo
       const width = 800;
       const height = 500;
-      // Estilo Satellite Streets
       const url = `https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/static/geojson(${jsonString})/auto/${width}x${height}?padding=50&access_token=${MAPBOX_TOKEN}`;
 
       // 3. Baixa Imagem
@@ -103,7 +104,7 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
         resolve(canvas.toDataURL('image/jpeg', 0.8));
       };
       img.onerror = (e) => {
-        console.warn("Erro mapa estático (provavelmente URL muito longa):", e);
+        console.warn("Erro mapa estático:", e);
         resolve(null); 
       };
     });
@@ -111,20 +112,19 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
 
   // --- GERADOR DE PDF ---
   const generatePDF = async () => {
+    if (!project) return;
+    
     setLoadingPdf(true);
     const doc = new jsPDF();
     
     // CAPA (PÁGINA 1)
-    
-    // Fundo Capa
-    doc.setFillColor(15, 23, 42); // Slate 950
+    doc.setFillColor(15, 23, 42);
     doc.rect(0, 0, 210, 297, 'F');
 
-    // Elementos Gráficos
-    doc.setDrawColor(6, 182, 212); // Cyan
+    doc.setDrawColor(6, 182, 212);
     doc.setLineWidth(1);
-    doc.line(20, 20, 190, 20); // Linha topo
-    doc.line(20, 277, 190, 277); // Linha base
+    doc.line(20, 20, 190, 20);
+    doc.line(20, 277, 190, 277);
 
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(28);
@@ -135,9 +135,8 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
     doc.setTextColor(6, 182, 212);
     doc.text("REGISTRO DE RASTREAMENTO E GEOLOCALIZAÇÃO", 105, 130, { align: "center" });
 
-    // Info Projeto Capa
     doc.setFontSize(12);
-    doc.setTextColor(148, 163, 184); // Slate 400
+    doc.setTextColor(148, 163, 184);
     doc.text(`PROJETO: ${project.name.toUpperCase()}`, 105, 160, { align: "center" });
     doc.text(`DATA DE EXTRAÇÃO: ${new Date().toLocaleDateString('pt-BR')}`, 105, 168, { align: "center" });
     doc.text(`RESPONSÁVEL: ${currentUserEmail?.split('@')[0].toUpperCase() || 'USUÁRIO'}`, 105, 176, { align: "center" });
@@ -148,11 +147,10 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
     // PÁGINA 2 (MAPA E DADOS)
     doc.addPage();
     
-    // Cabeçalho Interno
-    doc.setFillColor(248, 250, 252); // Fundo claro para dados
+    doc.setFillColor(248, 250, 252);
     doc.rect(0, 0, 210, 297, 'F');
     
-    doc.setFillColor(15, 23, 42); // Header escuro
+    doc.setFillColor(15, 23, 42);
     doc.rect(0, 0, 210, 30, 'F');
     
     doc.setTextColor(255, 255, 255);
@@ -170,14 +168,12 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
       doc.setLineWidth(0.5);
       doc.rect(15, currentY, 180, 90);
       
-      // Legenda do Mapa
       doc.setFontSize(8);
       doc.setTextColor(100);
       doc.text("Visualização via Satélite - Traçado (Azul) e Pontos (Amarelo)", 15, currentY + 95);
       
       currentY += 105;
     } else {
-      // Fallback se mapa falhar
       doc.setTextColor(150);
       doc.text("(Mapa indisponível ou área muito extensa)", 15, currentY + 10);
       currentY += 30;
@@ -196,7 +192,7 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
     doc.setTextColor(100);
     doc.text("EXTENSÃO TOTAL", 20, currentY + 8);
     doc.setFontSize(12);
-    doc.setTextColor(16, 185, 129); // Verde
+    doc.setTextColor(16, 185, 129);
     doc.setFont("helvetica", "bold");
     doc.text(formatSmartDistance(project.total_distance), 20, currentY + 18);
 
@@ -207,7 +203,7 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
     doc.setTextColor(100);
     doc.text("QUANTIDADE PONTOS", 80, currentY + 8);
     doc.setFontSize(12);
-    doc.setTextColor(6, 182, 212); // Azul
+    doc.setTextColor(6, 182, 212);
     doc.text(String(project.points.length), 80, currentY + 18);
 
     // Card 3
@@ -229,7 +225,6 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
     currentY += 10;
 
     Object.entries(groupedPoints).forEach(([date, points]) => {
-      // Verifica espaço
       if (currentY > 250) {
         doc.addPage();
         currentY = 20;
@@ -245,7 +240,6 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
 
       currentY += 10;
 
-      // Corpo da Tabela
       const tableBody = points.map((p, index) => [
         points.length - index,
         new Date(p.timestamp || p.created_at).toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'}),
@@ -310,6 +304,9 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
       setLoadingPdf(false);
     }
   };
+
+  // 4. RETORNO CONDICIONAL SÓ NO FINAL
+  if (!project) return null;
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
