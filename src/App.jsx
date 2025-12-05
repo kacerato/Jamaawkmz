@@ -245,17 +245,6 @@ const getUniqueProjectName = (baseName, existingProjects) => {
   return newName;
 };
 
-const calculateTotalDistanceAllProjects = (projects) => {
-  if (!projects || projects.length === 0) return 0;
-  
-  let total = 0;
-  projects.forEach(project => {
-    total += project.totalDistance || project.total_distance || 0;
-  });
-  
-  return total;
-};
-
 // Função de Alta Precisão (WGS-84) - Compatível com Google Earth
 const calculateDistance = (lat1, lon1, lat2, lon2) => {
   const R = 6378137; // Raio equatorial da Terra (WGS-84) em metros
@@ -621,10 +610,19 @@ function App() {
   // Novo estado para modo de entrada do rastreamento
   const [trackingInputMode, setTrackingInputMode] = useState('gps');
   
+  // Novo estado para modo de edição de pontos
+  const [isEditingPoints, setIsEditingPoints] = useState(false);
+  
   const kalmanLatRef = useRef(new KalmanFilter(0.1, 0.1));
   const kalmanLngRef = useRef(new KalmanFilter(0.1, 0.1));
   
-  const totalDistanceAllProjects = calculateTotalDistanceAllProjects(projects);
+  // Calcula o total APENAS dos projetos carregados no mapa
+  const totalDistanceAllProjects = React.useMemo(() => {
+    return loadedProjects.reduce((acc, project) => {
+      const dist = project.totalDistance || project.total_distance || 0;
+      return acc + Number(dist);
+    }, 0);
+  }, [loadedProjects]);
   
   // OTIMIZAÇÃO: Converte marcadores para GeoJSON (Processado na GPU)
   const markersGeoJSON = useMemo(() => ({
@@ -883,6 +881,27 @@ function App() {
     return total;
   };
   
+  // Adicione esta função auxiliar no App.jsx
+  const recalculateProjectPrecision = (points) => {
+    if (points.length < 2) return 0;
+    let total = 0;
+    
+    // Calcula distância sequencial
+    for (let i = 0; i < points.length - 1; i++) {
+      // Se tiver conexão explícita (ramificação)
+      if (points[i+1].connectedFrom) {
+        const parent = points.find(p => p.id === points[i+1].connectedFrom);
+        if (parent) {
+          total += calculateDistance(parent.lat, parent.lng, points[i+1].lat, points[i+1].lng);
+        }
+      } else {
+        // Sequencial
+        total += calculateDistance(points[i].lat, points[i].lng, points[i+1].lat, points[i+1].lng);
+      }
+    }
+    return total;
+  };
+  
   const handleLogout = async () => {
     try {
       localStorage.removeItem('supabase.auth.token');
@@ -910,6 +929,7 @@ function App() {
       setCurrentProject(null);
       setSelectedMarkers([]);
       setSelectedStartPoint(null);
+      setIsEditingPoints(false);
       
     } catch (error) {
       console.error('Erro durante logout:', error);
@@ -918,6 +938,7 @@ function App() {
       setProjects([]);
       setSelectedMarkers([]);
       setSelectedStartPoint(null);
+      setIsEditingPoints(false);
     }
   };
   
@@ -1184,7 +1205,8 @@ function App() {
         p.connectedFrom
     }));
     
-    const calculatedTotalDistance = calculateTotalDistanceWithBranches(sanitizedPoints) || 0;
+    // ATUALIZADO: Usa a nova função recalculateProjectPrecision
+    const calculatedTotalDistance = recalculateProjectPrecision(sanitizedPoints) || 0;
     
     const projectData = {
       name: projectNameToUse.trim(),
@@ -1336,6 +1358,7 @@ if (!autoSave) {
     setManualPoints([]);
     setTotalDistance(0);
     setSelectedStartPoint(null);
+    setIsEditingPoints(false);
     
     // Garante que o histórico de posição também limpe
     setPositionHistory([]);
@@ -1377,6 +1400,7 @@ if (!autoSave) {
     setTotalDistance(0);
     setProjectName('');
     setSelectedStartPoint(null);
+    setIsEditingPoints(false);
   }
   
   setTrackingInputMode(mode);
@@ -1415,6 +1439,7 @@ if (!autoSave) {
     setManualPoints([]);
     setTotalDistance(0);
     setSelectedStartPoint(null);
+    setIsEditingPoints(false);
     setTracking(false);
     setPaused(false);
     
@@ -1546,6 +1571,7 @@ if (!autoSave) {
     setManualPoints([]);
     setTotalDistance(0);
     setSelectedStartPoint(null);
+    setIsEditingPoints(false);
     setShowProjectDetails(false);
     setShowRulerPopup(false);
   };
@@ -1609,6 +1635,7 @@ if (!autoSave) {
           setLoadedProjects([])
           setSelectedMarkers([])
           setSelectedStartPoint(null)
+          setIsEditingPoints(false)
         }
       } else if (event === 'SIGNED_IN') {
         setUser(session.user)
@@ -2585,6 +2612,7 @@ if (!autoSave) {
       setManualPoints([]); // Limpa o traçado azul de edição
       setTotalDistance(0);
       setSelectedStartPoint(null);
+      setIsEditingPoints(false);
     }
     
     // 3. Força uma "limpeza" visual do mapa garantindo que o renderizador atualize
@@ -2697,7 +2725,28 @@ if (!autoSave) {
     }
     
     addPoint(finalPosition);
-  }
+  };
+  
+  // Função para atualizar ponto arrastado
+  const handlePointDrag = (index, event) => {
+    const newLat = event.lngLat.lat;
+    const newLng = event.lngLat.lng;
+
+    const updatedPoints = [...manualPoints];
+    updatedPoints[index] = {
+      ...updatedPoints[index],
+      lat: newLat,
+      lng: newLng,
+      // Marca que foi editado manualmente
+      edited: true 
+    };
+
+    setManualPoints(updatedPoints);
+
+    // Recalcula distância total
+    const newTotalDistance = calculateTotalDistanceWithBranches(updatedPoints);
+    setTotalDistance(newTotalDistance);
+  };
   
   // 1. ATUALIZE A FUNÇÃO addPoint
   const addPoint = (position) => {
@@ -2720,7 +2769,7 @@ if (!autoSave) {
   if (selectedStartPoint) {
     setSelectedStartPoint(newPoint);
   }
-}
+};
   
   // Substitua a função undoLastPoint existente por esta:
   const undoLastPoint = () => {
@@ -2800,6 +2849,7 @@ if (!autoSave) {
       setManualPoints([]);
       setTotalDistance(0);
       setSelectedStartPoint(null);
+      setIsEditingPoints(false);
       setPositionHistory([]);
       setGpsAccuracy(null);
       setSpeed(0);
@@ -2811,6 +2861,7 @@ if (!autoSave) {
     setTotalDistance(0)
     setCurrentProject(null)
     setSelectedStartPoint(null)
+    setIsEditingPoints(false)
   }
   
   const handleRemovePoints = () => {
@@ -2819,6 +2870,7 @@ if (!autoSave) {
       setTotalDistance(0);
       setCurrentProject(null);
       setSelectedStartPoint(null);
+      setIsEditingPoints(false);
       setShowProjectDetails(false);
       setProjectName('');
     }
@@ -2849,6 +2901,7 @@ if (!autoSave) {
         setManualPoints([]);
         setTotalDistance(0);
         setSelectedStartPoint(null);
+        setIsEditingPoints(false);
       }
       
       if (editingProject && editingProject.id === projectId) {
@@ -2863,9 +2916,7 @@ if (!autoSave) {
     }
   };
   
-  // Função de Exportação Avançada (Suporte a Ramificações/Galhos)
-// Função de Exportação Profissional para Google Earth
-// Função de Exportação KML Corrigida e Simplificada
+  // Função de Exportação KML Corrigida e Simplificada
 const exportProjectAsKML = (project = currentProject) => {
   if (!project) return;
   
@@ -3113,33 +3164,58 @@ const exportProjectAsKML = (project = currentProject) => {
           <NavigationControl position="top-right" />
 
           {/* CAMADA DE MARCADORES OTIMIZADA (GPU) */}
-          <Source id="markers-source" type="geojson" data={markersGeoJSON}>
-            <Layer
-              id="markers-layer"
-              type="circle"
-              paint={{
-                'circle-radius': [
-                  'interpolate', ['linear'], ['zoom'],
-                  10, 4, // Zoom longe: raio 4px
-                  15, 8  // Zoom perto: raio 8px
-                ],
-                'circle-color': ['get', 'color'], // Pega a cor das propriedades
-                'circle-stroke-width': 2,
-                'circle-stroke-color': '#ffffff',
-                'circle-opacity': 0.9
-              }}
-            />
-            {/* Camada invisível para aumentar área de clique (Hit Area) */}
-            <Layer
-              id="markers-hit-area"
-              type="circle"
-              paint={{
-                'circle-radius': 20,
-                'circle-color': 'transparent',
-                'circle-opacity': 0
-              }}
-            />
-          </Source>
+          {!isEditingPoints ? (
+            <Source id="markers-source" type="geojson" data={markersGeoJSON}>
+              <Layer
+                id="markers-layer"
+                type="circle"
+                paint={{
+                  'circle-radius': [
+                    'interpolate', ['linear'], ['zoom'],
+                    10, 4, // Zoom longe: raio 4px
+                    15, 8  // Zoom perto: raio 8px
+                  ],
+                  'circle-color': ['get', 'color'], // Pega a cor das propriedades
+                  'circle-stroke-width': 2,
+                  'circle-stroke-color': '#ffffff',
+                  'circle-opacity': 0.9
+                }}
+              />
+              {/* Camada invisível para aumentar área de clique (Hit Area) */}
+              <Layer
+                id="markers-hit-area"
+                type="circle"
+                paint={{
+                  'circle-radius': 20,
+                  'circle-color': 'transparent',
+                  'circle-opacity': 0
+                }}
+              />
+            </Source>
+          ) : (
+            // Renderiza marcadores arrastáveis quando em modo de edição
+            filteredMarkers.map((marker, index) => (
+              <Marker
+                key={marker.id}
+                longitude={marker.lng}
+                latitude={marker.lat}
+                draggable={true}
+                onDragEnd={(e) => {
+                  // Você pode implementar drag para marcadores se desejar
+                }}
+                anchor="bottom"
+              >
+                <div className="group cursor-grab active:cursor-grabbing">
+                  <div className="w-6 h-6 bg-yellow-500 rounded-full border-2 border-white shadow-lg flex items-center justify-center transform transition-transform group-hover:scale-125">
+                    <div className="w-1.5 h-1.5 bg-black rounded-full" />
+                  </div>
+                  <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-black/80 text-white text-[9px] px-1.5 rounded font-bold">
+                    {index + 1}
+                  </div>
+                </div>
+              </Marker>
+            ))
+          )}
 
           {/* 1. Renderização das LINHAS (GeoJSON é rápido, não precisa mudar muito) */}
           {loadedProjects.map(project => (
@@ -3270,25 +3346,46 @@ const exportProjectAsKML = (project = currentProject) => {
             </Source>
           )}
 
-          {/* Renderização dos pontos manuais com PoleMarker otimizado */}
-          {manualPoints.map((point, index) => (
-            <PoleMarker
-              key={point.id}
-              point={point}
-              index={index + 1}
-              color="#1e3a8a"
-              isActive={selectedStartPoint && selectedStartPoint.id === point.id}
-              onClick={(e) => {
-                e.originalEvent.stopPropagation();
-                setPointPopupInfo({
-                  point,
-                  pointNumber: index + 1,
-                  isManualPoint: true,
-                  totalPoints: manualPoints.length
-                });
-              }}
-            />
-          ))}
+          {/* Renderização dos pontos manuais com PoleMarker otimizado OU marcadores arrastáveis */}
+          {isEditingPoints
+            ? manualPoints.map((point, index) => (
+                <Marker
+                  key={point.id}
+                  longitude={point.lng}
+                  latitude={point.lat}
+                  draggable={true}
+                  onDragEnd={(e) => handlePointDrag(index, e)}
+                  anchor="bottom"
+                >
+                  <div className="group cursor-grab active:cursor-grabbing">
+                    <div className="w-6 h-6 bg-yellow-500 rounded-full border-2 border-white shadow-lg flex items-center justify-center transform transition-transform group-hover:scale-125">
+                      <div className="w-1.5 h-1.5 bg-black rounded-full" />
+                    </div>
+                    <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-black/80 text-white text-[9px] px-1.5 rounded font-bold">
+                      {index + 1}
+                    </div>
+                  </div>
+                </Marker>
+              ))
+            : manualPoints.map((point, index) => (
+                <PoleMarker
+                  key={point.id}
+                  point={point}
+                  index={index + 1}
+                  color="#1e3a8a"
+                  isActive={selectedStartPoint && selectedStartPoint.id === point.id}
+                  onClick={(e) => {
+                    e.originalEvent.stopPropagation();
+                    setPointPopupInfo({
+                      point,
+                      pointNumber: index + 1,
+                      isManualPoint: true,
+                      totalPoints: manualPoints.length
+                    });
+                  }}
+                />
+              ))
+          }
 
           {routeCoordinates.length > 0 && (
             <Source id="calculated-route" type="geojson" data={{
@@ -3588,6 +3685,9 @@ const exportProjectAsKML = (project = currentProject) => {
             {selectedStartPoint && (
               <span className="text-xs text-purple-400 ml-2 bg-purple-500/20 px-2 py-0.5 rounded-full">Galho Ativo</span>
             )}
+            {isEditingPoints && (
+              <span className="text-xs text-yellow-400 ml-2 bg-yellow-500/20 px-2 py-0.5 rounded-full">Editando</span>
+            )}
           </div>
         </div>
 
@@ -3617,6 +3717,24 @@ const exportProjectAsKML = (project = currentProject) => {
 >
   <X className="w-5 h-5" /> </Button>
       </div>
+
+      {/* Botão para ativar/desativar modo de edição */}
+      {manualPoints.length > 0 && !tracking && (
+        <div className="absolute bottom-40 left-4 z-10">
+          <Button
+            size="icon"
+            className={`${
+              isEditingPoints
+                ? 'bg-yellow-500 hover:bg-yellow-600'
+                : 'bg-slate-800 hover:bg-slate-700'
+            } backdrop-blur-sm text-white shadow-xl border border-slate-600/50 transition-all-smooth hover-lift rounded-full w-12 h-12`}
+            onClick={() => setIsEditingPoints(!isEditingPoints)}
+            title={isEditingPoints ? 'Sair do modo de edição' : 'Editar pontos (arrastar)'}
+          >
+            {isEditingPoints ? <CheckCircle className="w-6 h-6" /> : <Edit2 className="w-6 h-6" />}
+          </Button>
+        </div>
+      )}
 
       <div className="absolute bottom-40 right-4 z-10">
         <Button
@@ -4098,6 +4216,8 @@ const exportProjectAsKML = (project = currentProject) => {
           undoLastPoint={undoLastPoint}
           selectedStartPoint={selectedStartPoint}
           resetStartPoint={resetStartPoint}
+          isEditingPoints={isEditingPoints}
+          setIsEditingPoints={setIsEditingPoints}
         />
       )}
 
