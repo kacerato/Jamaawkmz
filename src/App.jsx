@@ -68,6 +68,7 @@ import MultipleSelectionPopup from './components/MultipleSelectionPopup'
 import BairroDetectionService from './components/BairroDetectionService'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import './App.css'
+import ProjectReport from './components/ProjectReport'; // NOVA IMPORTAÇÃO
 
 const DEFAULT_BAIRROS = [
   'Ponta Verde',
@@ -618,6 +619,12 @@ function App() {
   
   const [selectedStartPoint, setSelectedStartPoint] = useState(null);
   
+  // NOVO: Estado para captura de screenshot
+  const [mapScreenshot, setMapScreenshot] = useState(null);
+  
+  // NOVO: Estado para relatório
+  const [reportData, setReportData] = useState(null);
+  
   // Novo estado para modo de entrada do rastreamento
   const [trackingInputMode, setTrackingInputMode] = useState('gps');
   
@@ -625,6 +632,20 @@ function App() {
   const kalmanLngRef = useRef(new KalmanFilter(0.1, 0.1));
   
   const totalDistanceAllProjects = calculateTotalDistanceAllProjects(projects);
+  
+  // Função para capturar imagem do mapa
+  const getMapImage = () => {
+    if (mapRef.current) {
+      try {
+        const mapCanvas = mapRef.current.getCanvas();
+        return mapCanvas.toDataURL('image/png');
+      } catch (e) {
+        console.error("Erro ao capturar imagem do mapa:", e);
+        return null;
+      }
+    }
+    return null;
+  };
   
   // OTIMIZAÇÃO: Converte marcadores para GeoJSON (Processado na GPU)
   const markersGeoJSON = useMemo(() => ({
@@ -2872,9 +2893,7 @@ if (!autoSave) {
     }
   };
   
-  // Função de Exportação Avançada (Suporte a Ramificações/Galhos)
-// Função de Exportação Profissional para Google Earth
-// Função de Exportação KML Corrigida e Simplificada
+  // Função de Exportação KML Corrigida e Simplificada
 const exportProjectAsKML = (project = currentProject) => {
   if (!project) return;
   
@@ -3070,6 +3089,7 @@ const exportProjectAsKML = (project = currentProject) => {
           mapStyle={mapStyles[mapStyle].url}
           mapboxAccessToken={mapboxToken}
           cursor={tracking && trackingInputMode === 'touch' && !paused ? 'crosshair' : 'auto'} // Muda o cursor para mira
+          preserveDrawingBuffer={true} // ADICIONADO: Permite captura de tela
           onClick={async (e) => { // Adicione async aqui
             // 1. Verifica se clicou em um marcador (Layer)
             const features = e.target.queryRenderedFeatures(e.point, {
@@ -3739,6 +3759,11 @@ const exportProjectAsKML = (project = currentProject) => {
   onDeleteProject={deleteProject}
   onExportProject={exportProjectAsKML}
   onJoinProject={handleJoinProject}
+  onOpenReport={(project) => {
+    const img = getMapImage(); // Tira o print do estado atual do mapa
+    setReportData({ project, image: img }); // Salva no estado
+    setShowProjectsList(false); // Fecha a lista para focar no relatório
+  }}
 />
 
       <LoadedProjectsManager
@@ -4153,6 +4178,15 @@ const exportProjectAsKML = (project = currentProject) => {
         }}
       />
 
+      {/* Componente ProjectReport adicionado */}
+      <ProjectReport
+        isOpen={!!reportData}
+        onClose={() => setReportData(null)}
+        project={reportData?.project}
+        mapImage={reportData?.image}
+        currentUserEmail={user?.email}
+      />
+
       <input
         ref={fileInputRef}
         id="file-input"
@@ -4170,14 +4204,16 @@ const exportProjectAsKML = (project = currentProject) => {
       
       {/* Inputs invisíveis... */}
 
-     { /* Input invisível para importação de projetos */ } <input
-ref = { projectInputRef }
-id = "project-input"
-type = "file"
-accept = ".kml,.kmz"
-onChange = { handleProjectImport } // <--- AQUI é onde estava dando o erro
-className = "hidden" /
-  >
+     { /* Input invisível para importação de projetos */ } 
+<input
+  ref={projectInputRef}
+  id="project-input"
+  type="file"
+  accept=".kml,.kmz"
+  onChange={handleProjectImport}
+  className="hidden"
+/>
+
     </div>
   )
 }

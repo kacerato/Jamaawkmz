@@ -11,7 +11,6 @@ import {
   DialogTitle, 
   DialogDescription 
 } from '@/components/ui/dialog';
-import ProjectReport from './ProjectReport'; // Adicione no ProjectManager
 
 const ProjectManager = ({ 
   isOpen, 
@@ -21,13 +20,13 @@ const ProjectManager = ({
   onLoadProject, 
   onDeleteProject, 
   onExportProject,
-  onJoinProject 
+  onJoinProject,
+  onOpenReport // NOVA PROP
 }) => {
   const [activeTab, setActiveTab] = useState('mine');
   const [joinId, setJoinId] = useState('');
   const [copiedId, setCopiedId] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [reportProject, setReportProject] = useState(null); // Projeto selecionado para relatório
 
   const myProjects = projects.filter(p => p.user_id === currentUserId);
   const sharedProjects = projects.filter(p => p.user_id !== currentUserId);
@@ -98,11 +97,11 @@ const ProjectManager = ({
           </Button>
           
           <div className="flex gap-1">
-            {/* Botão Relatório */}
+            {/* Botão Relatório - Agora chama onOpenReport */}
             <Button 
               size="icon" 
               variant="ghost" 
-              onClick={() => setReportProject(project)}
+              onClick={() => onOpenReport && onOpenReport(project)}
               className="h-10 w-10 rounded-xl text-slate-400 hover:text-cyan-400 hover:bg-cyan-950/30"
               title="Gerar Relatório"
             >
@@ -238,14 +237,6 @@ const ProjectManager = ({
           <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-slate-950/90 to-transparent pointer-events-none" />
         </div>
       </DialogContent>
-      
-      {/* Modal de Relatório */}
-      <ProjectReport 
-        isOpen={!!reportProject} 
-        onClose={() => setReportProject(null)} 
-        project={reportProject}
-        userName={currentUserId} // Ou passe o email se tiver disponível
-      />
     </Dialog>
   );
 };
