@@ -624,9 +624,6 @@ function App() {
   const kalmanLatRef = useRef(new KalmanFilter(0.1, 0.1));
   const kalmanLngRef = useRef(new KalmanFilter(0.1, 0.1));
   
-  // ADICIONADO: Ref para guardar o timer do heartbeat
-  const lockIntervalRef = useRef(null);
-  
   const totalDistanceAllProjects = calculateTotalDistanceAllProjects(projects);
   
   // OTIMIZAÇÃO: Converte marcadores para GeoJSON (Processado na GPU)
@@ -645,26 +642,6 @@ function App() {
       }
     }))
   }), [filteredMarkers]);
-  
-  // ADICIONADO: Função para limpar a trava do projeto
-  const clearProjectLock = async () => {
-    if (lockIntervalRef.current) {
-      clearInterval(lockIntervalRef.current);
-      lockIntervalRef.current = null;
-    }
-    if (currentProject && isOnline) {
-      await supabase.rpc('release_project_lock', { p_id: currentProject.id });
-    }
-  };
-
-  // ADICIONADO: Efeito para limpar trava quando o componente desmontar
-  useEffect(() => {
-    return () => {
-      if (lockIntervalRef.current) {
-        clearInterval(lockIntervalRef.current);
-      }
-    };
-  }, []);
   
   // Dentro do componente App
   const loadProjectsFromSupabase = async () => {
@@ -908,9 +885,6 @@ function App() {
   
   const handleLogout = async () => {
     try {
-      // Limpa a trava antes de deslogar
-      await clearProjectLock();
-      
       localStorage.removeItem('supabase.auth.token');
       sessionStorage.removeItem('supabase.auth.token');
       localStorage.removeItem('jamaaw_projects');
@@ -1199,21 +1173,6 @@ function App() {
       projectNameToUse = `Rastreamento ${new Date().toLocaleString('pt-BR')}`;
     }
     
-    // ADICIONADO: Verificação de versão (optimistic locking)
-    if (isOnline && editingProject) {
-      const { data: remote } = await supabase
-        .from('projetos')
-        .select('updated_at')
-        .eq('id', editingProject.id)
-        .single();
-
-      // Se a data no banco for mais nova que a que eu tenho em memória
-      if (remote && new Date(remote.updated_at) > new Date(editingProject.updated_at)) {
-        showFeedback('Erro de Versão', 'Alguém modificou este projeto enquanto você editava. Recarregue para não perder dados.', 'error');
-        return; // BLOQUEIA SALVAMENTO
-      }
-    }
-    
     // CORREÇÃO AUTOMÁTICA DE IDs: Converte IDs numéricos antigos para UUIDs antes de salvar
     const sanitizedPoints = finalPoints.map(p => ({
       ...p,
@@ -1382,11 +1341,6 @@ if (!autoSave) {
     setPositionHistory([]);
   }
   
-  // ADICIONADO: Libera a trava se for um save final
-  if (!autoSave) {
-    await clearProjectLock();
-  }
-  
   showFeedback('Sucesso', editingProject ? 'Projeto atualizado!' : 'Projeto salvo e finalizado!', 'success');
 }
       
@@ -1399,25 +1353,33 @@ if (!autoSave) {
   };
   
   const startTracking = async (mode = 'gps') => {
-  // 1. REGRA DE SEGURANÇA: Múltiplos Projetos
+  // 1. Verificação de Segurança (Múltiplos Projetos)
   if (loadedProjects.length > 1) {
-    showFeedback('Bloqueado', 'Você tem múltiplos projetos carregados. Para iniciar o rastreamento, mantenha apenas UM projeto ativo no mapa ou inicie um novo.', 'error');
+    showFeedback('Bloqueado', 'Múltiplos projetos ativos. Deixe apenas UM projeto no mapa para continuar o traçado.', 'error');
     return;
   }
   
-  // 2. Continuação de Projeto Único
+  // 2. Lógica de Continuação (CORRIGIDA)
   if (loadedProjects.length === 1) {
     const project = loadedProjects[0];
     
-    // Se não for o projeto atual, define ele
-    if (!currentProject || currentProject.id !== project.id) {
-      setCurrentProject(project);
-      setManualPoints(project.points);
-      setTotalDistance(project.totalDistance || project.total_distance || 0);
-      setProjectName(project.name);
+    // Define o projeto atual e carrega os pontos na memória de edição
+    setCurrentProject(project);
+    setManualPoints(project.points); // Garante que a lista não comece do zero
+    setTotalDistance(project.totalDistance || project.total_distance || 0);
+    setProjectName(project.name);
+    
+    // --- A CORREÇÃO MÁGICA ---
+    // Pega o último ponto do array e define como "Ponto Ativo"
+    if (project.points && project.points.length > 0) {
+      const lastPoint = project.points[project.points.length - 1];
+      setSelectedStartPoint(lastPoint); // <--- ISSO CONECTA O TRAÇO
+      
+      // Feedback visual para o usuário saber que conectou
+      showFeedback('Conectado', `Rastreamento continuado a partir do Ponto ${project.points.length}`, 'success');
     }
   }
-  // 3. Novo Projeto (Limpo)
+  // 3. Novo Projeto (Do zero)
   else if (!currentProject) {
     setManualPoints([]);
     setTotalDistance(0);
@@ -1425,13 +1387,14 @@ if (!autoSave) {
     setSelectedStartPoint(null);
   }
   
+  // Configurações de UI
   setTrackingInputMode(mode);
   setTracking(true);
   setPaused(false);
   setShowTrackingControls(true);
-  setShowRulerPopup(false);
+  setShowRulerPopup(false); // Fecha menus antigos se houver
   
-  // Reinicia filtros
+  // Reseta filtros do GPS
   kalmanLatRef.current = new KalmanFilter(0.1, 0.1);
   kalmanLngRef.current = new KalmanFilter(0.1, 0.1);
 };
@@ -1450,21 +1413,6 @@ if (!autoSave) {
     if (!confirm('Existem pontos não salvos no mapa. Deseja descartá-los?')) {
       return;
     }
-  }
-  
-  // ADICIONADO: Adquirir trava do projeto (edição concorrente)
-  if (isOnline) {
-    const { data } = await supabase.rpc('acquire_project_lock', { p_id: project.id });
-    if (!data.success) {
-      showFeedback('Bloqueado', `Este projeto está sendo editado por outro usuário no momento.`, 'error');
-      return; // IMPEDE ABERTURA
-    }
-    
-    // Inicia Heartbeat (Renova a trava a cada 30s)
-    if (lockIntervalRef.current) clearInterval(lockIntervalRef.current);
-    lockIntervalRef.current = setInterval(() => {
-      supabase.rpc('refresh_project_lock', { p_id: project.id });
-    }, 30000);
   }
   
   // Fecha o menu imediatamente para sensação de resposta rápida
@@ -2636,12 +2584,7 @@ if (!autoSave) {
     });
   };
   
-  const removeLoadedProject = async (projectId) => {
-    // ADICIONADO: Limpa a trava se estiver removendo o projeto atual
-    if (currentProject && currentProject.id === projectId) {
-      await clearProjectLock();
-    }
-    
+  const removeLoadedProject = (projectId) => {
     // 1. Remove da lista visual de projetos carregados
     setLoadedProjects(prev => prev.filter(p => p.id !== projectId));
 
@@ -2860,9 +2803,6 @@ if (!autoSave) {
     } catch (error) {
       console.error('Erro ao salvar projeto automaticamente:', error);
     } finally {
-      // ADICIONADO: Limpa a trava ao parar o rastreamento
-      await clearProjectLock();
-      
       setTracking(false);
       setPaused(false);
       setShowTrackingControls(false);
