@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { FileText, Download, X, MapPin, Activity, Calendar, User, ShieldAlert } from 'lucide-react';
+import { FileText, Download, X, MapPin, Activity, Calendar, User, ShieldAlert, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import jsPDF from 'jspdf';
@@ -12,7 +12,7 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
   const [staticMapUrl, setStaticMapUrl] = useState(null);
   const [isDownloading, setIsDownloading] = useState(false);
 
-  // --- 1. PROCESSAMENTO DE DADOS (MEMOIZED) ---
+  // --- 1. PROCESSAMENTO DE DADOS ---
   const stats = useMemo(() => {
     if (!project || !project.points) return null;
 
@@ -48,8 +48,8 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
 
   useEffect(() => {
     if (isOpen && project?.points?.length > 0) {
-      // Gera URL otimizada com Polyline Encoding
-      const url = getStaticMapUrl(project.points, 600, 300); 
+      // Gera URL otimizada
+      const url = getStaticMapUrl(project.points, 800, 400); 
       setStaticMapUrl(url);
     }
   }, [isOpen, project]);
@@ -68,22 +68,27 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
 
   const formatDist = (m) => m < 1000 ? `${m.toFixed(1)}m` : `${(m/1000).toFixed(3)}km`;
 
-  // --- GERAÇÃO DO PDF ---
+  // --- GERAÇÃO DO PDF CORRIGIDA ---
   const generatePDF = async () => {
     setIsDownloading(true);
     try {
       const doc = new jsPDF();
-      const pageWidth = doc.internal.pageSize.getWidth();
-      const pageHeight = doc.internal.pageSize.getHeight();
-      
-      // Função para pintar o fundo em TODAS as páginas
-      const paintBackground = (data) => {
-          doc.setFillColor(15, 23, 42); // Slate 900
-          doc.rect(0, 0, pageWidth, pageHeight, 'F');
+      const width = doc.internal.pageSize.getWidth();
+      const height = doc.internal.pageSize.getHeight();
+
+      // TRUQUE DE MESTRE: Sobrescreve a função addPage para pintar o fundo AUTOMATICAMENTE
+      // toda vez que uma nova página for criada pela tabela.
+      const originalAddPage = doc.addPage;
+      doc.addPage = function() {
+        const ret = originalAddPage.call(this);
+        this.setFillColor(15, 23, 42); // Slate 900
+        this.rect(0, 0, width, height, 'F'); // Pinta o fundo ANTES do conteúdo
+        return ret;
       };
 
-      // Pinta a primeira página manualmente
-      paintBackground();
+      // Pinta a primeira página manualmente (pois ela já existe)
+      doc.setFillColor(15, 23, 42);
+      doc.rect(0, 0, width, height, 'F');
 
       let y = 15;
 
@@ -99,44 +104,36 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
       
       doc.setTextColor(255, 255, 255);
       doc.setFontSize(12);
-      doc.text("JAMAAW GEO", pageWidth - 15, y, { align: 'right' });
+      doc.text("JAMAAW GEO", width - 15, y, { align: 'right' });
 
       y += 15;
 
-      // --- IMAGEM DE SATÉLITE ---
+      // Imagem
       if (staticMapUrl) {
         try {
-          // Busca imagem como Blob para evitar erros de CORS/WebGL
           const response = await fetch(staticMapUrl);
-          if (response.ok) {
-              const imgBlob = await response.blob();
-              const imgData = await new Promise((resolve) => {
-                const reader = new FileReader();
-                reader.onloadend = () => resolve(reader.result);
-                reader.readAsDataURL(imgBlob);
-              });
-              
-              doc.addImage(imgData, 'JPEG', 15, y, 180, 90);
-              
-              // Borda Neon
-              doc.setDrawColor(34, 211, 238);
-              doc.setLineWidth(0.5);
-              doc.rect(15, y, 180, 90);
-              
-              y += 95;
-          } else {
-              throw new Error("Erro API Mapbox");
-          }
+          const blob = await response.blob();
+          const base64 = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result);
+            reader.readAsDataURL(blob);
+          });
+          
+          doc.addImage(base64, 'PNG', 15, y, 180, 90);
+          doc.setDrawColor(34, 211, 238);
+          doc.setLineWidth(0.5);
+          doc.rect(15, y, 180, 90);
+          y += 95;
         } catch (e) {
           console.error("Erro imagem:", e);
           doc.setTextColor(239, 68, 68);
-          doc.setFontSize(8);
-          doc.text("[Imagem do mapa indisponível - Verifique conexão]", 15, y + 10);
+          doc.setFontSize(9);
+          doc.text("[Imagem indisponível]", 15, y + 10);
           y += 20;
         }
       }
 
-      // --- CARD DE RESUMO ---
+      // Card Resumo
       doc.setFillColor(30, 41, 59);
       doc.roundedRect(15, y, 180, 30, 3, 3, 'F');
       
@@ -151,12 +148,7 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
       
       y += 40;
 
-      // --- TABELA DE EQUIPE ---
-      doc.setFontSize(11);
-      doc.setTextColor(255, 255, 255);
-      doc.text("EQUIPE", 15, y);
-      y += 5;
-      
+      // Tabela de Equipe
       const teamData = Object.entries(stats.userResponsibility).map(([email, count]) => [email, count]);
       
       autoTable(doc, {
@@ -164,14 +156,16 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
         head: [['RESPONSÁVEL', 'QTD. PONTOS']],
         body: teamData,
         theme: 'grid',
-        headStyles: { fillColor: [6, 182, 212], textColor: [0, 0, 0], fontStyle: 'bold' },
-        bodyStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], lineColor: [51, 65, 85] },
+        headStyles: { fillColor: [6, 182, 212], textColor: [0, 0, 0] },
+        bodyStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255] },
         margin: { left: 15, right: 15 }
       });
       
       y = doc.lastAutoTable.finalY + 15;
 
-      // --- TABELA DETALHADA COM CORREÇÃO DE PÁGINA EM BRANCO ---
+      // Tabela Detalhada
+      doc.setFontSize(11);
+      doc.setTextColor(255, 255, 255);
       doc.text("DETALHAMENTO DIÁRIO", 15, y);
       y += 5;
 
@@ -188,9 +182,6 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
             p.user_email?.split('@')[0] || '---'
           ]);
         });
-        detailData.push([
-          { content: `Total: ${formatDist(data.distance)}`, colSpan: 4, styles: { halign: 'right', fontStyle: 'italic', textColor: [148, 163, 184] } }
-        ]);
       });
 
       autoTable(doc, {
@@ -198,62 +189,39 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
         head: [['#', 'HORA', 'COORDENADAS', 'USER']],
         body: detailData,
         theme: 'grid',
-        headStyles: { fillColor: [15, 23, 42], textColor: [34, 211, 238], lineColor: [34, 211, 238] },
-        bodyStyles: { fillColor: [30, 41, 59], textColor: [226, 232, 240], lineColor: [51, 65, 85] },
+        headStyles: { fillColor: [6, 182, 212], textColor: [0, 0, 0] },
+        bodyStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], lineColor: [51, 65, 85] },
         margin: { left: 15, right: 15 },
-        // O PULO DO GATO: Pinta o fundo sempre que uma nova página é adicionada
-        didDrawPage: (data) => {
-            // Se não for a primeira página (que já pintamos), pinta o fundo
-            if (data.pageNumber > 1) {
-                // Como didDrawPage acontece DEPOIS do conteúdo, precisamos garantir que o fundo fique atrás
-                // Infelizmente o jspdf não tem z-index fácil.
-                // O truque é usar o hook `willDrawPage` se disponível ou aceitar que
-                // o fundo seja pintado antes na próxima iteração.
-                
-                // Melhor abordagem: Resetar o fill color para as próximas páginas
-                doc.setFillColor(15, 23, 42);
-                doc.rect(0, 0, pageWidth, pageHeight, 'F');
-            }
-        },
-        // Isso força o fundo a ser desenhado ANTES do conteúdo da tabela na nova página
-        drawCell: (cell, data) => {
-            if (data.row.index === 0 && data.column.index === 0 && data.pageNumber > 1) {
-                 // Hack para garantir fundo escuro
-            }
-        }
+        // IMPORTANTE: Não usamos mais didDrawPage para pintar fundo
+        // Usamos o override do addPage lá em cima
       });
-      
-      // Correção final para paginação escura:
-      // Como autoTable é complexo com backgrounds, vamos iterar as páginas NO FINAL
+
+      // Rodapé (Itera sobre páginas no final)
       const pageCount = doc.internal.getNumberOfPages();
       for(let i = 1; i <= pageCount; i++) {
         doc.setPage(i);
-        // O jspdf desenha por cima, então não podemos pintar o rect agora se tiver texto.
-        // A solução do hook `didDrawPage` acima geralmente funciona se o rect for o primeiro comando.
-        
-        // Rodapé
         doc.setFontSize(8);
         doc.setTextColor(100, 116, 139);
-        doc.text(`Jamaaw App - ${new Date().toLocaleDateString()}`, 15, pageHeight - 10);
-        doc.text(`Pág ${i} de ${pageCount}`, pageWidth - 25, pageHeight - 10);
+        doc.text(`Página ${i} de ${pageCount}`, width - 20, height - 10, { align: 'right' });
       }
 
-      const fileName = `Relatorio_${project.name.replace(/\s+/g, '_')}.pdf`;
+      const safeName = `Relatorio_${project.name.replace(/\s+/g, '_')}.pdf`;
+      
       if (Capacitor.getPlatform() === 'web') {
-        doc.save(fileName);
+        doc.save(safeName);
       } else {
-        const base64 = doc.output('datauristring').split(',')[1];
+        const base64Out = doc.output('datauristring').split(',')[1];
         await Filesystem.writeFile({
-          path: fileName,
-          data: base64,
+          path: safeName,
+          data: base64Out,
           directory: Directory.Documents
         });
-        alert(`Salvo em Documentos: ${fileName}`);
+        alert(`Salvo: ${safeName}`);
       }
 
     } catch (e) {
       console.error(e);
-      alert("Erro ao gerar PDF");
+      alert("Erro ao gerar PDF.");
     } finally {
       setIsDownloading(false);
     }
@@ -262,115 +230,57 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="fixed z-[10000] left-[50%] top-[50%] translate-x-[-50%] translate-y-[-50%] w-[95vw] max-w-lg h-[85vh] p-0 border-none bg-transparent shadow-none outline-none [&>button]:hidden">
-        
         <div className="flex flex-col h-full bg-slate-950/95 backdrop-blur-xl border border-cyan-500/30 rounded-3xl overflow-hidden shadow-[0_0_50px_rgba(6,182,212,0.2)]">
           
+          {/* Header */}
           <div className="flex-none p-5 border-b border-white/5 bg-gradient-to-r from-slate-900 to-slate-800">
             <div className="flex justify-between items-start">
               <div>
                 <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                  <FileText className="text-cyan-400 w-5 h-5" /> Relatório de Campo
+                  <FileText className="text-cyan-400 w-5 h-5" /> Relatório
                 </h2>
                 <div className="flex items-center gap-2 mt-1">
-                  <span className="text-[10px] font-bold bg-cyan-500/20 text-cyan-400 px-2 py-0.5 rounded uppercase">
-                    {project.name}
-                  </span>
-                  {project.locked_by && (
-                    <span className="text-[10px] flex items-center gap-1 bg-red-500/20 text-red-400 px-2 py-0.5 rounded uppercase">
-                      <ShieldAlert size={10} /> TRAVADO
-                    </span>
-                  )}
+                   <span className="text-[10px] bg-cyan-500/20 text-cyan-400 px-2 rounded">{project.name}</span>
                 </div>
               </div>
-              <Button size="icon" variant="ghost" onClick={onClose} className="rounded-full hover:bg-white/10 text-slate-400 -mr-2">
+              <Button size="icon" variant="ghost" onClick={onClose} className="rounded-full text-slate-400 hover:bg-white/10">
                 <X size={20} />
               </Button>
             </div>
           </div>
 
+          {/* Body */}
           <div className="flex-1 overflow-y-auto custom-scrollbar p-5 space-y-6">
-            
-            {/* PREVIEW DO MAPA */}
             <div className="relative w-full aspect-video bg-slate-900 rounded-xl overflow-hidden border border-white/10 shadow-lg group">
               {staticMapUrl ? (
-                <>
-                    <img 
-                        src={staticMapUrl} 
-                        alt="Satélite" 
-                        className="w-full h-full object-cover transition-opacity duration-500" 
-                        onError={(e) => {
-                            e.target.style.display = 'none';
-                            e.target.parentNode.classList.add('bg-red-900/20');
-                        }}
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-transparent to-transparent opacity-80 pointer-events-none"></div>
-                    <div className="absolute bottom-3 left-3 flex flex-col pointer-events-none">
-                        <span className="text-xs font-bold text-white shadow-black drop-shadow-md">Vista de Satélite</span>
-                        <span className="text-[10px] text-cyan-400">Mapbox Static API (Polyline Encoded)</span>
-                    </div>
-                </>
+                <img src={staticMapUrl} className="w-full h-full object-cover" alt="Mapa" />
               ) : (
-                <div className="flex flex-col items-center justify-center h-full text-slate-500 text-xs gap-2">
-                    <Activity className="animate-spin text-cyan-500" />
-                    <span>Gerando imagem do mapa...</span>
+                <div className="flex items-center justify-center h-full text-slate-500 gap-2">
+                   <Loader2 className="animate-spin" /> Gerando mapa...
                 </div>
               )}
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <div className="bg-slate-900/60 p-3 rounded-2xl border border-white/5 flex flex-col items-center justify-center text-center">
-                <MapPin className="text-cyan-400 mb-1 w-5 h-5" />
-                <span className="text-lg font-bold text-white font-mono">{formatDist(stats.totalDistance)}</span>
-                <span className="text-[10px] text-slate-500 uppercase">Extensão Total</span>
-              </div>
-              <div className="bg-slate-900/60 p-3 rounded-2xl border border-white/5 flex flex-col items-center justify-center text-center">
-                <Activity className="text-green-400 mb-1 w-5 h-5" />
-                <span className="text-lg font-bold text-white font-mono">{stats.totalPoints}</span>
-                <span className="text-[10px] text-slate-500 uppercase">Pontos Coletados</span>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider pl-1">Histórico Diário</h3>
-              
-              {Object.entries(stats.groups).map(([date, groupData]) => (
-                <div key={date} className="bg-slate-900/40 rounded-xl border border-white/5 overflow-hidden">
-                  <div className="bg-white/5 px-3 py-2 flex justify-between items-center">
-                    <div className="flex items-center gap-2">
-                        <Calendar className="w-3.5 h-3.5 text-cyan-400" />
-                        <span className="text-xs font-bold text-white">{date}</span>
-                    </div>
-                    <span className="text-[10px] font-mono text-cyan-200">{formatDist(groupData.distance)}</span>
-                  </div>
-                  
-                  <div className="p-3 grid grid-cols-2 gap-2">
-                    <div className="col-span-2 text-[10px] text-slate-400 mb-1">Responsáveis:</div>
-                    {[...new Set(groupData.points.map(p => p.user_email?.split('@')[0] || 'N/A'))].map(u => (
-                         <div key={u} className="flex items-center gap-1.5 bg-slate-950 rounded px-2 py-1.5">
-                            <User className="w-3 h-3 text-purple-400" />
-                            <span className="text-xs text-slate-200">{u}</span>
-                         </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
+               <div className="bg-slate-900/60 p-3 rounded-xl border border-white/5 text-center">
+                  <span className="text-lg font-bold text-white font-mono">{formatDist(stats.totalDistance)}</span>
+                  <span className="block text-[10px] text-slate-500 uppercase">Distância</span>
+               </div>
+               <div className="bg-slate-900/60 p-3 rounded-xl border border-white/5 text-center">
+                  <span className="text-lg font-bold text-white font-mono">{stats.totalPoints}</span>
+                  <span className="block text-[10px] text-slate-500 uppercase">Pontos</span>
+               </div>
             </div>
           </div>
 
+          {/* Footer */}
           <div className="flex-none p-4 bg-slate-900 border-t border-white/10">
             <Button 
               onClick={generatePDF}
               disabled={isDownloading || !staticMapUrl}
-              className="w-full h-12 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold rounded-xl shadow-lg shadow-cyan-900/20 group transition-all active:scale-95"
+              className="w-full h-12 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold rounded-xl"
             >
-              {isDownloading ? (
-                "Gerando PDF..."
-              ) : (
-                <>
-                  <Download className="mr-2 group-hover:animate-bounce" size={18} />
-                  Baixar Relatório Oficial
-                </>
-              )}
+              {isDownloading ? "Gerando..." : <><Download className="mr-2" size={18} /> Baixar PDF</>}
             </Button>
           </div>
 
