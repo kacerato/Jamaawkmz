@@ -763,41 +763,47 @@ function App() {
   };
   
   // Efeito de Realtime para o projeto ATUAL
-  useEffect(() => {
-    if (!currentProject || !isOnline) return;
-    
-    const channel = supabase
-      .channel(`project-tracking-${currentProject.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'projetos',
-          filter: `id=eq.${currentProject.id}`
-        },
-        (payload) => {
-          console.log("⚡ Atualização Realtime recebida:", payload);
-          
-          const updatedProject = payload.new;
-          
-          setCurrentProject(prev => ({ ...prev, ...updatedProject }));
-          
-          if (updatedProject.points) {
-            setManualPoints(updatedProject.points);
-            setTotalDistance(updatedProject.total_distance);
-          }
-          
-          setProjects(prev => prev.map(p => p.id === updatedProject.id ? updatedProject : p));
-        }
-      )
-      .subscribe();
-    
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [currentProject?.id, isOnline]);
+  // Efeito de Realtime OTIMIZADO (Filtra apenas o projeto atual)
+useEffect(() => {
+  // Só conecta se tiver um projeto carregado
+  if (!currentProject || !isOnline) return;
   
+  console.log(`📡 Conectando Realtime para projeto: ${currentProject.id}`);
+  
+  const channel = supabase
+    .channel(`project-tracking-${currentProject.id}`) // Canal único por projeto
+    .on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'projetos',
+        filter: `id=eq.${currentProject.id}` // <--- O PULO DO GATO: Filtra no servidor!
+      },
+      (payload) => {
+        console.log("⚡ Atualização Realtime recebida:", payload);
+        const updatedProject = payload.new;
+        
+        // Atualiza o estado local
+        setCurrentProject(prev => ({ ...prev, ...updatedProject }));
+        
+        if (updatedProject.points) {
+          setManualPoints(updatedProject.points);
+          setTotalDistance(updatedProject.total_distance);
+        }
+        
+        // Atualiza na lista geral também
+        setProjects(prev => prev.map(p => p.id === updatedProject.id ? updatedProject : p));
+      }
+    )
+    .subscribe();
+  
+  return () => {
+    console.log(`🔌 Desconectando Realtime do projeto: ${currentProject.id}`);
+    supabase.removeChannel(channel);
+  };
+}, [currentProject?.id, isOnline]);
+
   useEffect(() => {
     if (showProjectsList) {
       refreshProjectNeighborhoods();
