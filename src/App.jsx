@@ -60,6 +60,7 @@ import JSZip from 'jszip'
 import { Network } from '@capacitor/network'
 import { Preferences } from '@capacitor/preferences'
 import { Filesystem, Directory } from '@capacitor/filesystem'
+import { FileOpener } from '@capacitor-community/file-opener'
 import { Capacitor } from '@capacitor/core'
 import axios from 'axios'
 import ARCamera from './components/ARCamera'
@@ -2312,46 +2313,64 @@ if (!autoSave) {
   }
   
   const downloadKML = async (kmlContent, filename) => {
-    try {
-      console.log('Iniciando download...', filename);
+  try {
+    console.log('Iniciando download...', filename);
+    
+    if (Capacitor.getPlatform() === 'web') {
+      const blob = new Blob([kmlContent], {
+        type: 'application/vnd.google-earth.kml+xml;charset=utf-8'
+      });
       
-      if (Capacitor.getPlatform() === 'web') {
-        const blob = new Blob([kmlContent], {
-          type: 'application/vnd.google-earth.kml+xml;charset=utf-8'
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.style.display = 'none';
+      
+      document.body.appendChild(a);
+      a.click();
+      
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 1000);
+    } else {
+      // NATIVO (ANDROID)
+      const savedFile = await Filesystem.writeFile({
+        path: filename,
+        data: kmlContent,
+        directory: Directory.Documents,
+        encoding: 'utf-8',
+      });
+      
+      showFeedback('Sucesso', `Arquivo salvo! Tentando abrir...`, 'success');
+      
+      // Tenta abrir com o app padrão (Google Earth, etc)
+      try {
+        await FileOpener.open({
+          filePath: savedFile.uri,
+          contentType: 'application/vnd.google-earth.kml+xml',
+          openWithDefault: false
         });
-        
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        a.style.display = 'none';
-        
-        document.body.appendChild(a);
-        a.click();
-        
-        setTimeout(() => {
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-        }, 1000);
-      } else {
-        await Filesystem.writeFile({
-          path: filename,
-          data: kmlContent,
-          directory: Directory.Documents,
-          encoding: 'utf-8',
-        });
-        
-        showFeedback(
-          'Sucesso',
-          `Arquivo salvo em Documentos: ${filename}`,
-          'success'
-        );
+      } catch (openerError) {
+        console.warn("Erro ao abrir KML automaticamente:", openerError);
+        // Fallback para XML genérico se falhar
+        try {
+          await FileOpener.open({
+            filePath: savedFile.uri,
+            contentType: 'text/xml',
+            openWithDefault: false
+          });
+        } catch (e) {
+          showFeedback('Aviso', 'Arquivo salvo em Documentos, mas nenhum app compatível foi encontrado para abrir automaticamente.', 'warning');
+        }
       }
-    } catch (error) {
-      console.error('Erro fatal no download:', error);
-      showFeedback('Erro', 'Erro ao salvar o arquivo. Verifique as permissões.', 'error');
     }
-  };
+  } catch (error) {
+    console.error('Erro fatal no download:', error);
+    showFeedback('Erro', 'Erro ao salvar o arquivo.', 'error');
+  }
+};
   
   const getRouteFromAPI = async (start, end) => {
     try {
