@@ -3246,7 +3246,7 @@ if (!autoSave) {
             </Source>
           ))}
 
-         // Localize este trecho no seu JSX e atualize o onClick:
+    
 {loadedProjects.map(project => (
   <React.Fragment key={`markers-${project.id}`}>
     {project.points.map((point, index) => (
