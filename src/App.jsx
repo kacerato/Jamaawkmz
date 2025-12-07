@@ -627,6 +627,61 @@ function App() {
   
   const totalDistanceAllProjects = calculateTotalDistanceAllProjects(projects);
   
+  // --- NOVA FUNÇÃO: Salvar foto/edição em um Ponto de Projeto ---
+  const handleUpdateProjectPoint = async (updatedPoint) => {
+    // 1. Identifica o projeto
+    const projectId = pointPopupInfo?.projectId; // Precisamos garantir que isso venha no click
+    const projectToUpdate = loadedProjects.find(p => p.id === projectId) || currentProject;
+
+    if (!projectToUpdate) {
+      console.error("Projeto não encontrado para atualização do ponto");
+      return;
+    }
+
+    // 2. Atualiza o array de pontos localmente
+    const updatedPoints = projectToUpdate.points.map(p => 
+      p.id === updatedPoint.id ? updatedPoint : p
+    );
+
+    const updatedProject = { ...projectToUpdate, points: updatedPoints };
+
+    // 3. Atualiza estados visuais (Loaded e Current)
+    setLoadedProjects(prev => prev.map(p => p.id === projectId ? updatedProject : p));
+    if (currentProject && currentProject.id === projectId) {
+      setCurrentProject(updatedProject);
+      setManualPoints(updatedPoints);
+    }
+    
+    // Atualiza o popup aberto para refletir a nova foto imediatamente
+    setPointPopupInfo(prev => ({ ...prev, point: updatedPoint }));
+
+    // 4. Salva no Supabase (Persistência)
+    if (isOnline && user && !projectId.toString().startsWith('offline_')) {
+      try {
+        const { error } = await supabase
+          .from('projetos')
+          .update({ 
+            points: updatedPoints,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', projectId);
+
+        if (error) throw error;
+        console.log("Foto salva no projeto com sucesso!");
+      } catch (err) {
+        console.error("Erro ao salvar foto no projeto:", err);
+        showFeedback("Erro", "Erro ao salvar foto na nuvem", "error");
+      }
+    } else {
+      // Salva localmente se offline
+      const allProjects = JSON.parse(localStorage.getItem('jamaaw_projects') || '[]');
+      const newAllProjects = allProjects.map(p => p.id === projectId ? updatedProject : p);
+      localStorage.setItem('jamaaw_projects', JSON.stringify(newAllProjects));
+      showFeedback("Salvo", "Foto salva localmente (Offline)", "warning");
+    }
+  };
+  
+  
   // Função para capturar imagem do mapa
   const getMapImage = () => {
     if (mapRef.current) {
@@ -3191,30 +3246,32 @@ if (!autoSave) {
             </Source>
           ))}
 
-          {loadedProjects.map(project => (
-            <React.Fragment key={`markers-${project.id}`}>
-              {project.points.map((point, index) => (
-                <PoleMarker
-                  key={point.id}
-                  point={point}
-                  index={index + 1}
-                  color={project.color}
-                  isActive={false}
-                  onClick={(e) => {
-                    e.originalEvent.stopPropagation();
-                    setPointPopupInfo({
-                      point,
-                      pointNumber: index + 1,
-                      projectName: project.name,
-                      totalPoints: project.points.length,
-                      color: project.color,
-                      isManualPoint: false
-                    });
-                  }}
-                />
-              ))}
-            </React.Fragment>
-          ))}
+         // Localize este trecho no seu JSX e atualize o onClick:
+{loadedProjects.map(project => (
+  <React.Fragment key={`markers-${project.id}`}>
+    {project.points.map((point, index) => (
+      <PoleMarker
+        key={point.id}
+        point={point}
+        index={index + 1}
+        color={project.color}
+        isActive={false}
+        onClick={(e) => {
+          e.originalEvent.stopPropagation();
+          setPointPopupInfo({
+            point,
+            pointNumber: index + 1,
+            projectName: project.name,
+            projectId: project.id, // <--- ADICIONADO: ID DO PROJETO É CRUCIAL
+            totalPoints: project.points.length,
+            color: project.color,
+            isManualPoint: false
+          });
+        }}
+      />
+    ))}
+  </React.Fragment>
+))}
 
           {manualPoints.length > 0 && (
             <Source 
@@ -4083,40 +4140,28 @@ if (!autoSave) {
         />
       )}
 
-      {popupMarker && (
+      {/* Popup para Pontos de Projeto (AGORA COM FOTOS) */}
+{pointPopupInfo && pointPopupInfo.point && !pointPopupInfo.isManualPoint && (
   <ModernPopup
-    marker={popupMarker}
-    onClose={() => setPopupMarker(null)}
+    marker={{
+      ...pointPopupInfo.point,
+      name: `Ponto ${pointPopupInfo.pointNumber}`, // Nome dinâmico para o Header
+      descricao: pointPopupInfo.projectName // Usa nome do projeto como descrição
+    }}
+    onClose={() => setPointPopupInfo(null)}
     
-    // --- ATUALIZAÇÃO AQUI ---
-    // Passamos a função que já existe no seu App.jsx para salvar
-    onUpdateMarker={async (updatedMarker) => {
-      // Atualiza estado local imediatamente (UI otimista)
-      setPopupMarker(updatedMarker); // Atualiza o popup aberto
-      setMarkers(prev => prev.map(m => m.id === updatedMarker.id ? updatedMarker : m));
-      
-      // Salva no banco
-      if (isOnline) {
-        await updateMarkerInSupabase(updatedMarker);
-      } else {
-        // Lógica offline se houver
-        console.log("Salvo offline (implementar fila sync)");
-      }
-    }}
-    // ------------------------
-
-    onEdit={(marker) => {
-      setPopupMarker(null);
-      setEditingMarker(marker);
-      setShowEditDialog(true);
-    }}
-    onShare={handleShareLocation}
-    onFavorite={toggleFavorite}
-    onCalculateDistance={(marker) => {
-      setSelectedForDistance([marker]);
-      setPopupMarker(null);
-    }}
+    // A mágica acontece aqui: conecta o ModernPopup à função de salvar do projeto
+    onUpdateMarker={handleUpdateProjectPoint}
+    
     currentPosition={currentPosition}
+    
+    // Removemos botões que não fazem sentido para pontos de projeto (como deletar isolado)
+    // Mas mantemos a funcionalidade de foto e visualização
+    onShare={() => {
+       const coords = `${pointPopupInfo.point.lat}, ${pointPopupInfo.point.lng}`;
+       navigator.clipboard.writeText(coords);
+       showFeedback('Sucesso', 'Coordenadas copiadas!', 'success');
+    }}
   />
 )}
 
