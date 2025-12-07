@@ -4141,27 +4141,22 @@ if (!autoSave) {
       )}
 
       {/* Popup para Pontos de Projeto (AGORA COM FOTOS) */}
-{pointPopupInfo && pointPopupInfo.point && !pointPopupInfo.isManualPoint && (
+{popupMarker && (
   <ModernPopup
-    marker={{
-      ...pointPopupInfo.point,
-      name: `Ponto ${pointPopupInfo.pointNumber}`, // Nome dinâmico para o Header
-      descricao: pointPopupInfo.projectName // Usa nome do projeto como descrição
+    marker={popupMarker}
+    onClose={() => setPopupMarker(null)}
+    onEdit={(marker) => {
+      setPopupMarker(null);
+      setEditingMarker(marker);
+      setShowEditDialog(true);
     }}
-    onClose={() => setPointPopupInfo(null)}
-    
-    // A mágica acontece aqui: conecta o ModernPopup à função de salvar do projeto
-    onUpdateMarker={handleUpdateProjectPoint}
-    
+    onShare={handleShareLocation}
+    onFavorite={toggleFavorite}
+    onCalculateDistance={(marker) => {
+      setSelectedForDistance([marker]);
+      setPopupMarker(null);
+    }}
     currentPosition={currentPosition}
-    
-    // Removemos botões que não fazem sentido para pontos de projeto (como deletar isolado)
-    // Mas mantemos a funcionalidade de foto e visualização
-    onShare={() => {
-       const coords = `${pointPopupInfo.point.lat}, ${pointPopupInfo.point.lng}`;
-       navigator.clipboard.writeText(coords);
-       showFeedback('Sucesso', 'Coordenadas copiadas!', 'success');
-    }}
   />
 )}
 
