@@ -4084,23 +4084,41 @@ if (!autoSave) {
       )}
 
       {popupMarker && (
-        <ModernPopup
-          marker={popupMarker}
-          onClose={() => setPopupMarker(null)}
-          onEdit={(marker) => {
-            setPopupMarker(null);
-            setEditingMarker(marker);
-            setShowEditDialog(true);
-          }}
-          onShare={handleShareLocation}
-          onFavorite={toggleFavorite}
-          onCalculateDistance={(marker) => {
-            setSelectedForDistance([marker]);
-            setPopupMarker(null);
-          }}
-          currentPosition={currentPosition}
-        />
-      )}
+  <ModernPopup
+    marker={popupMarker}
+    onClose={() => setPopupMarker(null)}
+    
+    // --- ATUALIZAÇÃO AQUI ---
+    // Passamos a função que já existe no seu App.jsx para salvar
+    onUpdateMarker={async (updatedMarker) => {
+      // Atualiza estado local imediatamente (UI otimista)
+      setPopupMarker(updatedMarker); // Atualiza o popup aberto
+      setMarkers(prev => prev.map(m => m.id === updatedMarker.id ? updatedMarker : m));
+      
+      // Salva no banco
+      if (isOnline) {
+        await updateMarkerInSupabase(updatedMarker);
+      } else {
+        // Lógica offline se houver
+        console.log("Salvo offline (implementar fila sync)");
+      }
+    }}
+    // ------------------------
+
+    onEdit={(marker) => {
+      setPopupMarker(null);
+      setEditingMarker(marker);
+      setShowEditDialog(true);
+    }}
+    onShare={handleShareLocation}
+    onFavorite={toggleFavorite}
+    onCalculateDistance={(marker) => {
+      setSelectedForDistance([marker]);
+      setPopupMarker(null);
+    }}
+    currentPosition={currentPosition}
+  />
+)}
 
       {arMode && (
         <ARCamera

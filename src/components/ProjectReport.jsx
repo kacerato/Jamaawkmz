@@ -215,6 +215,64 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
         styles: { textColor: [255, 255, 255] }
       });
 
+      y = doc.lastAutoTable.finalY + 15;
+
+      // --- ANEXO FOTOGRÁFICO ---
+      let hasPhotos = false;
+      let photoPageY = 20;
+      let photoCount = 0;
+
+      // Filtra pontos que têm fotos
+      const pointsWithPhotos = project.points.filter(p => p.photos && p.photos.length > 0);
+
+      if (pointsWithPhotos.length > 0) {
+        doc.addPage();
+        doc.setFillColor(15, 23, 42); doc.rect(0, 0, width, height, 'F'); // Fundo
+        
+        doc.setFontSize(16);
+        doc.setTextColor(34, 211, 238);
+        doc.text("ANEXO FOTOGRÁFICO", 15, 20);
+        photoPageY = 35;
+
+        for (const p of pointsWithPhotos) {
+          for (const photoData of p.photos) {
+            // Verifica se cabe na página, senão cria nova
+            if (photoPageY > height - 80) {
+              doc.addPage();
+              doc.setFillColor(15, 23, 42); doc.rect(0, 0, width, height, 'F');
+              photoPageY = 20;
+            }
+
+            try {
+              // Layout: Foto Esquerda, Dados Direita
+              const response = await fetch(photoData.url);
+              const blob = await response.blob();
+              const base64 = await new Promise((r) => { const reader = new FileReader(); reader.onload = () => r(reader.result); reader.readAsDataURL(blob); });
+
+              // Desenha Foto (Quadrada 60x60mm)
+              doc.addImage(base64, 'JPEG', 15, photoPageY, 60, 60);
+              doc.setDrawColor(255, 255, 255);
+              doc.setLineWidth(0.1);
+              doc.rect(15, photoPageY, 60, 60);
+
+              // Dados do Ponto ao lado
+              doc.setFontSize(10);
+              doc.setTextColor(255, 255, 255);
+              doc.text(`Ponto Referência: ID #${p.id ? p.id.substring(0, 6) : 'N/A'}`, 80, photoPageY + 10);
+              
+              doc.setFontSize(8);
+              doc.setTextColor(148, 163, 184); // Slate 400
+              doc.text(`Data: ${new Date(photoData.timestamp || Date.now()).toLocaleString()}`, 80, photoPageY + 20);
+              doc.text(`Coordenadas: ${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}`, 80, photoPageY + 28);
+              
+              photoPageY += 75; // Espaço para próxima foto
+            } catch (e) {
+              console.error("Erro ao baixar foto para PDF", e);
+            }
+          }
+        }
+      }
+
       // Rodapé
       const pageCount = doc.internal.getNumberOfPages();
       for(let i = 1; i <= pageCount; i++) {
