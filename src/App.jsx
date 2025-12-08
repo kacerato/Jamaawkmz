@@ -71,6 +71,7 @@ import ImportProgressPopup from './components/ImportProgressPopup'
 import MultipleSelectionPopup from './components/MultipleSelectionPopup'
 import BairroDetectionService from './components/BairroDetectionService'
 import ProjectLockService from './services/ProjectLockService' // NOVO SERVIÇO
+import dbService from './services/dbService' // NOVO: Serviço de banco de dados local
 import 'mapbox-gl/dist/mapbox-gl.css'
 import './App.css'
 import ProjectReport from './components/ProjectReport';
@@ -673,10 +674,8 @@ function App() {
         showFeedback("Erro", "Erro ao salvar foto na nuvem", "error");
       }
     } else {
-      // Salva localmente se offline
-      const allProjects = JSON.parse(localStorage.getItem('jamaaw_projects') || '[]');
-      const newAllProjects = allProjects.map(p => p.id === projectId ? updatedProject : p);
-      localStorage.setItem('jamaaw_projects', JSON.stringify(newAllProjects));
+      // Salva localmente usando dbService
+      await dbService.saveProject(updatedProject, isOnline ? 1 : 0);
       showFeedback("Salvo", "Foto salva localmente (Offline)", "warning");
     }
   };
@@ -761,12 +760,18 @@ function App() {
       
       allProjects.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
       
-      localStorage.setItem('jamaaw_projects', JSON.stringify(allProjects));
+      // Salvar projetos localmente usando dbService
+      for (const project of allProjects) {
+        await dbService.saveProject(project, 1); // Status 1 para online
+      }
+      
       return allProjects;
       
     } catch (error) {
       console.error('Erro ao carregar projetos:', error);
-      return JSON.parse(localStorage.getItem('jamaaw_projects') || '[]');
+      // Carregar do dbService local
+      const localData = await dbService.getProjects(user?.id);
+      return localData || [];
     }
   };
   
@@ -812,7 +817,10 @@ function App() {
     
     if (hasUpdates) {
       setProjects(updatedProjectsList);
-      localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjectsList));
+      // Atualizar localmente usando dbService
+      for (const project of updatedProjectsList) {
+        await dbService.saveProject(project, isOnline ? 1 : 0);
+      }
       console.log('Lista de projetos atualizada com novos bairros.');
     }
   };
@@ -900,7 +908,11 @@ useEffect(() => {
       
       const updatedProjects = projects.filter(p => !deletedIds.includes(p.id));
       setProjects(updatedProjects);
-      localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
+      
+      // Atualizar no dbService
+      for (const projectId of deletedIds) {
+        await dbService.deleteProject(projectId);
+      }
       
       setLoadedProjects(prev => prev.filter(p => !deletedIds.includes(p.id)));
       
@@ -965,8 +977,6 @@ useEffect(() => {
       
       localStorage.removeItem('supabase.auth.token');
       sessionStorage.removeItem('supabase.auth.token');
-      localStorage.removeItem('jamaaw_projects');
-      localStorage.removeItem('jamaaw_bairros');
       
       if (user) {
         localStorage.removeItem(`jamaaw_favorites_${user.id}`);
@@ -1158,7 +1168,8 @@ useEffect(() => {
           updatedProjects = [...projects, project];
         }
         setProjects(updatedProjects);
-        localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
+        // Salvar no dbService local
+        await dbService.saveProject(project, isOnline ? 1 : 0);
       }
       
       updateImportProgress(100, 5, 'Importação concluída!');
@@ -1283,7 +1294,9 @@ useEffect(() => {
           p.id === editingProject.id ? savedProject : p
         );
         setProjects(updatedProjects);
-        localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
+        
+        // Salvar no dbService local
+        await dbService.saveProject(savedProject, isOnline ? 1 : 0);
         
         setLoadedProjects(prev => {
           const exists = prev.find(p => p.id === savedProject.id);
@@ -1329,7 +1342,9 @@ useEffect(() => {
           p.id === currentProject.id ? savedProject : p
         );
         setProjects(updatedProjects);
-        localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
+        
+        // Salvar no dbService local
+        await dbService.saveProject(savedProject, isOnline ? 1 : 0);
         
         setLoadedProjects(prev => {
           const exists = prev.find(p => p.id === savedProject.id);
@@ -1366,7 +1381,9 @@ useEffect(() => {
         
         const updatedProjects = [...projects, savedProject];
         setProjects(updatedProjects);
-        localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
+        
+        // Salvar no dbService local
+        await dbService.saveProject(savedProject, isOnline ? 1 : 0);
       }
       
       // Se for salvamento manual (não autoSave), libera o lock
@@ -1641,6 +1658,9 @@ if (!autoSave) {
   useEffect(() => {
     const checkAuth = async () => {
       try {
+        // Inicializar o dbService
+        await dbService.init();
+
         const clearStoredTokens = () => {
           try {
             localStorage.removeItem('supabase.auth.token')
@@ -1766,11 +1786,8 @@ if (!autoSave) {
     if (!user || !isOnline) return;
     
     try {
-      const savedProjects = localStorage.getItem('jamaaw_projects');
-      if (!savedProjects) return;
-      
-      const projects = JSON.parse(savedProjects);
-      const offlineProjects = projects.filter(p => p.id && p.id.toString().startsWith('offline_'));
+      // Buscar projetos offline do dbService
+      const offlineProjects = await dbService.getProjects(user.id, 0);
       
       for (const project of offlineProjects) {
         try {
@@ -1788,11 +1805,12 @@ if (!autoSave) {
           
           if (error) throw error;
           
-          const updatedProjects = projects.map(p =>
-            p.id === project.id ? data[0] : p
-          );
-          localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
-          setProjects(updatedProjects);
+          // Atualizar o projeto no dbService para status online (1) e com o novo id
+          const updatedProject = { ...project, id: data[0].id };
+          await dbService.saveProject(updatedProject, 1);
+          
+          // Remover a versão offline
+          await dbService.deleteProject(project.id);
           
           console.log('Projeto offline sincronizado:', project.name);
           
@@ -1800,6 +1818,11 @@ if (!autoSave) {
           console.error('Erro ao sincronizar projeto offline:', projectError);
         }
       }
+      
+      // Recarregar a lista de projetos
+      const updatedList = await loadProjectsFromSupabase();
+      setProjects(updatedList);
+      
     } catch (error) {
       console.error('Erro na sincronização offline:', error);
     }
@@ -1818,20 +1841,14 @@ if (!autoSave) {
               loadedProjects = data || [];
               console.log('Projetos carregados:', loadedProjects.length);
               
-              localStorage.setItem('jamaaw_projects', JSON.stringify(loadedProjects));
-              
             } catch (supabaseError) {
               console.error('Erro ao carregar do Supabase:', supabaseError);
-              const savedProjects = localStorage.getItem('jamaaw_projects');
-              if (savedProjects) {
-                loadedProjects = JSON.parse(savedProjects).filter(isValidProject);
-              }
+              // Carregar do dbService local
+              loadedProjects = await dbService.getProjects(user.id) || [];
             }
           } else {
-            const savedProjects = localStorage.getItem('jamaaw_projects');
-            if (savedProjects) {
-              loadedProjects = JSON.parse(savedProjects).filter(isValidProject);
-            }
+            // Carregar do dbService local
+            loadedProjects = await dbService.getProjects(user.id) || [];
           }
         }
         
@@ -1853,18 +1870,24 @@ if (!autoSave) {
   }, [isOnline, user]);
   
   useEffect(() => {
-    const savedBairros = localStorage.getItem('jamaaw_bairros')
-    if (savedBairros) {
-      setBairros(JSON.parse(savedBairros))
-    }
+    const loadBairros = async () => {
+      const savedBairros = await dbService.getBairros();
+      if (savedBairros) {
+        setBairros(savedBairros);
+      }
+    };
+    loadBairros();
   }, [])
   
   useEffect(() => {
     if (user) {
-      const savedFavorites = localStorage.getItem(`jamaaw_favorites_${user.id}`)
-      if (savedFavorites) {
-        setFavorites(JSON.parse(savedFavorites))
-      }
+      const loadFavorites = async () => {
+        const savedFavorites = await dbService.getFavorites(user.id);
+        if (savedFavorites) {
+          setFavorites(savedFavorites);
+        }
+      };
+      loadFavorites();
     }
   }, [user])
   
@@ -1933,43 +1956,43 @@ if (!autoSave) {
     }
   }, [tracking, paused])
   
-  const saveBairros = (newBairros) => {
-    setBairros(newBairros)
-    localStorage.setItem('jamaaw_bairros', JSON.stringify(newBairros))
+  const saveBairros = async (newBairros) => {
+    setBairros(newBairros);
+    await dbService.saveBairros(newBairros);
   }
   
-  const handleAddBairro = () => {
+  const handleAddBairro = async () => {
     if (newBairro.trim() && !bairros.includes(newBairro.trim())) {
-      const updatedBairros = [...bairros, newBairro.trim()]
-      saveBairros(updatedBairros)
-      setNewBairro('')
-      setShowAddBairro(false)
-      setShowBairroManager(false)
+      const updatedBairros = [...bairros, newBairro.trim()];
+      await saveBairros(updatedBairros);
+      setNewBairro('');
+      setShowAddBairro(false);
+      setShowBairroManager(false);
     }
   }
   
-  const handleRemoveBairro = (bairro) => {
+  const handleRemoveBairro = async (bairro) => {
     if (DEFAULT_BAIRROS.includes(bairro)) {
       showFeedback('Erro', 'Não é possível remover bairros padrão.', 'error');
-      return
+      return;
     }
     if (confirm(`Deseja remover o bairro "${bairro}"?`)) {
-      const updatedBairros = bairros.filter(b => b !== bairro)
-      saveBairros(updatedBairros)
+      const updatedBairros = bairros.filter(b => b !== bairro);
+      await saveBairros(updatedBairros);
       if (selectedBairro === bairro) {
-        setSelectedBairro('todos')
+        setSelectedBairro('todos');
       }
     }
   }
   
-  const toggleFavorite = (markerId) => {
+  const toggleFavorite = async (markerId) => {
     const newFavorites = favorites.includes(markerId) ?
       favorites.filter(id => id !== markerId) :
-      [...favorites, markerId]
+      [...favorites, markerId];
     
-    setFavorites(newFavorites)
+    setFavorites(newFavorites);
     if (user) {
-      localStorage.setItem(`jamaaw_favorites_${user.id}`, JSON.stringify(newFavorites))
+      await dbService.saveFavorites(user.id, newFavorites);
     }
   }
   
@@ -2919,7 +2942,9 @@ if (!autoSave) {
       
       const updatedProjects = projects.filter(p => p.id !== projectId);
       setProjects(updatedProjects);
-      localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
+      
+      // Deletar do dbService
+      await dbService.deleteProject(projectId);
       
       if (currentProject && currentProject.id === projectId) {
         setCurrentProject(null);

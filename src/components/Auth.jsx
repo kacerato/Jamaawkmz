@@ -1,385 +1,193 @@
-import { useState, useEffect } from 'react'
-import { supabase } from '../lib/supabase'
-import { MapPinned, User, Mail, Lock, Eye, EyeOff, ArrowRight, CheckCircle, Chrome } from 'lucide-react'
-import { Button } from '@/components/ui/button.jsx'
-import { Input } from '@/components/ui/input.jsx'
-import { Label } from '@/components/ui/label.jsx'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card.jsx'
+import { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
+import { MapPinned, User, Mail, Lock, Eye, EyeOff, ArrowRight, Chrome, Zap } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Capacitor } from '@capacitor/core';
+import { GoogleAuth } from '@codetrix-studio/capacitor-google-auth';
 
 export default function Auth({ onAuthSuccess }) {
-  const [loading, setLoading] = useState(false)
-  const [googleLoading, setGoogleLoading] = useState(false) // Adicionei esta linha
-  const [isLogin, setIsLogin] = useState(true)
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState(null)
-  const [success, setSuccess] = useState(null)
-  const [showPassword, setShowPassword] = useState(false)
+  const [loading, setLoading] = useState(false);
+  const [isLogin, setIsLogin] = useState(true);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [feedback, setFeedback] = useState({ msg: '', type: '' });
   
-  // CORREÇÃO: Limpeza mais robusta de tokens
+  // Inicializa o plugin do Google no Mobile
   useEffect(() => {
-    const clearInvalidTokens = async () => {
-      try {
-        // Limpar todos os possíveis tokens
-        await supabase.auth.signOut()
-        
-        // Limpar storage local
-        localStorage.removeItem('supabase.auth.token')
-        sessionStorage.removeItem('supabase.auth.token')
-        
-        // Limpar dados específicos do app
-        const keysToRemove = []
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i)
-          if (key && key.includes('supabase') || key.includes('jamaaw')) {
-            keysToRemove.push(key)
-          }
-        }
-        keysToRemove.forEach(key => localStorage.removeItem(key))
-        
-      } catch (error) {
-        console.log('Cleanup de tokens realizado')
-      }
+    if (Capacitor.isNativePlatform()) {
+      GoogleAuth.initialize();
     }
-    
-    clearInvalidTokens()
-  }, [])
+  }, []);
   
-  // Função para login com Google
-// CORREÇÃO: Login com Google melhorado
-const handleGoogleLogin = async () => {
-  setGoogleLoading(true);
-  setError(null);
-  setSuccess(null);
+  const handleNativeGoogleLogin = async () => {
+    setLoading(true);
+    try {
+      // 1. Abre popup nativo do Android/iOS
+      const googleUser = await GoogleAuth.signIn();
+      
+      // 2. Pega o token de identidade
+      const idToken = googleUser.authentication.idToken;
+      
+      // 3. Autentica no Supabase usando o token (sem redirecionar para site)
+      const { data, error } = await supabase.auth.signInWithIdToken({
+        provider: 'google',
+        token: idToken,
+      });
+      
+      if (error) throw error;
+      
+      setFeedback({ msg: 'Login com Google realizado!', type: 'success' });
+      if (onAuthSuccess) onAuthSuccess(data.user);
+      
+    } catch (error) {
+      console.error('Google Auth Error:', error);
+      setFeedback({ msg: 'Cancelado ou erro no login Google.', type: 'error' });
+    } finally {
+      setLoading(false);
+    }
+  };
   
-  try {
-    // Limpar qualquer sessão existente
-    await supabase.auth.signOut();
-    
-    const { data, error } = await supabase.auth.signInWithOAuth({
+  const handleWebGoogleLogin = async () => {
+    // Fallback para Web (PC)
+    const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: {
-        queryParams: {
-          access_type: 'offline',
-          prompt: 'consent',
-        },
-        redirectTo: window.location.origin
-      }
+      options: { redirectTo: window.location.origin }
     });
-    
-    if (error) {
-      throw error;
-    }
-    
-    setSuccess('Redirecionando para o Google...');
-    
-  } catch (error) {
-    console.error('Erro no login com Google:', error);
-    
-    // Mensagens de erro mais amigáveis
-    if (error.message.includes('popup')) {
-      setError('O popup foi bloqueado. Permita popups para este site.');
-    } else if (error.message.includes('configuration')) {
-      setError('Configuração do Google OAuth não encontrada.');
-    } else {
-      setError('Erro ao conectar com o Google. Tente novamente.');
-    }
-  } finally {
-    setGoogleLoading(false);
-  }
-};
+    if (error) setFeedback({ msg: error.message, type: 'error' });
+  };
   
-  const handleAuth = async (e) => {
-    e.preventDefault()
-    setLoading(true)
-    setError(null)
-    setSuccess(null)
+  const handleEmailAuth = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setFeedback({ msg: '', type: '' });
     
     try {
-      // CORREÇÃO: Reset completo antes de nova tentativa
-      await supabase.auth.signOut()
-      
-      // Pequeno delay para garantir que o signOut foi processado
-      await new Promise(resolve => setTimeout(resolve, 500))
-      
       if (isLogin) {
-        // Login
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email: email.trim(),
-          password: password.trim(),
-        })
-        
-        if (error) {
-          // Tratar erros específicos de autenticação
-          if (error.message.includes('Invalid login credentials')) {
-            throw new Error('Email ou senha incorretos.')
-          } else if (error.message.includes('Email not confirmed')) {
-            throw new Error('Por favor, confirme seu email antes de fazer login.')
-          } else if (error.message.includes('Invalid Refresh Token')) {
-            // CORREÇÃO: Limpar tokens inválidos e tentar novamente
-            await supabase.auth.signOut()
-            throw new Error('Sessão expirada. Por favor, faça login novamente.')
-          } else {
-            throw error
-          }
-        }
-        
-        if (onAuthSuccess && data.user) {
-          setSuccess('Login realizado com sucesso!')
-          setTimeout(() => onAuthSuccess(data.user), 1000)
-        }
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+        onAuthSuccess(data.user);
       } else {
-        // Registro
-        const { data, error } = await supabase.auth.signUp({
-          email: email.trim(),
-          password: password.trim(),
-          options: {
-            emailRedirectTo: `${window.location.origin}`,
-          },
-        })
-        
-        if (error) {
-          if (error.message.includes('User already registered')) {
-            throw new Error('Este email já está cadastrado.')
-          } else {
-            throw error
-          }
-        }
-        
-        if (data.user) {
-          setSuccess('Conta criada com sucesso! Verifique seu email para confirmar.')
-          setTimeout(() => setIsLogin(true), 2000)
-        }
+        const { data, error } = await supabase.auth.signUp({ email, password });
+        if (error) throw error;
+        setFeedback({ msg: 'Conta criada! Verifique seu email.', type: 'success' });
+        setTimeout(() => setIsLogin(true), 2000);
       }
     } catch (error) {
-      console.error('Erro na autenticação:', error)
-      setError(error.message)
+      setFeedback({ msg: error.message, type: 'error' });
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
-
-  const handlePasswordReset = async () => {
-    if (!email) {
-      setError('Digite seu email para redefinir a senha.')
-      return
-    }
-
-    setLoading(true)
-    setError(null)
-
-    try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/reset-password`,
-      })
-
-      if (error) {
-        setError(error.message)
-      } else {
-        setSuccess('Email de redefinição de senha enviado! Verifique sua caixa de entrada.')
-      }
-    } catch (error) {
-      setError('Erro ao enviar email de redefinição.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
+  };
+  
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-cyan-900 to-slate-900 p-4">
-      <Card className="w-full max-w-md bg-gradient-to-br from-slate-800/95 to-slate-700/95 backdrop-blur-sm border-slate-600/50 shadow-2xl text-white overflow-hidden">
-        {/* Header com gradiente */}
-        <div className="bg-gradient-to-r from-cyan-500 to-blue-600 p-6 text-center">
-          <div className="w-20 h-20 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-4 backdrop-blur-sm border border-white/20">
+    <div className="min-h-screen flex items-center justify-center bg-slate-950 p-4 relative overflow-hidden">
+      
+      {/* Background Glow Effects */}
+      <div className="absolute top-[-20%] left-[-10%] w-[500px] h-[500px] bg-cyan-500/10 rounded-full blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-[-20%] right-[-10%] w-[500px] h-[500px] bg-blue-600/10 rounded-full blur-[120px] pointer-events-none" />
+
+      <div className="w-full max-w-md relative z-10 animate-fade-in">
+        
+        {/* Logo Header */}
+        <div className="text-center mb-8">
+          <div className="w-20 h-20 bg-gradient-to-tr from-cyan-500 to-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-[0_0_40px_rgba(6,182,212,0.3)] transform rotate-3">
             <MapPinned className="w-10 h-10 text-white" />
           </div>
-          <CardTitle className="text-3xl font-bold text-white mb-2">
-            Jamaaw App
-          </CardTitle>
-          <CardDescription className="text-cyan-100 text-lg">
-            {isLogin ? 'Bem-vindo de volta!' : 'Crie sua conta'}
-          </CardDescription>
+          <h1 className="text-3xl font-bold text-white tracking-tight">Jamaaw <span className="text-cyan-400">Map</span></h1>
+          <p className="text-slate-400 text-sm mt-1">Geo-Intelligence System</p>
         </div>
 
-        <CardContent className="p-6">
-          {/* Botão de Login com Google */}
-          <Button
-            onClick={handleGoogleLogin}
-            disabled={googleLoading}
-            className="w-full bg-white hover:bg-gray-100 text-gray-800 font-semibold py-3 text-base h-12 transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed mb-4 border border-gray-300"
-          >
-            {googleLoading ? (
-              <div className="flex items-center gap-2">
-                <div className="w-5 h-5 border-2 border-gray-800 border-t-transparent rounded-full animate-spin" />
-                Conectando...
-              </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                <Chrome className="w-5 h-5" />
-                Continuar com Google
-              </div>
-            )}
-          </Button>
-
-          {/* Divisor */}
-          <div className="relative my-6">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-slate-600/50"></div>
+        {/* Card de Login */}
+        <div className="bg-slate-900/80 backdrop-blur-xl border border-white/10 rounded-3xl p-6 shadow-2xl">
+          
+          {/* Feedback Msg */}
+          {feedback.msg && (
+            <div className={`mb-4 p-3 rounded-xl text-xs font-bold flex items-center gap-2 ${
+              feedback.type === 'error' ? 'bg-red-500/10 text-red-400 border border-red-500/20' : 'bg-green-500/10 text-green-400 border border-green-500/20'
+            }`}>
+              <Zap size={14} /> {feedback.msg}
             </div>
-            <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-slate-800 text-gray-400">ou</span>
-            </div>
-          </div>
+          )}
 
-          <form onSubmit={handleAuth} className="space-y-5">
-            {/* Mensagens de status */}
-            {error && (
-              <div className="bg-red-500/20 border border-red-500/50 rounded-xl p-4 text-red-400 text-sm animate-fade-in">
-                <div className="flex items-center gap-2">
-                  <div className="w-5 h-5 bg-red-500 rounded-full flex items-center justify-center flex-shrink-0">
-                    <span className="text-white text-xs">!</span>
-                  </div>
-                  <span>{error}</span>
-                </div>
-              </div>
-            )}
-
-            {success && (
-              <div className="bg-green-500/20 border border-green-500/50 rounded-xl p-4 text-green-400 text-sm animate-fade-in">
-                <div className="flex items-center gap-2">
-                  <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0" />
-                  <span>{success}</span>
-                </div>
-              </div>
-            )}
-
-            {/* Campo Email */}
-            <div className="space-y-2">
-              <Label htmlFor="email" className="text-gray-300 text-sm font-medium flex items-center gap-2">
-                <Mail className="w-4 h-4" />
-                E-mail
-              </Label>
-              <div className="relative">
-                <Input
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="seu@email.com"
-                  required
-                  className="bg-slate-700/50 border-slate-600 text-white pl-10 pr-4 h-12 focus:border-cyan-500 focus:ring-cyan-500/20 transition-all duration-200"
-                  disabled={loading}
-                />
-                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-              </div>
-            </div>
-
-            {/* Campo Senha */}
-            <div className="space-y-2">
-              <Label htmlFor="password" className="text-gray-300 text-sm font-medium flex items-center gap-2">
-                <Lock className="w-4 h-4" />
-                Senha
-              </Label>
-              <div className="relative">
-                <Input
-                  id="password"
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  required
-                  minLength={6}
-                  className="bg-slate-700/50 border-slate-600 text-white pl-10 pr-10 h-12 focus:border-cyan-500 focus:ring-cyan-500/20 transition-all duration-200"
-                  disabled={loading}
-                />
-                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="absolute right-1 top-1/2 transform -translate-y-1/2 h-8 w-8 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg"
-                  onClick={() => setShowPassword(!showPassword)}
-                  disabled={loading}
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </Button>
-              </div>
-            </div>
-
-            {/* Botão de ação principal */}
+          <div className="space-y-4">
             <Button
-              type="submit"
+              onClick={Capacitor.isNativePlatform() ? handleNativeGoogleLogin : handleWebGoogleLogin}
               disabled={loading}
-              className="w-full bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white font-semibold py-3 text-base h-12 transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full h-12 bg-white hover:bg-slate-200 text-slate-900 font-bold rounded-xl flex items-center justify-center gap-2 transition-transform active:scale-95"
             >
               {loading ? (
-                <div className="flex items-center gap-2">
-                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  {isLogin ? 'Entrando...' : 'Criando conta...'}
-                </div>
+                <div className="w-5 h-5 border-2 border-slate-900 border-t-transparent rounded-full animate-spin" />
               ) : (
-                <div className="flex items-center gap-2">
-                  <User className="w-5 h-5" />
-                  {isLogin ? 'Entrar na conta' : 'Criar nova conta'}
-                  <ArrowRight className="w-4 h-4" />
-                </div>
+                <>
+                  <Chrome className="w-5 h-5" />
+                  <span>Continuar com Google</span>
+                </>
               )}
             </Button>
 
-            {/* Links e ações secundárias */}
-            <div className="space-y-3 pt-2">
-              {/* Recuperação de senha */}
-              {isLogin && (
-                <div className="text-center">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={handlePasswordReset}
-                    disabled={loading || !email}
-                    className="text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10 text-sm px-3 py-2 h-auto"
-                  >
-                    Esqueceu sua senha?
-                  </Button>
-                </div>
-              )}
-
-              {/* Alternar entre login e registro */}
-              <div className="text-center border-t border-slate-600/50 pt-4">
-                <Button
-                  type="button"
-                  variant="link"
-                  onClick={() => {
-                    setIsLogin(!isLogin)
-                    setError(null)
-                    setSuccess(null)
-                  }}
-                  disabled={loading}
-                  className="text-gray-400 hover:text-cyan-400 text-sm p-0 h-auto font-normal"
-                >
-                  {isLogin ? (
-                    <span>Não tem uma conta? <strong className="text-cyan-400 font-semibold">Cadastre-se aqui</strong></span>
-                  ) : (
-                    <span>Já tem uma conta? <strong className="text-cyan-400 font-semibold">Faça login</strong></span>
-                  )}
-                </Button>
-              </div>
+            <div className="relative flex py-2 items-center">
+              <div className="flex-grow border-t border-white/10"></div>
+              <span className="flex-shrink-0 mx-4 text-slate-500 text-xs uppercase font-bold tracking-wider">Ou email</span>
+              <div className="flex-grow border-t border-white/10"></div>
             </div>
-          </form>
 
-          {/* Informações adicionais */}
-          <div className="mt-6 p-4 bg-slate-700/30 rounded-lg border border-slate-600/50">
-            <div className="flex items-center gap-3 text-sm text-gray-400">
-              <div className="w-2 h-2 bg-cyan-400 rounded-full animate-pulse"></div>
-              <span>
-                {isLogin 
-                  ? 'Entre para acessar seus projetos e marcações' 
-                  : 'Cadastre-se para salvar seus projetos na nuvem'
-                }
-              </span>
+            <form onSubmit={handleEmailAuth} className="space-y-4">
+              <div className="space-y-2">
+                <Label className="text-slate-400 text-xs uppercase font-bold pl-1">Email Corporativo</Label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-3.5 w-4 h-4 text-slate-500" />
+                  <Input 
+                    type="email" 
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    required
+                    className="pl-10 h-11 bg-slate-950/50 border-white/10 text-white rounded-xl focus:border-cyan-500/50 focus:ring-cyan-500/20" 
+                    placeholder="nome@empresa.com"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-slate-400 text-xs uppercase font-bold pl-1">Senha</Label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-3.5 w-4 h-4 text-slate-500" />
+                  <Input 
+                    type={showPassword ? "text" : "password"} 
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    required
+                    className="pl-10 h-11 bg-slate-950/50 border-white/10 text-white rounded-xl focus:border-cyan-500/50 focus:ring-cyan-500/20" 
+                    placeholder="••••••••"
+                  />
+                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-3.5 text-slate-500 hover:text-white">
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+
+              <Button type="submit" disabled={loading} className="w-full h-12 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold rounded-xl shadow-lg shadow-cyan-900/20 mt-2">
+                {loading ? 'Processando...' : (isLogin ? 'Acessar Sistema' : 'Criar Nova Conta')} <ArrowRight className="ml-2 w-4 h-4" />
+              </Button>
+            </form>
+
+            <div className="text-center pt-2">
+              <button 
+                onClick={() => { setIsLogin(!isLogin); setFeedback({msg:'', type:''}); }}
+                className="text-slate-400 hover:text-cyan-400 text-sm transition-colors"
+              >
+                {isLogin ? 'Não tem acesso? Criar conta' : 'Já possui conta? Fazer login'}
+              </button>
             </div>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+        
+        <p className="text-center text-[10px] text-slate-600 mt-6">
+          Jamaaw Map v2.5 Enterprise • Segurança End-to-End
+        </p>
+      </div>
     </div>
-  )
+  );
 }
