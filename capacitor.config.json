@@ -1,5 +1,12 @@
 {
   "appId": "com.jamaaw.map",
   "appName": "jamaaw",
-  "webDir": "dist"
+  "webDir": "dist",
+  "plugins": {
+    "GoogleAuth": {
+      "scopes": ["profile", "email"],
+      "serverClientId": "SEU_CLIENT_ID_DA_WEB.apps.googleusercontent.com",
+      "forceCodeForRefreshToken": true
+    }
+  }
 }
