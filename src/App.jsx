@@ -71,7 +71,7 @@ import ImportProgressPopup from './components/ImportProgressPopup'
 import MultipleSelectionPopup from './components/MultipleSelectionPopup'
 import BairroDetectionService from './components/BairroDetectionService'
 import ProjectLockService from './services/ProjectLockService' // NOVO SERVIÇO
-import dbService from './services/dbService' // NOVO: Serviço de banco de dados local
+import dbService from './services/DatabaseService' // NOVO: Serviço de banco de dados local
 import 'mapbox-gl/dist/mapbox-gl.css'
 import './App.css'
 import ProjectReport from './components/ProjectReport';
