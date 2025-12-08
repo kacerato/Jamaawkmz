@@ -1307,13 +1307,6 @@ useEffect(() => {
           savedProject = { ...editingProject, ...projectData };
         }
         
-        const updatedProjects = projects.map(p =>
-          p.id === editingProject.id ? savedProject : p
-        );
-        const uniqueList = deduplicateProjects(updatedProjects);
-        setProjects(uniqueList);
-        localStorage.setItem('jamaaw_projects', JSON.stringify(uniqueList));
-        
         setLoadedProjects(prev => {
           const exists = prev.find(p => p.id === savedProject.id);
           if (exists) {
@@ -1354,13 +1347,6 @@ useEffect(() => {
           savedProject = { ...currentProject, ...projectData };
         }
         
-        const updatedProjects = projects.map(p =>
-          p.id === currentProject.id ? savedProject : p
-        );
-        const uniqueList = deduplicateProjects(updatedProjects);
-        setProjects(uniqueList);
-        localStorage.setItem('jamaaw_projects', JSON.stringify(uniqueList));
-        
         setLoadedProjects(prev => {
           const exists = prev.find(p => p.id === savedProject.id);
           if (exists) {
@@ -1394,12 +1380,22 @@ useEffect(() => {
           };
         }
         
-        const updatedProjects = [savedProject, ...projects];
-        const uniqueList = deduplicateProjects(updatedProjects);
-        setProjects(uniqueList);
-        localStorage.setItem('jamaaw_projects', JSON.stringify(uniqueList));
       }
       
+      // ATUALIZAÇÃO DA LISTA LOCAL
+      let updatedProjectsList;
+      if (editingProject) {
+         updatedProjectsList = projects.map(p => p.id === savedProject.id ? savedProject : p);
+      } else {
+         updatedProjectsList = [savedProject, ...projects];
+      }
+
+      // Garante que não tem duplicata antes de salvar
+      const uniqueList = deduplicateProjects(updatedProjectsList);
+
+      setProjects(uniqueList);
+      localStorage.setItem('jamaaw_projects', JSON.stringify(uniqueList));
+
       // Se for salvamento manual (não autoSave), libera o lock
       if (!autoSave && currentProject && isOnline && user) {
         await ProjectLockService.releaseLock(currentProject.id, user.id);
