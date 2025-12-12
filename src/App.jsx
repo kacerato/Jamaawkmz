@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import Map, { Marker, Popup, Source, Layer, NavigationControl } from 'react-map-gl'
@@ -1535,7 +1534,7 @@ if (!autoSave) {
         const lastPoint = project.points[project.points.length - 1];
         setSelectedStartPoint(lastPoint);
         
-        showFeedback('Conectado', `Rastreamento continuado a partir do Ponto ${project.points.length}`, 'success');
+        showFeedback('Conectado', 'Rastreamento continuado a partir do Ponto' + ${project.points.length}`, 'success');
       }
     }
     // 3. Novo Projeto (Do zero)
@@ -4427,4 +4426,6 @@ if (!autoSave) {
   )
 }
 
+
 export default App
+}}
