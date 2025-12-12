@@ -39,7 +39,7 @@ import {
   Trash2,
   Lock,
   Unlock,
-  AlertCircle // ADICIONADO
+  AlertCircle
 } from 'lucide-react'
 import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.jsx'
@@ -56,7 +56,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { supabase } from './lib/supabase'
 import electricPoleIcon from './assets/electric-pole.png';
 import Auth from './components/Auth'
-// Adicione junto aos outros imports
 import SpanSelector, { SPAN_COLORS } from './components/SpanSelector';
 import JSZip from 'jszip'
 import { Network } from '@capacitor/network'
@@ -72,7 +71,7 @@ import ModernPopup from './components/ModernPopup'
 import ImportProgressPopup from './components/ImportProgressPopup'
 import MultipleSelectionPopup from './components/MultipleSelectionPopup'
 import BairroDetectionService from './components/BairroDetectionService'
-import ProjectLockService from './services/ProjectLockService' // NOVO SERVIÇO
+import ProjectLockService from './services/ProjectLockService'
 
 import 'mapbox-gl/dist/mapbox-gl.css'
 import './App.css'
@@ -102,7 +101,6 @@ const mapStyles = {
 // Função para garantir lista única (remove duplicatas por ID)
 const deduplicateProjects = (projectsList) => {
   const uniqueMap = new Map();
-  // Ordena: O mais recente (pela data de atualização) ganha
   projectsList.sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
   
   projectsList.forEach(p => {
@@ -118,7 +116,6 @@ const generateUUID = () => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return crypto.randomUUID();
   }
-  // Fallback simples se crypto não estiver disponível
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
     var r = Math.random() * 16 | 0,
       v = c == 'x' ? r : (r & 0x3 | 0x8);
@@ -216,7 +213,6 @@ class RoadSnappingService {
     try {
       const response = await fetch(
         `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
-        
       );
       
       const data = await response.json();
@@ -279,9 +275,9 @@ const calculateTotalDistanceAllProjects = (projects) => {
   return total;
 };
 
-// Função de Alta Precisão (WGS-84) - Compatível com Google Earth
+// Função de Alta Precisão (WGS-84)
 const calculateDistance = (lat1, lon1, lat2, lon2) => {
-  const R = 6378137; // Raio equatorial da Terra (WGS-84) em metros
+  const R = 6378137;
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
   
@@ -290,15 +286,65 @@ const calculateDistance = (lat1, lon1, lat2, lon2) => {
     Math.sin(dLon / 2) * Math.sin(dLon / 2);
   
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  
-  // Ajuste fino para o achatamento da Terra (WGS-84 approximation)
-  // Isso remove a discrepância de ~0.3% a 0.5% do Haversine comum
   const d = R * c;
   
   return d;
 }
 
-// Componente Memoizado do Poste (Só renderiza se as props mudarem)
+// Funções de localStorage
+const storage = {
+  // Projetos
+  saveProjects: (userId, projects) => {
+    localStorage.setItem(`jamaaw_projects_${userId}`, JSON.stringify(projects));
+  },
+  loadProjects: (userId) => {
+    const data = localStorage.getItem(`jamaaw_projects_${userId}`);
+    return data ? JSON.parse(data) : [];
+  },
+
+  // Bairros
+  saveBairros: (bairros) => {
+    localStorage.setItem('jamaaw_bairros', JSON.stringify(bairros));
+  },
+  loadBairros: () => {
+    const data = localStorage.getItem('jamaaw_bairros');
+    return data ? JSON.parse(data) : null;
+  },
+
+  // Favoritos
+  saveFavorites: (userId, favorites) => {
+    localStorage.setItem(`jamaaw_favorites_${userId}`, JSON.stringify(favorites));
+  },
+  loadFavorites: (userId) => {
+    const data = localStorage.getItem(`jamaaw_favorites_${userId}`);
+    return data ? JSON.parse(data) : null;
+  },
+
+  // Marcadores
+  saveMarkers: (userId, markers) => {
+    localStorage.setItem(`jamaaw_markers_${userId}`, JSON.stringify(markers));
+  },
+  loadMarkers: (userId) => {
+    const data = localStorage.getItem(`jamaaw_markers_${userId}`);
+    return data ? JSON.parse(data) : null;
+  },
+
+  // Remover projeto
+  deleteProject: (userId, projectId) => {
+    const projects = storage.loadProjects(userId);
+    const updatedProjects = projects.filter(p => p.id !== projectId);
+    storage.saveProjects(userId, updatedProjects);
+  },
+
+  // Limpar dados do usuário
+  clearUserData: (userId) => {
+    localStorage.removeItem(`jamaaw_projects_${userId}`);
+    localStorage.removeItem(`jamaaw_favorites_${userId}`);
+    localStorage.removeItem(`jamaaw_markers_${userId}`);
+  },
+};
+
+// Componente Memoizado do Poste
 const PoleMarker = React.memo(({ point, index, color, onClick, isActive }) => {
   return (
     <Marker 
@@ -336,7 +382,7 @@ const PoleMarker = React.memo(({ point, index, color, onClick, isActive }) => {
   );
 });
 
-// Novo componente otimizado para o Card do Projeto
+// Componente do Card do Projeto
 const ProjectCard = React.memo(({ project, isSelected, onToggle, onLoad, onEdit, onExport, onDelete, tracking }) => {
   const distance = safeToFixed(((project.totalDistance || project.total_distance) || 0) / 1000, 2);
   const date = new Date(project.created_at || project.createdAt || Date.now()).toLocaleDateString('pt-BR');
@@ -432,7 +478,7 @@ const ProjectCard = React.memo(({ project, isSelected, onToggle, onLoad, onEdit,
   );
 });
 
-// Sub-componente para o conteúdo do popup de ponto de rastreamento com efeito Glow
+// Sub-componente para o conteúdo do popup de ponto de rastreamento
 const TrackingPointPopupContent = ({ pointInfo, onClose, onSelectStart, selectedStartPoint, manualPoints }) => {
   const cardRef = useRef(null);
   
@@ -569,7 +615,6 @@ function App() {
   const [showBairroManager, setShowBairroManager] = useState(false)
   const [newBairro, setNewBairro] = useState('')
   const [routeCoordinates, setRouteCoordinates] = useState([])
-  // Estado para controlar o menu de vãos
   const [spanSelectorInfo, setSpanSelectorInfo] = useState(null);
   const [calculatingRoute, setCalculatingRoute] = useState(false)
   const [isOnline, setIsOnline] = useState(true)
@@ -629,16 +674,12 @@ function App() {
   
   const [selectedStartPoint, setSelectedStartPoint] = useState(null);
   
-  // NOVO: Estado para captura de screenshot
   const [mapScreenshot, setMapScreenshot] = useState(null);
   
-  // NOVO: Estado para relatório
   const [reportData, setReportData] = useState(null);
   
-  // Novo estado para modo de entrada do rastreamento
   const [trackingInputMode, setTrackingInputMode] = useState('gps');
   
-  // NOVO: Estado para controle de lock
   const [projectLock, setProjectLock] = useState(null);
   
   const kalmanLatRef = useRef(new KalmanFilter(0.1, 0.1));
@@ -646,10 +687,14 @@ function App() {
   
   const totalDistanceAllProjects = calculateTotalDistanceAllProjects(projects);
   
-  // --- NOVA FUNÇÃO: Salvar foto/edição em um Ponto de Projeto ---
+  // Função auxiliar para mostrar feedback
+  const showFeedback = (title, message, type = 'success') => {
+    setNotification({ title, message, type });
+  };
+
+  // Função para atualizar ponto do projeto
   const handleUpdateProjectPoint = async (updatedPoint) => {
-    // 1. Identifica o projeto
-    const projectId = pointPopupInfo?.projectId; // Precisamos garantir que isso venha no click
+    const projectId = pointPopupInfo?.projectId;
     const projectToUpdate = loadedProjects.find(p => p.id === projectId) || currentProject;
 
     if (!projectToUpdate) {
@@ -657,24 +702,20 @@ function App() {
       return;
     }
 
-    // 2. Atualiza o array de pontos localmente
     const updatedPoints = projectToUpdate.points.map(p => 
       p.id === updatedPoint.id ? updatedPoint : p
     );
 
     const updatedProject = { ...projectToUpdate, points: updatedPoints };
 
-    // 3. Atualiza estados visuais (Loaded e Current)
     setLoadedProjects(prev => prev.map(p => p.id === projectId ? updatedProject : p));
     if (currentProject && currentProject.id === projectId) {
       setCurrentProject(updatedProject);
       setManualPoints(updatedPoints);
     }
     
-    // Atualiza o popup aberto para refletir a nova foto imediatamente
     setPointPopupInfo(prev => ({ ...prev, point: updatedPoint }));
 
-    // 4. Salva no Supabase (Persistência)
     if (isOnline && user && !projectId.toString().startsWith('offline_')) {
       try {
         const { error } = await supabase
@@ -692,12 +733,15 @@ function App() {
         showFeedback("Erro", "Erro ao salvar foto na nuvem", "error");
       }
     } else {
-      // Salva localmente usando dbService
-      await dbService.saveProject(updatedProject, isOnline ? 1 : 0);
+      // Salva localmente no localStorage
+      const userProjects = storage.loadProjects(user?.id);
+      const updatedUserProjects = userProjects.map(p => 
+        p.id === updatedProject.id ? updatedProject : p
+      );
+      storage.saveProjects(user?.id, updatedUserProjects);
       showFeedback("Salvo", "Foto salva localmente (Offline)", "warning");
     }
   };
-  
   
   // Função para capturar imagem do mapa
   const getMapImage = () => {
@@ -713,7 +757,7 @@ function App() {
     return null;
   };
   
-  // OTIMIZAÇÃO: Converte marcadores para GeoJSON (Processado na GPU)
+  // GeoJSON para marcadores
   const markersGeoJSON = useMemo(() => ({
     type: 'FeatureCollection',
     features: filteredMarkers.map(marker => ({
@@ -729,61 +773,53 @@ function App() {
     }))
   }), [filteredMarkers]);
   
-  // NOVO: Efeito para manter o lock ativo enquanto edita
+  // Efeito para manter o lock ativo
   useEffect(() => {
     let interval;
     if (tracking && currentProject && isOnline && user) {
-      // Tenta renovar o lock a cada 2 minutos
       interval = setInterval(async () => {
         const success = await ProjectLockService.heartbeat(currentProject.id, user.id);
         if (!success) {
           showFeedback('Atenção', 'Perda de conexão com o servidor de bloqueio.', 'warning');
         }
-      }, 120000); // 2 minutos
+      }, 120000);
     }
     return () => clearInterval(interval);
   }, [tracking, currentProject, isOnline, user]);
   
-  // Dentro do componente App
+  // Carregar projetos do Supabase
   const loadProjectsFromSupabase = async () => {
-  if (!user) return [];
-  
-  try {
-    // 1. Carrega do Cache Local (Instantâneo)
-    const localRaw = localStorage.getItem('jamaaw_projects');
-    const localProjects = localRaw ? JSON.parse(localRaw) : [];
+    if (!user) return [];
     
-    // 2. Tenta carregar da Nuvem (Se tiver internet)
-    let cloudProjects = [];
-    if (isOnline) {
-      // Busca projetos onde sou dono
-      const { data: myProjects, error: err1 } = await supabase
-        .from('projetos')
-        .select('*')
-        .eq('user_id', user.id);
+    try {
+      const localRaw = localStorage.getItem('jamaaw_projects');
+      const localProjects = localRaw ? JSON.parse(localRaw) : [];
       
-      if (!err1 && myProjects) cloudProjects = [...cloudProjects, ...myProjects];
+      let cloudProjects = [];
+      if (isOnline) {
+        const { data: myProjects, error: err1 } = await supabase
+          .from('projetos')
+          .select('*')
+          .eq('user_id', user.id);
+        
+        if (!err1 && myProjects) cloudProjects = [...cloudProjects, ...myProjects];
+      }
       
-      // Se tiver lógica de membros compartilhados, adicione aqui (opcional)
+      const mergedProjects = [...cloudProjects, ...localProjects];
+      const uniqueProjects = deduplicateProjects(mergedProjects);
+      
+      localStorage.setItem('jamaaw_projects', JSON.stringify(uniqueProjects));
+      
+      return uniqueProjects;
+      
+    } catch (error) {
+      console.error('Erro ao carregar projetos:', error);
+      const saved = localStorage.getItem('jamaaw_projects');
+      return saved ? JSON.parse(saved) : [];
     }
-    
-    // 3. Funde as duas listas e remove duplicatas
-    const mergedProjects = [...cloudProjects, ...localProjects];
-    const uniqueProjects = deduplicateProjects(mergedProjects);
-    
-    // 4. Atualiza o cache local com a lista limpa
-    localStorage.setItem('jamaaw_projects', JSON.stringify(uniqueProjects));
-    
-    return uniqueProjects;
-    
-  } catch (error) {
-    console.error('Erro ao carregar projetos:', error);
-    // Fallback: retorna o que tem no local storage
-    const saved = localStorage.getItem('jamaaw_projects');
-    return saved ? JSON.parse(saved) : [];
-  }
-};
+  };
   
+  // Atualizar bairros dos projetos
   const refreshProjectNeighborhoods = async () => {
     if (!projects || projects.length === 0) return;
     
@@ -826,55 +862,52 @@ function App() {
     
     if (hasUpdates) {
       setProjects(updatedProjectsList);
-      // Atualizar localmente usando dbService
-      for (const project of updatedProjectsList) {
-        await dbService.saveProject(project, isOnline ? 1 : 0);
-      }
+      // Atualizar localStorage
+      const userProjects = storage.loadProjects(user?.id);
+      const mergedProjects = [...userProjects, ...updatedProjectsList];
+      const uniqueProjects = deduplicateProjects(mergedProjects);
+      storage.saveProjects(user?.id, uniqueProjects);
       console.log('Lista de projetos atualizada com novos bairros.');
     }
   };
   
-  // Efeito de Realtime para o projeto ATUAL
-  // Efeito de Realtime OTIMIZADO (Filtra apenas o projeto atual)
-useEffect(() => {
-  // Só conecta se tiver um projeto carregado
-  if (!currentProject?.id || !isOnline) return;
-  
-  console.log(`📡 Conectando Realtime para projeto: ${currentProject.id}`);
-  
-  const channel = supabase
-    .channel(`project-tracking-${currentProject.id}`) // Canal único por projeto
-    .on(
-      'postgres_changes',
-      {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'projetos',
-        filter: `id=eq.${currentProject.id}` // <--- O PULO DO GATO: Filtra no servidor!
-      },
-      (payload) => {
-        console.log("⚡ Atualização Realtime recebida:", payload);
-        const updatedProject = payload.new;
-        
-        // Atualiza o estado local
-        setCurrentProject(prev => ({ ...prev, ...updatedProject }));
-        
-        if (updatedProject.points) {
-          setManualPoints(updatedProject.points);
-          setTotalDistance(updatedProject.total_distance);
+  // Efeito de Realtime para projeto atual
+  useEffect(() => {
+    if (!currentProject?.id || !isOnline) return;
+    
+    console.log(`📡 Conectando Realtime para projeto: ${currentProject.id}`);
+    
+    const channel = supabase
+      .channel(`project-tracking-${currentProject.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'projetos',
+          filter: `id=eq.${currentProject.id}`
+        },
+        (payload) => {
+          console.log("⚡ Atualização Realtime recebida:", payload);
+          const updatedProject = payload.new;
+          
+          setCurrentProject(prev => ({ ...prev, ...updatedProject }));
+          
+          if (updatedProject.points) {
+            setManualPoints(updatedProject.points);
+            setTotalDistance(updatedProject.total_distance);
+          }
+          
+          setProjects(prev => prev.map(p => p.id === updatedProject.id ? updatedProject : p));
         }
-        
-        // Atualiza na lista geral também
-        setProjects(prev => prev.map(p => p.id === updatedProject.id ? updatedProject : p));
-      }
-    )
-    .subscribe();
-  
-  return () => {
-    console.log(`🔌 Desconectando Realtime do projeto: ${currentProject.id}`);
-    supabase.removeChannel(channel);
-  };
-}, [currentProject?.id, isOnline]);
+      )
+      .subscribe();
+    
+    return () => {
+      console.log(`🔌 Desconectando Realtime do projeto: ${currentProject.id}`);
+      supabase.removeChannel(channel);
+    };
+  }, [currentProject?.id, isOnline]);
 
   useEffect(() => {
     if (showProjectsList) {
@@ -918,10 +951,10 @@ useEffect(() => {
       const updatedProjects = projects.filter(p => !deletedIds.includes(p.id));
       setProjects(updatedProjects);
       
-      // Atualizar no dbService
-      for (const projectId of deletedIds) {
-        await dbService.deleteProject(projectId);
-      }
+      // Atualizar no localStorage
+      const userProjects = storage.loadProjects(user?.id);
+      const updatedUserProjects = userProjects.filter(p => !deletedIds.includes(p.id));
+      storage.saveProjects(user?.id, updatedUserProjects);
       
       setLoadedProjects(prev => prev.filter(p => !deletedIds.includes(p.id)));
       
@@ -979,7 +1012,6 @@ useEffect(() => {
   
   const handleLogout = async () => {
     try {
-      // Libera qualquer lock ativo
       if (currentProject && isOnline && user) {
         await ProjectLockService.releaseLock(currentProject.id, user.id);
       }
@@ -988,8 +1020,7 @@ useEffect(() => {
       sessionStorage.removeItem('supabase.auth.token');
       
       if (user) {
-        localStorage.removeItem(`jamaaw_favorites_${user.id}`);
-        localStorage.removeItem(`jamaaw_markers_${user.id}`);
+        storage.clearUserData(user.id);
       }
       
       const { error } = await supabase.auth.signOut();
@@ -1028,11 +1059,45 @@ useEffect(() => {
     setImportCurrentAction(action);
   };
   
-  const showFeedback = (title, message, type = 'success') => {
-    setNotification({ title, message, type });
-  };
-  
-  // Função para importar arquivos KML/KMZ
+  // Efeito de Realtime OTIMIZADO
+  useEffect(() => {
+    if (!currentProject?.id || !isOnline) return;
+    
+    console.log(`📡 Conectando Realtime para projeto: ${currentProject.id}`);
+    
+    const channel = supabase
+      .channel(`project-tracking-${currentProject.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'projetos',
+          filter: `id=eq.${currentProject.id}`
+        },
+        (payload) => {
+          console.log("⚡ Atualização Realtime recebida:", payload);
+          const updatedProject = payload.new;
+          
+          setCurrentProject(prev => ({ ...prev, ...updatedProject }));
+          
+          if (updatedProject.points) {
+            setManualPoints(updatedProject.points);
+            setTotalDistance(updatedProject.total_distance);
+          }
+          
+          setProjects(prev => prev.map(p => p.id === updatedProject.id ? updatedProject : p));
+        }
+      )
+      .subscribe();
+    
+    return () => {
+      console.log(`🔌 Desconectando Realtime do projeto: ${currentProject.id}`);
+      supabase.removeChannel(channel);
+    };
+  }, [currentProject?.id, isOnline]);
+
+  // Importar arquivos KML/KMZ
   const handleProjectImport = async (event) => {
     const file = event.target.files[0];
     if (!file) return;
@@ -1177,8 +1242,11 @@ useEffect(() => {
           updatedProjects = [...projects, project];
         }
         setProjects(updatedProjects);
-        // Salvar no dbService local
-        await dbService.saveProject(project, isOnline ? 1 : 0);
+        // Salvar no localStorage
+        const userProjects = storage.loadProjects(user?.id);
+        const mergedProjects = [...userProjects, project];
+        const uniqueProjects = deduplicateProjects(mergedProjects);
+        storage.saveProjects(user?.id, uniqueProjects);
       }
       
       updateImportProgress(100, 5, 'Importação concluída!');
@@ -1304,8 +1372,12 @@ useEffect(() => {
         );
         setProjects(updatedProjects);
         
-        // Salvar no dbService local
-        await dbService.saveProject(savedProject, isOnline ? 1 : 0);
+        // Salvar no localStorage
+        const userProjects = storage.loadProjects(user?.id);
+        const updatedUserProjects = userProjects.map(p => 
+          p.id === savedProject.id ? savedProject : p
+        );
+        storage.saveProjects(user?.id, updatedUserProjects);
         
         setLoadedProjects(prev => {
           const exists = prev.find(p => p.id === savedProject.id);
@@ -1352,8 +1424,12 @@ useEffect(() => {
         );
         setProjects(updatedProjects);
         
-        // Salvar no dbService local
-        await dbService.saveProject(savedProject, isOnline ? 1 : 0);
+        // Salvar no localStorage
+        const userProjects = storage.loadProjects(user?.id);
+        const updatedUserProjects = userProjects.map(p => 
+          p.id === savedProject.id ? savedProject : p
+        );
+        storage.saveProjects(user?.id, updatedUserProjects);
         
         setLoadedProjects(prev => {
           const exists = prev.find(p => p.id === savedProject.id);
@@ -1391,8 +1467,11 @@ useEffect(() => {
         const updatedProjects = [...projects, savedProject];
         setProjects(updatedProjects);
         
-        // Salvar no dbService local
-        await dbService.saveProject(savedProject, isOnline ? 1 : 0);
+        // Salvar no localStorage
+        const userProjects = storage.loadProjects(user?.id);
+        const mergedProjects = [...userProjects, savedProject];
+        const uniqueProjects = deduplicateProjects(mergedProjects);
+        storage.saveProjects(user?.id, uniqueProjects);
       }
       
       // Se for salvamento manual (não autoSave), libera o lock
@@ -1400,32 +1479,32 @@ useEffect(() => {
         await ProjectLockService.releaseLock(currentProject.id, user.id);
       }
 
-if (!autoSave) {
-  if (editingProject) {
-    setCurrentProject(savedProject);
-  } else {
-    setCurrentProject(null);
-  }
-}
+      if (!autoSave) {
+        if (editingProject) {
+          setCurrentProject(savedProject);
+        } else {
+          setCurrentProject(null);
+        }
+      }
 
-if (!autoSave) {
-  setProjectName('');
-  setShowProjectDialog(false);
-  
-  if (!editingProject) {
-    setTracking(false);
-    setPaused(false);
-    setShowTrackingControls(false);
-    
-    setManualPoints([]);
-    setTotalDistance(0);
-    setSelectedStartPoint(null);
-    
-    setPositionHistory([]);
-  }
-  
-  showFeedback('Sucesso', editingProject ? 'Projeto atualizado!' : 'Projeto salvo e finalizado!', 'success');
-}
+      if (!autoSave) {
+        setProjectName('');
+        setShowProjectDialog(false);
+        
+        if (!editingProject) {
+          setTracking(false);
+          setPaused(false);
+          setShowTrackingControls(false);
+          
+          setManualPoints([]);
+          setTotalDistance(0);
+          setSelectedStartPoint(null);
+          
+          setPositionHistory([]);
+        }
+        
+        showFeedback('Sucesso', editingProject ? 'Projeto atualizado!' : 'Projeto salvo e finalizado!', 'success');
+      }
       
     } catch (error) {
       console.error('Erro ao salvar projeto:', error);
@@ -1435,33 +1514,27 @@ if (!autoSave) {
     }
   };
   
-  // ATUALIZADA: Função startTracking com sistema de lock
+  // Função startTracking com sistema de lock
   const startTracking = async (mode = 'gps') => {
-    // 1. Verificação de Segurança (Múltiplos Projetos)
     if (loadedProjects.length > 1) {
       showFeedback('Bloqueado', 'Múltiplos projetos ativos. Deixe apenas UM projeto no mapa para continuar o traçado.', 'error');
       return;
     }
     
-    // 2. Lógica de Continuação (COM SISTEMA DE LOCK)
     if (loadedProjects.length === 1) {
       const project = loadedProjects[0];
       
-      // Verifica se o projeto já está sendo editado por outro usuário (se online)
       if (isOnline && user) {
         const hasLock = await ProjectLockService.acquireLock(project.id, user.id);
         if (!hasLock) {
-          // Se não conseguir o lock, verifica quem está usando
           const status = await ProjectLockService.checkLockStatus(project.id, user.id);
           if (status.isLocked) {
             showFeedback('Projeto Travado', `Este projeto está sendo editado por ${status.lockedBy}. Modo leitura ativado.`, 'error');
-            // Impede a edição e retorna
             return;
           }
         }
       }
       
-      // Define o projeto atual e carrega os pontos na memória de edição
       setCurrentProject(project);
       setManualPoints(project.points);
       setTotalDistance(project.totalDistance || project.total_distance || 0);
@@ -1474,7 +1547,6 @@ if (!autoSave) {
         showFeedback('Conectado', `Rastreamento continuado a partir do Ponto ${project.points.length}`, 'success');
       }
     }
-    // 3. Novo Projeto (Do zero)
     else if (!currentProject) {
       setManualPoints([]);
       setTotalDistance(0);
@@ -1482,21 +1554,18 @@ if (!autoSave) {
       setSelectedStartPoint(null);
     }
     
-    // Configurações de UI
     setTrackingInputMode(mode);
     setTracking(true);
     setPaused(false);
     setShowTrackingControls(true);
     setShowRulerPopup(false);
     
-    // Reseta filtros do GPS
     kalmanLatRef.current = new KalmanFilter(0.1, 0.1);
     kalmanLngRef.current = new KalmanFilter(0.1, 0.1);
   };
   
-  // ATUALIZADA: Função loadProject com sistema de lock
+  // Função loadProject com sistema de lock
   const loadProject = async (project) => {
-    // Libera o lock do projeto atual, se houver
     if (currentProject && isOnline && user) {
       await ProjectLockService.releaseLock(currentProject.id, user.id);
     }
@@ -1667,9 +1736,6 @@ if (!autoSave) {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        // Inicializar o dbService
-        await dbService.init();
-
         const clearStoredTokens = () => {
           try {
             localStorage.removeItem('supabase.auth.token')
@@ -1795,8 +1861,7 @@ if (!autoSave) {
     if (!user || !isOnline) return;
     
     try {
-      // Buscar projetos offline do dbService
-      const offlineProjects = await dbService.getProjects(user.id, 0);
+      const offlineProjects = storage.loadProjects(user.id);
       
       for (const project of offlineProjects) {
         try {
@@ -1814,12 +1879,12 @@ if (!autoSave) {
           
           if (error) throw error;
           
-          // Atualizar o projeto no dbService para status online (1) e com o novo id
           const updatedProject = { ...project, id: data[0].id };
-          await dbService.saveProject(updatedProject, 1);
-          
-          // Remover a versão offline
-          await dbService.deleteProject(project.id);
+          const userProjects = storage.loadProjects(user.id);
+          const updatedUserProjects = userProjects.map(p => 
+            p.id === project.id ? updatedProject : p
+          );
+          storage.saveProjects(user.id, updatedUserProjects);
           
           console.log('Projeto offline sincronizado:', project.name);
           
@@ -1828,7 +1893,6 @@ if (!autoSave) {
         }
       }
       
-      // Recarregar a lista de projetos
       const updatedList = await loadProjectsFromSupabase();
       setProjects(updatedList);
       
@@ -1837,7 +1901,7 @@ if (!autoSave) {
     }
   };
   
-  // EFEITO ATUALIZADO: Carregar projetos
+  // Efeito para carregar projetos
   useEffect(() => {
     const loadProjects = async () => {
       try {
@@ -1852,12 +1916,10 @@ if (!autoSave) {
               
             } catch (supabaseError) {
               console.error('Erro ao carregar do Supabase:', supabaseError);
-              // Carregar do dbService local
-              loadedProjects = await dbService.getProjects(user.id) || [];
+              loadedProjects = storage.loadProjects(user.id) || [];
             }
           } else {
-            // Carregar do dbService local
-            loadedProjects = await dbService.getProjects(user.id) || [];
+            loadedProjects = storage.loadProjects(user.id) || [];
           }
         }
         
@@ -1880,7 +1942,7 @@ if (!autoSave) {
   
   useEffect(() => {
     const loadBairros = async () => {
-      const savedBairros = await dbService.getBairros();
+      const savedBairros = storage.loadBairros();
       if (savedBairros) {
         setBairros(savedBairros);
       }
@@ -1891,7 +1953,7 @@ if (!autoSave) {
   useEffect(() => {
     if (user) {
       const loadFavorites = async () => {
-        const savedFavorites = await dbService.getFavorites(user.id);
+        const savedFavorites = storage.loadFavorites(user.id);
         if (savedFavorites) {
           setFavorites(savedFavorites);
         }
@@ -1967,7 +2029,7 @@ if (!autoSave) {
   
   const saveBairros = async (newBairros) => {
     setBairros(newBairros);
-    await dbService.saveBairros(newBairros);
+    storage.saveBairros(newBairros);
   }
   
   const handleAddBairro = async () => {
@@ -2001,7 +2063,7 @@ if (!autoSave) {
     
     setFavorites(newFavorites);
     if (user) {
-      await dbService.saveFavorites(user.id, newFavorites);
+      storage.saveFavorites(user.id, newFavorites);
     }
   }
   
@@ -2084,14 +2146,7 @@ if (!autoSave) {
           }
         } else {
           setMarkers(data || [])
-          try {
-            await Preferences.set({
-              key: `jamaaw_markers_${user.id}`,
-              value: JSON.stringify(data || [])
-            })
-          } catch (e) {
-            localStorage.setItem(`jamaaw_markers_${user.id}`, JSON.stringify(data || []))
-          }
+          storage.saveMarkers(user.id, data || [])
         }
       } else {
         await loadMarkersFromCache()
@@ -2108,19 +2163,7 @@ if (!autoSave) {
     if (!user) return
     
     try {
-      let cachedMarkers = null
-      try {
-        const { value } = await Preferences.get({ key: `jamaaw_markers_${user.id}` })
-        if (value) {
-          cachedMarkers = JSON.parse(value)
-        }
-      } catch (e) {
-        const value = localStorage.getItem(`jamaaw_markers_${user.id}`)
-        if (value) {
-          cachedMarkers = JSON.parse(value)
-        }
-      }
-      
+      const cachedMarkers = storage.loadMarkers(user.id)
       if (cachedMarkers) {
         setMarkers(cachedMarkers)
       }
@@ -2260,7 +2303,7 @@ if (!autoSave) {
       setMarkers(prev => [...prev, ...newMarkers]);
       
       if (user) {
-        localStorage.setItem(`jamaaw_markers_${user.id}`, JSON.stringify(newMarkers));
+        storage.saveMarkers(user.id, newMarkers);
       }
 
       if (isOnline && user && newMarkers.length > 0) {
@@ -2310,11 +2353,7 @@ if (!autoSave) {
       handleClearRoute()
       
       if (user) {
-        try {
-          await Preferences.remove({ key: `jamaaw_markers_${user.id}` })
-        } catch (e) {
-          localStorage.removeItem(`jamaaw_markers_${user.id}`)
-        }
+        storage.saveMarkers(user.id, []);
       }
       
       showFeedback('Sucesso', 'Todas as marcações importadas foram removidas com sucesso!', 'success');
@@ -2348,11 +2387,7 @@ if (!autoSave) {
       handleClearRoute()
       
       if (user) {
-        try {
-          await Preferences.remove({ key: `jamaaw_markers_${user.id}` })
-        } catch (e) {
-          localStorage.removeItem(`jamaaw_markers_${user.id}`)
-        }
+        storage.saveMarkers(user.id, []);
       }
       
       showFeedback('Sucesso', 'Todas as marcações foram removidas com sucesso!', 'success');
@@ -2405,7 +2440,6 @@ if (!autoSave) {
     })
   }
   
-  // --- LÓGICA DE CÁLCULO COM MULTIPLICADOR ---
   const calculateTotalDistanceWithMultiplier = (points) => {
     if (!points || points.length < 2) return 0;
     let total = 0;
@@ -2420,7 +2454,6 @@ if (!autoSave) {
 
       if (parent) {
         const linearDist = calculateDistance(parent.lat, parent.lng, point.lat, point.lng);
-        // Se tiver spans definido usa, senão usa 1
         const spans = point.spans || 1; 
         total += (linearDist * spans);
       }
@@ -2429,7 +2462,6 @@ if (!autoSave) {
     return total;
   };
 
-  // --- ATUALIZAR VÃOS ---
   const handleSpanChange = (count) => {
     if (!spanSelectorInfo) return;
 
@@ -2442,17 +2474,14 @@ if (!autoSave) {
 
     setManualPoints(updatedPoints);
     
-    // Atualiza distância total
     const newTotal = calculateTotalDistanceWithMultiplier(updatedPoints);
     setTotalDistance(newTotal);
 
     setSpanSelectorInfo(null);
   };
 
-  // --- GEOJSON DE SEGMENTOS (MEMOIZADO PARA PERFORMANCE) ---
   const segmentsGeoJSON = useMemo(() => {
     const features = [];
-    // Processa apenas se tivermos pontos manuais
     if (manualPoints.length > 0) {
       manualPoints.forEach((point, index) => {
         let parent = null;
@@ -2466,7 +2495,6 @@ if (!autoSave) {
           const spans = point.spans || 1;
           const color = SPAN_COLORS[spans];
 
-          // 1. A Linha
           features.push({
             type: 'Feature',
             properties: {
@@ -2481,7 +2509,6 @@ if (!autoSave) {
             }
           });
 
-          // 2. O Badge (Bolinha com número) no meio
           const midLng = (parent.lng + point.lng) / 2;
           const midLat = (parent.lat + point.lat) / 2;
 
@@ -2506,64 +2533,61 @@ if (!autoSave) {
   }, [manualPoints]);
   
   const downloadKML = async (kmlContent, filename) => {
-  try {
-    console.log('Iniciando download...', filename);
-    
-    if (Capacitor.getPlatform() === 'web') {
-      const blob = new Blob([kmlContent], {
-        type: 'application/vnd.google-earth.kml+xml;charset=utf-8'
-      });
+    try {
+      console.log('Iniciando download...', filename);
       
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      a.style.display = 'none';
-      
-      document.body.appendChild(a);
-      a.click();
-      
-      setTimeout(() => {
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }, 1000);
-    } else {
-      // NATIVO (ANDROID)
-      const savedFile = await Filesystem.writeFile({
-        path: filename,
-        data: kmlContent,
-        directory: Directory.Documents,
-        encoding: 'utf-8',
-      });
-      
-      showFeedback('Sucesso', `Arquivo salvo! Tentando abrir...`, 'success');
-      
-      // Tenta abrir com o app padrão (Google Earth, etc)
-      try {
-        await FileOpener.open({
-          filePath: savedFile.uri,
-          contentType: 'application/vnd.google-earth.kml+xml',
-          openWithDefault: false
+      if (Capacitor.getPlatform() === 'web') {
+        const blob = new Blob([kmlContent], {
+          type: 'application/vnd.google-earth.kml+xml;charset=utf-8'
         });
-      } catch (openerError) {
-        console.warn("Erro ao abrir KML automaticamente:", openerError);
-        // Fallback para XML genérico se falhar
+        
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.style.display = 'none';
+        
+        document.body.appendChild(a);
+        a.click();
+        
+        setTimeout(() => {
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        }, 1000);
+      } else {
+        const savedFile = await Filesystem.writeFile({
+          path: filename,
+          data: kmlContent,
+          directory: Directory.Documents,
+          encoding: 'utf-8',
+        });
+        
+        showFeedback('Sucesso', `Arquivo salvo! Tentando abrir...`, 'success');
+        
         try {
           await FileOpener.open({
             filePath: savedFile.uri,
-            contentType: 'text/xml',
+            contentType: 'application/vnd.google-earth.kml+xml',
             openWithDefault: false
           });
-        } catch (e) {
-          showFeedback('Aviso', 'Arquivo salvo em Documentos, mas nenhum app compatível foi encontrado para abrir automaticamente.', 'warning');
+        } catch (openerError) {
+          console.warn("Erro ao abrir KML automaticamente:", openerError);
+          try {
+            await FileOpener.open({
+              filePath: savedFile.uri,
+              contentType: 'text/xml',
+              openWithDefault: false
+            });
+          } catch (e) {
+            showFeedback('Aviso', 'Arquivo salvo em Documentos, mas nenhum app compatível foi encontrado para abrir automaticamente.', 'warning');
+          }
         }
       }
+    } catch (error) {
+      console.error('Erro fatal no download:', error);
+      showFeedback('Erro', 'Erro ao salvar o arquivo.', 'error');
     }
-  } catch (error) {
-    console.error('Erro fatal no download:', error);
-    showFeedback('Erro', 'Erro ao salvar o arquivo.', 'error');
-  }
-};
+  };
   
   const getRouteFromAPI = async (start, end) => {
     try {
@@ -2780,25 +2804,20 @@ if (!autoSave) {
     });
   };
   
-  // ATUALIZADA: Função removeLoadedProject com sistema de lock
   const removeLoadedProject = (projectId) => {
-    // Libera o lock se o projeto sendo removido for o atual
     if (currentProject && currentProject.id === projectId && isOnline && user) {
       ProjectLockService.releaseLock(currentProject.id, user.id);
     }
 
-    // 1. Remove da lista visual de projetos carregados
     setLoadedProjects(prev => prev.filter(p => p.id !== projectId));
 
-    // 2. Se esse projeto era o que estava "ativo" ou em "foco" no rastreamento manual, limpa também
     if (currentProject && currentProject.id === projectId) {
       setCurrentProject(null);
-      setManualPoints([]); // Limpa o traçado azul de edição
+      setManualPoints([]);
       setTotalDistance(0);
       setSelectedStartPoint(null);
     }
     
-    // 3. Força uma "limpeza" visual do mapa garantindo que o renderizador atualize
     if (mapRef.current) {
       mapRef.current.triggerRepaint();
     }
@@ -2855,7 +2874,6 @@ if (!autoSave) {
     try {
       const response = await axios.get(
         `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`,
-        
       )
       
       if (response.data && response.data.address) {
@@ -2911,27 +2929,27 @@ if (!autoSave) {
   }
   
   const addPoint = (position) => {
-  const newPoint = {
-    ...position,
-    id: generateUUID(),
-    timestamp: Date.now(),
-    connectedFrom: selectedStartPoint ? selectedStartPoint.id : null,
-    user_id: user.id,
-    user_email: user.email
+    const newPoint = {
+      ...position,
+      id: generateUUID(),
+      timestamp: Date.now(),
+      connectedFrom: selectedStartPoint ? selectedStartPoint.id : null,
+      user_id: user.id,
+      user_email: user.email,
+      spans: 1,
+    }
+    
+    setManualPoints(prev => {
+      const updatedPoints = [...prev, newPoint]
+      const newTotalDistance = calculateTotalDistanceWithBranches(updatedPoints);
+      setTotalDistance(newTotalDistance);
+      return updatedPoints
+    })
+    
+    if (selectedStartPoint) {
+      setSelectedStartPoint(newPoint);
+    }
   }
-  spans: 1,
-  
-  setManualPoints(prev => {
-    const updatedPoints = [...prev, newPoint]
-    const newTotalDistance = calculateTotalDistanceWithBranches(updatedPoints);
-    setTotalDistance(newTotalDistance);
-    return updatedPoints
-  })
-  
-  if (selectedStartPoint) {
-    setSelectedStartPoint(newPoint);
-  }
-}
   
   const undoLastPoint = () => {
     if (manualPoints.length > 0) {
@@ -2975,9 +2993,7 @@ if (!autoSave) {
     setSnappingEnabled(!snappingEnabled);
   };
   
-  // ATUALIZADA: Função stopTracking com sistema de lock
   const stopTracking = async () => {
-    // Libera o lock, se houver
     if (currentProject && isOnline && user) {
       await ProjectLockService.releaseLock(currentProject.id, user.id);
     }
@@ -3028,9 +3044,7 @@ if (!autoSave) {
     }
   };
   
-  // ATUALIZADA: Função deleteProject com sistema de lock
   const deleteProject = async (projectId) => {
-    // Libera o lock se o projeto sendo deletado for o atual
     if (currentProject && currentProject.id === projectId && isOnline && user) {
       await ProjectLockService.releaseLock(projectId, user.id);
     }
@@ -3053,8 +3067,8 @@ if (!autoSave) {
       const updatedProjects = projects.filter(p => p.id !== projectId);
       setProjects(updatedProjects);
       
-      // Deletar do dbService
-      await dbService.deleteProject(projectId);
+      // Deletar do localStorage
+      storage.deleteProject(user?.id, projectId);
       
       if (currentProject && currentProject.id === projectId) {
         setCurrentProject(null);
@@ -3273,23 +3287,21 @@ if (!autoSave) {
             
             if (tracking && !paused) {
                 const segmentFeatures = e.target.queryRenderedFeatures(e.point, {
-                  layers: ['segment-hit-area', 'segment-badge-bg'] // Camadas clicáveis
+                  layers: ['segment-hit-area', 'segment-badge-bg']
                 });
 
                 if (segmentFeatures.length > 0) {
                   const feature = segmentFeatures[0];
-                  // Abre o seletor
                   setSpanSelectorInfo({
                     x: e.point.x,
                     y: e.point.y,
                     targetPointId: feature.properties.targetPointId,
                     currentSpans: feature.properties.spans
                   });
-                  return; // Para aqui, não cria ponto novo
+                  return;
                 }
             }
             
-            // Fecha seletor se clicar fora
             setSpanSelectorInfo(null);
 
             if (features.length > 0) {
@@ -3330,7 +3342,7 @@ if (!autoSave) {
         >
           <NavigationControl position="top-right" />
 
-          {/* CAMADA DE MARCADORES OTIMIZADA (GPU) */}
+          {/* CAMADA DE MARCADORES OTIMIZADA */}
           <Source id="markers-source" type="geojson" data={markersGeoJSON}>
             <Layer
               id="markers-layer"
@@ -3402,38 +3414,35 @@ if (!autoSave) {
             </Source>
           ))}
 
-    
-{loadedProjects.map(project => (
-  <React.Fragment key={`markers-${project.id}`}>
-    {project.points.map((point, index) => (
-      <PoleMarker
-        key={point.id}
-        point={point}
-        index={index + 1}
-        color={project.color}
-        isActive={false}
-        onClick={(e) => {
-          e.originalEvent.stopPropagation();
-          setPointPopupInfo({
-            point,
-            pointNumber: index + 1,
-            projectName: project.name,
-            projectId: project.id, // <--- ADICIONADO: ID DO PROJETO É CRUCIAL
-            totalPoints: project.points.length,
-            color: project.color,
-            isManualPoint: false
-          });
-        }}
-      />
-    ))}
-  </React.Fragment>
-))}
+          {loadedProjects.map(project => (
+            <React.Fragment key={`markers-${project.id}`}>
+              {project.points.map((point, index) => (
+                <PoleMarker
+                  key={point.id}
+                  point={point}
+                  index={index + 1}
+                  color={project.color}
+                  isActive={false}
+                  onClick={(e) => {
+                    e.originalEvent.stopPropagation();
+                    setPointPopupInfo({
+                      point,
+                      pointNumber: index + 1,
+                      projectName: project.name,
+                      projectId: project.id,
+                      totalPoints: project.points.length,
+                      color: project.color,
+                      isManualPoint: false
+                    });
+                  }}
+                />
+              ))}
+            </React.Fragment>
+          ))}
 
-          {/* --- NOVA CAMADA DE TRAÇADO COM VÃOS --- */}
+          {/* CAMADA DE TRAÇADO COM VÃOS */}
           {manualPoints.length > 0 && (
             <Source id="segments-source" type="geojson" data={segmentsGeoJSON}>
-              
-              {/* 1. Área de Clique Invisível (Mais grossa para facilitar toque) */}
               <Layer
                 id="segment-hit-area"
                 type="line"
@@ -3443,7 +3452,6 @@ if (!autoSave) {
                 }}
               />
 
-              {/* 2. A Linha Visível Colorida */}
               <Layer
                 id="segment-line"
                 type="line"
@@ -3458,7 +3466,6 @@ if (!autoSave) {
                 }}
               />
 
-              {/* 3. Círculo do Badge */}
               <Layer
                 id="segment-badge-bg"
                 type="circle"
@@ -3471,7 +3478,6 @@ if (!autoSave) {
                 }}
               />
 
-              {/* 4. Texto do Badge (Ex: 2x) */}
               <Layer
                 id="segment-badge-text"
                 type="symbol"
@@ -3555,7 +3561,7 @@ if (!autoSave) {
             </Popup>
           )}
 
-         {pointPopupInfo && pointPopupInfo.point && !pointPopupInfo.isManualPoint && (
+          {pointPopupInfo && pointPopupInfo.point && !pointPopupInfo.isManualPoint && (
             <Popup
               longitude={pointPopupInfo.point.lng}
               latitude={pointPopupInfo.point.lat}
@@ -3860,81 +3866,28 @@ if (!autoSave) {
                 </Button>
               </div>
             </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="text-center">
-                <p className="text-white font-medium truncate text-sm mb-1">{currentProject.name}</p>
-                <p className="text-cyan-400 text-xs">
-                  Modo Manual
-                </p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div className="text-center p-2 bg-slate-700/30 rounded">
-                  <div className="text-cyan-400 font-bold text-sm">
-                    {formatDistanceDetailed(currentProject.totalDistance || currentProject.total_distance || 0)}
-                  </div>
-                  <div className="text-gray-400">Distância</div>
-                </div>
-                <div className="text-center p-2 bg-slate-700/30 rounded">
-                  <div className="text-cyan-400 font-bold">{currentProject.points?.length || 0}</div>
-                  <div className="text-gray-400">Pontos</div>
-                </div>
-              </div>
-
-              {currentProject.bairro && currentProject.bairro !== 'Vários' && (
-                <div className="text-center p-2 bg-slate-700/30 rounded">
-                  <div className="text-cyan-400 text-xs font-medium">Bairro</div>
-                  <div className="text-white text-sm">{currentProject.bairro}</div>
-                </div>
-              )}
-
-              <div className="flex gap-2">
-                <Button
-                  onClick={() => {
-                    handleRemovePoints();
-                  }}
-                  size="sm"
-                  className="flex-1 bg-red-500 hover:bg-red-600 text-white text-xs h-7"
-                >
-                  <X className="w-3 h-3 mr-1" />
-                  Limpar
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    exportProjectAsKML(currentProject);
-                    setShowProjectDetails(false);
-                  }}
-                  size="sm"
-                  className="flex-1 border-green-500/50 text-green-400 hover:bg-green-500/10 text-xs h-7"
-                >
-                  <Download className="w-3 h-3 mr-1" />
-                  Exportar
-                </Button>
-              </div>
-            </CardContent>
           </Card>
         </div>
       )}
 
-    <ProjectManager
-      isOpen={showProjectsList}
-      onClose={() => setShowProjectsList(false)}
-      projects={projects}
-      currentUserId={user?.id}
-      onLoadProject={(p) => {
-        loadProject(p);
-        setShowProjectsList(false);
-      }}
-      onDeleteProject={deleteProject}
-      onExportProject={exportProjectAsKML}
-      onJoinProject={handleJoinProject}
-      onOpenReport={(project) => {
-        const img = getMapImage();
-        setReportData({ project, image: img });
-        setShowProjectsList(false);
-      }}
-    />
+      <ProjectManager
+        isOpen={showProjectsList}
+        onClose={() => setShowProjectsList(false)}
+        projects={projects}
+        currentUserId={user?.id}
+        onLoadProject={(p) => {
+          loadProject(p);
+          setShowProjectsList(false);
+        }}
+        onDeleteProject={deleteProject}
+        onExportProject={exportProjectAsKML}
+        onJoinProject={handleJoinProject}
+        onOpenReport={(project) => {
+          const img = getMapImage();
+          setReportData({ project, image: img });
+          setShowProjectsList(false);
+        }}
+      />
 
       <LoadedProjectsManager
         isOpen={showLoadedProjects}
@@ -4304,25 +4257,24 @@ if (!autoSave) {
         />
       )}
 
-      {/* Popup para Pontos de Projeto (AGORA COM FOTOS) */}
-{popupMarker && (
-  <ModernPopup
-    marker={popupMarker}
-    onClose={() => setPopupMarker(null)}
-    onEdit={(marker) => {
-      setPopupMarker(null);
-      setEditingMarker(marker);
-      setShowEditDialog(true);
-    }}
-    onShare={handleShareLocation}
-    onFavorite={toggleFavorite}
-    onCalculateDistance={(marker) => {
-      setSelectedForDistance([marker]);
-      setPopupMarker(null);
-    }}
-    currentPosition={currentPosition}
-  />
-)}
+      {popupMarker && (
+        <ModernPopup
+          marker={popupMarker}
+          onClose={() => setPopupMarker(null)}
+          onEdit={(marker) => {
+            setPopupMarker(null);
+            setEditingMarker(marker);
+            setShowEditDialog(true);
+          }}
+          onShare={handleShareLocation}
+          onFavorite={toggleFavorite}
+          onCalculateDistance={(marker) => {
+            setSelectedForDistance([marker]);
+            setPopupMarker(null);
+          }}
+          currentPosition={currentPosition}
+        />
+      )}
 
       {arMode && (
         <ARCamera
@@ -4379,14 +4331,12 @@ if (!autoSave) {
         className="hidden"
       />
       
-      {/* SELETOR DE VÃOS FLUTUANTE */}
       {spanSelectorInfo && (
         <SpanSelector
           currentSpans={spanSelectorInfo.currentSpans}
           onSelect={handleSpanChange}
           onClose={() => setSpanSelectorInfo(null)}
           style={{
-            // Posiciona perto do clique, mas garante que não saia da tela
             left: Math.min(spanSelectorInfo.x - 80, window.innerWidth - 170),
             top: spanSelectorInfo.y - 60 
           }}
