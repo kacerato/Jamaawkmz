@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import Map, { Marker, Popup, Source, Layer, NavigationControl } from 'react-map-gl'
@@ -39,7 +40,7 @@ import {
   Trash2,
   Lock,
   Unlock,
-  AlertCircle // ADICIONADO
+  AlertCircle
 } from 'lucide-react'
 import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.jsx'
@@ -70,7 +71,8 @@ import ModernPopup from './components/ModernPopup'
 import ImportProgressPopup from './components/ImportProgressPopup'
 import MultipleSelectionPopup from './components/MultipleSelectionPopup'
 import BairroDetectionService from './components/BairroDetectionService'
-import ProjectLockService from './services/ProjectLockService' // NOVO SERVIÇO
+import ProjectLockService from './services/ProjectLockService'
+import SpanSelector, { SPAN_COLORS } from './components/SpanSelector'; // ADICIONADO
 import 'mapbox-gl/dist/mapbox-gl.css'
 import './App.css'
 import ProjectReport from './components/ProjectReport';
@@ -621,6 +623,9 @@ function App() {
   
   // NOVO: Estado para controle de lock
   const [projectLock, setProjectLock] = useState(null);
+
+  // ADICIONADO: Estado para seletor de vãos
+  const [spanSelectorInfo, setSpanSelectorInfo] = useState(null); // { x, y, targetPointId, currentSpans }
   
   const kalmanLatRef = useRef(new KalmanFilter(0.1, 0.1));
   const kalmanLngRef = useRef(new KalmanFilter(0.1, 0.1));
@@ -711,6 +716,91 @@ function App() {
       }
     }))
   }), [filteredMarkers]);
+  
+  // ADICIONADO: Lógica para transformar pontos em Segmentos visuais
+  const segmentsGeoJSON = useMemo(() => {
+    const features = [];
+    const pointsToProcess = currentProject ? manualPoints : []; // Ou loadedProjects.points
+
+    pointsToProcess.forEach((point, index) => {
+      // Ignora o primeiro ponto (pois ele não tem "anterior")
+      // A menos que seja ramificação
+      let parent = null;
+      
+      if (point.connectedFrom) {
+        parent = pointsToProcess.find(p => p.id === point.connectedFrom);
+      } else if (index > 0) {
+        parent = pointsToProcess[index - 1];
+      }
+
+      if (parent) {
+        // Pega a qtd de vãos salva no ponto (ou 1 se não tiver)
+        const spans = point.spans || 1;
+        const color = SPAN_COLORS[spans] || SPAN_COLORS[1];
+
+        // Cria a linha (Segmento)
+        features.push({
+          type: 'Feature',
+          properties: {
+            type: 'segment',
+            targetPointId: point.id, // ID do ponto "destino" guarda a info do vão
+            spans: spans,
+            color: color
+          },
+          geometry: {
+            type: 'LineString',
+            coordinates: [[parent.lng, parent.lat], [point.lng, point.lat]]
+          }
+        });
+
+        // Cria o ponto médio para o Badge (Indicador)
+        const midLng = (parent.lng + point.lng) / 2;
+        const midLat = (parent.lat + point.lat) / 2;
+
+        features.push({
+          type: 'Feature',
+          properties: {
+            type: 'badge',
+            targetPointId: point.id, // ID para identificar qual linha editar
+            spans: spans,
+            label: `${spans}x`
+          },
+          geometry: {
+            type: 'Point',
+            coordinates: [midLng, midLat]
+          }
+        });
+      }
+    });
+
+    return { type: 'FeatureCollection', features };
+  }, [manualPoints, currentProject]); // Recalcula sempre que pontos mudam
+
+  // ADICIONADO: Função para calcular distância total com multiplicador
+  const calculateTotalDistanceWithMultiplier = (points) => {
+    if (points.length < 2) return 0;
+    let total = 0;
+
+    // Itera sobre todos os pontos (exceto o primeiro da lista principal)
+    points.forEach((point, index) => {
+      let parent = null;
+      if (point.connectedFrom) {
+        parent = points.find(p => p.id === point.connectedFrom);
+      } else if (index > 0) {
+        parent = points[index - 1];
+      }
+
+      if (parent) {
+        const linearDist = calculateDistance(parent.lat, parent.lng, point.lat, point.lng);
+        const spans = point.spans || 1; // Padrão é 1 se não tiver definido
+        
+        // Multiplica distância pela quantidade de vãos
+        total += (linearDist * spans);
+      }
+    });
+
+    return total;
+  };
   
   // NOVO: Efeito para manter o lock ativo enquanto edita
   useEffect(() => {
@@ -1428,7 +1518,7 @@ if (!autoSave) {
           // Se não conseguir o lock, verifica quem está usando
           const status = await ProjectLockService.checkLockStatus(project.id, user.id);
           if (status.isLocked) {
-            showFeedback('Projeto Travado', `Este projeto está sendo editado por ${status.lockedBy}. Modo leitura ativado.`, 'error');
+            showFeedback('Projeto Travado', `Este projeto está sendo editado por ${status.lockedBy}. Modo leitura ativado.', 'error');
             // Impede a edição e retorna
             return;
           }
@@ -2842,6 +2932,27 @@ if (!autoSave) {
     setSnappingEnabled(!snappingEnabled);
   };
   
+  // ADICIONADO: Função para alterar quantidade de vãos
+  const handleSpanChange = (count) => {
+    if (!spanSelectorInfo) return;
+
+    // Atualiza o array de pontos
+    const updatedPoints = manualPoints.map(p => {
+      if (p.id === spanSelectorInfo.targetPointId) {
+        return { ...p, spans: count }; // Salva a qtd de vãos no ponto
+      }
+      return p;
+    });
+
+    setManualPoints(updatedPoints);
+    
+    // Recalcula distância total (Considerando multiplicador)
+    const newTotal = calculateTotalDistanceWithMultiplier(updatedPoints);
+    setTotalDistance(newTotal);
+
+    setSpanSelectorInfo(null); // Fecha o seletor
+  };
+  
   // ATUALIZADA: Função stopTracking com sistema de lock
   const stopTracking = async () => {
     // Libera o lock, se houver
@@ -3132,6 +3243,31 @@ if (!autoSave) {
           cursor={tracking && trackingInputMode === 'touch' && !paused ? 'crosshair' : 'auto'}
           preserveDrawingBuffer={true}
           onClick={async (e) => {
+            // NOVO: Detectar clique no segmento ou no badge
+            const segmentFeatures = e.target.queryRenderedFeatures(e.point, {
+              layers: ['segment-hit-area', 'segment-badge-circle', 'segment-badge-text'] // Camadas clicáveis
+            });
+
+            if (segmentFeatures.length > 0) {
+              const feature = segmentFeatures[0];
+              const pointId = feature.properties.targetPointId;
+              const currentSpans = feature.properties.spans;
+
+              // Abre o seletor na posição do clique
+              setSpanSelectorInfo({
+                x: e.point.x,
+                y: e.point.y,
+                targetPointId: pointId,
+                currentSpans: currentSpans
+              });
+              
+              // Impede de criar um ponto novo embaixo
+              return; 
+            }
+            
+            // Fecha seletor se clicar fora
+            setSpanSelectorInfo(null);
+
             const features = e.target.queryRenderedFeatures(e.point, {
               layers: ['markers-hit-area', 'markers-layer']
             });
@@ -3198,6 +3334,64 @@ if (!autoSave) {
                 'circle-radius': 20,
                 'circle-color': 'transparent',
                 'circle-opacity': 0
+              }}
+            />
+          </Source>
+
+          {/* ADICIONADO: CAMADA DE SEGMENTOS (TRAÇADO INTELIGENTE) */}
+          <Source id="segments-source" type="geojson" data={segmentsGeoJSON}>
+            {/* 1. Área de Clique (Linha grossa transparente para facilitar o toque) */}
+            <Layer
+              id="segment-hit-area"
+              type="line"
+              paint={{
+                'line-width': 20, // Área gorda para clicar fácil
+                'line-opacity': 0
+              }}
+            />
+
+            {/* 2. A Linha Visual */}
+            <Layer
+              id="segment-line"
+              type="line"
+              paint={{
+                'line-color': ['get', 'color'], // Cor dinâmica baseada no vão
+                'line-width': 4,
+                'line-opacity': 0.9,
+                'line-cap': 'round'
+              }}
+            />
+
+            {/* 3. O Badge (Bolinha no meio) */}
+            <Layer
+              id="segment-badge-circle"
+              type="circle"
+              filter={['==', 'type', 'badge']}
+              paint={{
+                'circle-color': '#0f172a', // Slate 900
+                'circle-radius': 10,
+                'circle-stroke-width': 2,
+                'circle-stroke-color': ['case', 
+                  ['==', ['get', 'spans'], 1], '#3b82f6',
+                  ['==', ['get', 'spans'], 2], '#10b981',
+                  ['==', ['get', 'spans'], 3], '#f59e0b',
+                  '#8b5cf6'
+                ]
+              }}
+            />
+
+            {/* 4. O Texto do Badge (2x, 3x) */}
+            <Layer
+              id="segment-badge-text"
+              type="symbol"
+              filter={['==', 'type', 'badge']}
+              layout={{
+                'text-field': ['get', 'label'],
+                'text-size': 10,
+                'text-font': ['DIN Offc Pro Bold', 'Arial Unicode MS Bold'],
+              }}
+              paint={{
+                'text-color': '#ffffff'
               }}
             />
           </Source>
@@ -3483,6 +3677,20 @@ if (!autoSave) {
           )}
         </Map>
       </div>
+
+      {/* ADICIONADO: SELETOR DE VÃOS (Renderizado condicionalmente) */}
+      {spanSelectorInfo && (
+        <SpanSelector
+          currentSpans={spanSelectorInfo.currentSpans}
+          onSelect={handleSpanChange}
+          onClose={() => setSpanSelectorInfo(null)}
+          style={{
+            // Posiciona exatamente onde clicou, mas ajusta para não sair da tela (simples)
+            left: Math.min(spanSelectorInfo.x - 90, window.innerWidth - 200), 
+            top: spanSelectorInfo.y - 80 
+          }}
+        />
+      )}
 
       <div className="absolute top-4 left-4 right-4 z-10 flex items-center gap-2">
         <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
