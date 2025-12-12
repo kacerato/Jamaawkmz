@@ -72,10 +72,11 @@ import ImportProgressPopup from './components/ImportProgressPopup'
 import MultipleSelectionPopup from './components/MultipleSelectionPopup'
 import BairroDetectionService from './components/BairroDetectionService'
 import ProjectLockService from './services/ProjectLockService'
+import { useProjects } from './hooks/useProjects'
+import ProjectReport from './components/ProjectReport';
 
 import 'mapbox-gl/dist/mapbox-gl.css'
 import './App.css'
-import ProjectReport from './components/ProjectReport';
 
 const DEFAULT_BAIRROS = [
   'Ponta Verde',
@@ -633,7 +634,6 @@ function App() {
   const [manualPoints, setManualPoints] = useState([])
   const [totalDistance, setTotalDistance] = useState(0)
   const [currentProject, setCurrentProject] = useState(null)
-  const [projects, setProjects] = useState([])
   const [showProjectDialog, setShowProjectDialog] = useState(false)
   const [projectName, setProjectName] = useState('')
   const [showProjectsList, setShowProjectsList] = useState(false)
@@ -684,6 +684,15 @@ function App() {
   
   const kalmanLatRef = useRef(new KalmanFilter(0.1, 0.1));
   const kalmanLngRef = useRef(new KalmanFilter(0.1, 0.1));
+  
+  // Usando o hook useProjects
+  const { 
+    projects, 
+    setProjects, 
+    loadProjects, 
+    renameProject, 
+    deleteProject 
+  } = useProjects(user, isOnline);
   
   const totalDistanceAllProjects = calculateTotalDistanceAllProjects(projects);
   
@@ -786,38 +795,6 @@ function App() {
     }
     return () => clearInterval(interval);
   }, [tracking, currentProject, isOnline, user]);
-  
-  // Carregar projetos do Supabase
-  const loadProjectsFromSupabase = async () => {
-    if (!user) return [];
-    
-    try {
-      const localRaw = localStorage.getItem('jamaaw_projects');
-      const localProjects = localRaw ? JSON.parse(localRaw) : [];
-      
-      let cloudProjects = [];
-      if (isOnline) {
-        const { data: myProjects, error: err1 } = await supabase
-          .from('projetos')
-          .select('*')
-          .eq('user_id', user.id);
-        
-        if (!err1 && myProjects) cloudProjects = [...cloudProjects, ...myProjects];
-      }
-      
-      const mergedProjects = [...cloudProjects, ...localProjects];
-      const uniqueProjects = deduplicateProjects(mergedProjects);
-      
-      localStorage.setItem('jamaaw_projects', JSON.stringify(uniqueProjects));
-      
-      return uniqueProjects;
-      
-    } catch (error) {
-      console.error('Erro ao carregar projetos:', error);
-      const saved = localStorage.getItem('jamaaw_projects');
-      return saved ? JSON.parse(saved) : [];
-    }
-  };
   
   // Atualizar bairros dos projetos
   const refreshProjectNeighborhoods = async () => {
@@ -1232,7 +1209,7 @@ function App() {
         } else {
           await supabase.from('projetos').insert([project]);
         }
-        const updatedList = await loadProjectsFromSupabase();
+        const updatedList = await loadProjects();
         setProjects(updatedList);
       } else {
         let updatedProjects;
@@ -1893,7 +1870,7 @@ function App() {
         }
       }
       
-      const updatedList = await loadProjectsFromSupabase();
+      const updatedList = await loadProjects();
       setProjects(updatedList);
       
     } catch (error) {
@@ -1901,38 +1878,16 @@ function App() {
     }
   };
   
-  // Efeito para carregar projetos
+  // Efeito para carregar projetos usando o hook
   useEffect(() => {
-    const loadProjects = async () => {
-      try {
-        let loadedProjects = [];
-        
-        if (user) {
-          if (isOnline) {
-            try {
-              const data = await loadProjectsFromSupabase();
-              loadedProjects = data || [];
-              console.log('Projetos carregados:', loadedProjects.length);
-              
-            } catch (supabaseError) {
-              console.error('Erro ao carregar do Supabase:', supabaseError);
-              loadedProjects = storage.loadProjects(user.id) || [];
-            }
-          } else {
-            loadedProjects = storage.loadProjects(user.id) || [];
-          }
-        }
-        
-        setProjects(loadedProjects);
-        
-      } catch (error) {
-        console.error('Erro crítico ao carregar projetos:', error);
-        setProjects([]);
+    const loadProjectsData = async () => {
+      if (user) {
+        await loadProjects();
       }
     };
     
-    loadProjects();
-  }, [user, isOnline]);
+    loadProjectsData();
+  }, [user, isOnline, loadProjects]);
   
   useEffect(() => {
     if (isOnline && user) {
@@ -2240,7 +2195,7 @@ function App() {
       
       if (data.success) {
         showFeedback('Sucesso', data.message, 'success');
-        const updatedList = await loadProjectsFromSupabase();
+        const updatedList = await loadProjects();
         setProjects(updatedList);
       } else {
         showFeedback('Erro', data.message, 'error');
@@ -3044,48 +2999,21 @@ function App() {
     }
   };
   
-  const deleteProject = async (projectId) => {
-    if (currentProject && currentProject.id === projectId && isOnline && user) {
-      await ProjectLockService.releaseLock(projectId, user.id);
-    }
-
-    if (!confirm('Tem certeza que deseja deletar este projeto?')) {
-      return;
-    }
+  const deleteProjectFromSupabase = async (projectId) => {
+    if (!user) return false;
     
     try {
-      if (isOnline && user && !projectId.toString().startsWith('offline_')) {
-        const { error } = await supabase
-          .from('projetos')
-          .delete()
-          .eq('id', projectId)
-          .eq('user_id', user.id);
-        
-        if (error) throw error;
-      }
+      const { error } = await supabase
+        .from('projetos')
+        .delete()
+        .eq('id', projectId)
+        .eq('user_id', user.id);
       
-      const updatedProjects = projects.filter(p => p.id !== projectId);
-      setProjects(updatedProjects);
-      
-      // Deletar do localStorage
-      storage.deleteProject(user?.id, projectId);
-      
-      if (currentProject && currentProject.id === projectId) {
-        setCurrentProject(null);
-        setManualPoints([]);
-        setTotalDistance(0);
-        setSelectedStartPoint(null);
-      }
-      
-      if (editingProject && editingProject.id === projectId) {
-        setEditingProject(null);
-      }
-      
-      showFeedback('Sucesso', 'Projeto deletado com sucesso!', 'success');
-      
+      if (error) throw error;
+      return true;
     } catch (error) {
-      console.error('Erro ao deletar projeto:', error);
-      showFeedback('Erro', 'Erro ao deletar projeto. Tente novamente.', 'error');
+      console.error('Erro ao deletar projeto do Supabase:', error);
+      return false;
     }
   };
   
@@ -3880,6 +3808,7 @@ function App() {
           setShowProjectsList(false);
         }}
         onDeleteProject={deleteProject}
+        onRenameProject={renameProject}
         onExportProject={exportProjectAsKML}
         onJoinProject={handleJoinProject}
         onOpenReport={(project) => {
