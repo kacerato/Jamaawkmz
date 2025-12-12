@@ -13,7 +13,7 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
   const [staticMapUrl, setStaticMapUrl] = useState(null);
   const [isDownloading, setIsDownloading] = useState(false);
 
-  // --- PROCESSAMENTO DE DADOS ---
+  // --- PROCESSAMENTO DE DADOS (COM SUPORTE A RAMIFICAÇÕES) ---
   const stats = useMemo(() => {
     if (!project || !project.points) return null;
 
@@ -38,18 +38,38 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
       const group = groups[date];
       group.points.push(p);
       
+      // Atualiza horários do dia
       if (dateObj < group.startTime) group.startTime = dateObj;
       if (dateObj > group.endTime) group.endTime = dateObj;
 
-      if (idx > 0) {
-        const prev = project.points[idx - 1];
-        const dist = calcDist(prev, p);
-        group.distance += dist;
-        calculatedTotal += dist;
+      // --- CÁLCULO INTELIGENTE DE DISTÂNCIA (Ramificações) ---
+      let dist = 0;
+      let parent = null;
+
+      // 1. Se tem um pai explícito (Ramificação/Galho)
+      if (p.connectedFrom) {
+        parent = project.points.find(point => point.id === p.connectedFrom);
+      } 
+      // 2. Se não tem pai, mas não é o primeiro (Sequencial padrão)
+      else if (idx > 0) {
+        parent = project.points[idx - 1];
       }
 
+      // Se encontrou um ponto anterior válido, calcula a distância
+      if (parent) {
+        dist = calcDist(parent, p);
+        
+        // Se a distância for absurdamente grande (>5km) provavelmente é erro de GPS ou importação, ignoramos para não quebrar o relatório
+        if (dist < 5000) { 
+            group.distance += dist;
+            calculatedTotal += dist;
+        }
+      }
+
+      // Responsabilidade
       const user = p.user_email || currentUserEmail || 'Desconhecido';
-      group.users.add(user.split('@')[0]);
+      group.users.add(user.split('@')[0]); // Nome curto
+      
       if (!userResponsibility[user]) userResponsibility[user] = 0;
       userResponsibility[user]++;
     });
@@ -57,12 +77,14 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
     return {
       groups,
       userResponsibility,
-      totalDistance: project.total_distance || calculatedTotal,
+      // Usa o total calculado aqui que respeita ramificações, ou o do projeto se já vier salvo corretamente
+      totalDistance: calculatedTotal > 0 ? calculatedTotal : (project.total_distance || 0),
       totalPoints: project.points.length,
       lastUpdate: new Date(project.updated_at || Date.now()).toLocaleString('pt-BR')
     };
   }, [project]);
 
+  // Gera a URL do Mapa (que agora desenha ramificações graças ao MapboxStatic.js atualizado)
   useEffect(() => {
     if (isOpen && project?.points?.length > 0) {
       const url = getStaticMapUrl(project.points, 800, 400); 
@@ -72,6 +94,7 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
 
   if (!project || !stats) return null;
 
+  // Função matemática de distância (Haversine)
   function calcDist(p1, p2) {
     const R = 6371e3; 
     const φ1 = p1.lat * Math.PI/180;
@@ -89,19 +112,11 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
       const width = doc.internal.pageSize.getWidth();
       const height = doc.internal.pageSize.getHeight();
 
-      // --- HACK PARA FUNDO DARK EM TODAS AS PÁGINAS ---
-      const paintBg = (data) => {
-        // Pinta o fundo apenas se for uma nova página (a primeira pintamos manualmente)
-        if (data.pageNumber > 1 && data.settings.margin.top === 15) { 
-            // O jspdf-autotable não facilita pintar antes, então usamos hooks
-        }
-      };
-
-      // Sobrescreve addPage para garantir o fundo
+      // Sobrescreve addPage para garantir fundo escuro em todas as páginas
       const originalAddPage = doc.addPage;
       doc.addPage = function() {
         const ret = originalAddPage.call(this);
-        this.setFillColor(15, 23, 42); 
+        this.setFillColor(15, 23, 42); // Slate 900
         this.rect(0, 0, width, height, 'F');
         return ret;
       };
@@ -112,8 +127,8 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
 
       let y = 15;
 
-      // Header
-      doc.setTextColor(34, 211, 238); 
+      // Cabeçalho
+      doc.setTextColor(34, 211, 238); // Cyan
       doc.setFontSize(22);
       doc.setFont("helvetica", "bold");
       doc.text("RELATÓRIO TÉCNICO", 15, y);
@@ -125,7 +140,7 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
 
       y += 15;
 
-      // Imagem
+      // Imagem do Mapa (Com traçado de ramificações)
       if (staticMapUrl) {
         try {
           const response = await fetch(staticMapUrl);
@@ -138,7 +153,8 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
           doc.rect(15, y, 180, 90);
           y += 95;
         } catch (e) {
-          y += 20;
+          console.error("Erro ao baixar mapa", e);
+          y += 20; // Pula espaço se falhar
         }
       }
 
@@ -152,16 +168,16 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
       
       doc.setFontSize(10);
       doc.setTextColor(34, 211, 238);
-      doc.text(`TOTAL: ${formatDist(stats.totalDistance)}`, 20, y + 18);
-      doc.text(`PONTOS: ${stats.totalPoints}`, 80, y + 18);
+      doc.text(`EXTENSÃO TOTAL: ${formatDist(stats.totalDistance)}`, 20, y + 18);
+      doc.text(`PONTOS: ${stats.totalPoints}`, 90, y + 18);
       doc.text(`BAIRRO: ${project.bairro || 'N/A'}`, 140, y + 18);
       
       y += 35;
 
-      // TABELA DE RESPONSABILIDADE
+      // Tabela de Equipe
       doc.setFontSize(11);
       doc.setTextColor(255, 255, 255);
-      doc.text("EQUIPE", 15, y);
+      doc.text("EQUIPE TÉCNICA", 15, y);
       y += 5;
 
       const teamData = Object.entries(stats.userResponsibility).map(([email, count]) => [email, count]);
@@ -178,7 +194,7 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
       
       y = doc.lastAutoTable.finalY + 15;
 
-      // --- TABELA DETALHADA ---
+      // Tabela Detalhada (Histórico Diário)
       doc.setFontSize(11);
       doc.setTextColor(255, 255, 255);
       doc.text("DETALHAMENTO DIÁRIO", 15, y);
@@ -186,9 +202,9 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
 
       const detailData = [];
       Object.entries(stats.groups).forEach(([date, data]) => {
-        // Cabeçalho do Dia (Como linha da tabela para não quebrar layout)
+        // Cabeçalho do Dia
         detailData.push([
-          { content: `${date} - ${formatDist(data.distance)}`, colSpan: 4, styles: { fillColor: [51, 65, 85], fontStyle: 'bold', textColor: [34, 211, 238], halign: 'left' } }
+          { content: `${date} - Produção: ${formatDist(data.distance)}`, colSpan: 4, styles: { fillColor: [51, 65, 85], fontStyle: 'bold', textColor: [34, 211, 238], halign: 'left' } }
         ]);
         
         // Pontos do dia
@@ -204,14 +220,13 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
 
       autoTable(doc, {
         startY: y,
-        head: [['#', 'HORA', 'COORDENADAS', 'USER']],
+        head: [['#', 'HORA', 'COORDENADAS', 'TÉCNICO']],
         body: detailData,
         theme: 'grid',
         headStyles: { fillColor: [15, 23, 42], textColor: [34, 211, 238], lineColor: [34, 211, 238] },
         bodyStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], lineColor: [51, 65, 85] },
-        alternateRowStyles: { fillColor: [39, 51, 71] }, // Contraste nas linhas
+        alternateRowStyles: { fillColor: [39, 51, 71] },
         margin: { left: 15, right: 15 },
-        // Força a cor do texto para garantir visibilidade
         styles: { textColor: [255, 255, 255] }
       });
 
@@ -245,7 +260,7 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
                 openWithDefault: false
             });
         } catch (openerError) {
-            alert(`Salvo. Erro ao abrir: ${openerError.message}`);
+            alert(`Salvo em Documentos. Erro ao abrir: ${openerError.message}`);
         }
       }
 
@@ -263,6 +278,7 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
         
         <div className="flex flex-col h-full bg-slate-950/95 backdrop-blur-xl border border-cyan-500/30 rounded-3xl overflow-hidden shadow-[0_0_50px_rgba(6,182,212,0.2)]">
           
+          {/* Header */}
           <div className="flex-none p-5 border-b border-white/5 bg-gradient-to-r from-slate-900 to-slate-800">
             <div className="flex justify-between items-start">
               <div>
@@ -281,8 +297,10 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
             </div>
           </div>
 
+          {/* Conteúdo Visual (Dashboard) */}
           <div className="flex-1 overflow-y-auto custom-scrollbar p-5 space-y-6">
             
+            {/* Preview do Mapa */}
             <div className="relative w-full aspect-[21/9] bg-slate-900 rounded-2xl overflow-hidden border border-white/10 shadow-lg group">
               {staticMapUrl ? (
                 <img src={staticMapUrl} className="w-full h-full object-cover opacity-80" alt="Mapa" />
@@ -291,6 +309,7 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
               )}
             </div>
 
+            {/* Cards de Métricas */}
             <div className="grid grid-cols-2 gap-3">
               <div className="bg-gradient-to-br from-slate-800/60 to-slate-900/60 p-4 rounded-2xl border border-cyan-500/20 backdrop-blur-md">
                 <MapPin className="text-cyan-400 mb-2 w-6 h-6" />
@@ -304,6 +323,7 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
               </div>
             </div>
 
+            {/* Lista Histórico */}
             <div className="space-y-4">
               <div className="flex items-center justify-between px-1">
                 <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
@@ -327,6 +347,22 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
                             <div className="text-sm font-bold text-cyan-400 font-mono">{formatDist(groupData.distance)}</div>
                             <div className="text-[10px] text-slate-500">{groupData.points.length} pontos</div>
                         </div>
+                    </div>
+                    {/* Barra de Progresso Visual */}
+                    <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden mb-3">
+                        <div 
+                            className="bg-gradient-to-r from-cyan-500 to-purple-500 h-full shadow-[0_0_10px_rgba(6,182,212,0.5)]" 
+                            style={{ width: `${Math.max(5, (groupData.points.length / stats.totalPoints) * 100)}%` }}
+                        ></div>
+                    </div>
+                    {/* Lista de Responsáveis */}
+                    <div className="flex flex-wrap gap-2">
+                        {Array.from(groupData.users).map(user => (
+                            <div key={user} className="flex items-center gap-1.5 bg-slate-950 border border-white/5 rounded-full px-2.5 py-1">
+                                <User size={10} className="text-purple-400" />
+                                <span className="text-[10px] text-slate-300 font-medium">{user}</span>
+                            </div>
+                        ))}
                     </div>
                   </div>
                 </div>

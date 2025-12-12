@@ -39,7 +39,7 @@ import {
   Trash2,
   Lock,
   Unlock,
-  AlertCircle
+  AlertCircle // ADICIONADO
 } from 'lucide-react'
 import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.jsx'
@@ -56,6 +56,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { supabase } from './lib/supabase'
 import electricPoleIcon from './assets/electric-pole.png';
 import Auth from './components/Auth'
+// Adicione junto aos outros imports
+import SpanSelector, { SPAN_COLORS } from './components/SpanSelector';
 import JSZip from 'jszip'
 import { Network } from '@capacitor/network'
 import { Preferences } from '@capacitor/preferences'
@@ -70,8 +72,8 @@ import ModernPopup from './components/ModernPopup'
 import ImportProgressPopup from './components/ImportProgressPopup'
 import MultipleSelectionPopup from './components/MultipleSelectionPopup'
 import BairroDetectionService from './components/BairroDetectionService'
-import ProjectLockService from './services/ProjectLockService'
-import SpanSelector, { SPAN_COLORS } from './components/SpanSelector'; // ADICIONADO
+import ProjectLockService from './services/ProjectLockService' // NOVO SERVIÇO
+import dbService from './services/dbService' // NOVO: Serviço de banco de dados local
 import 'mapbox-gl/dist/mapbox-gl.css'
 import './App.css'
 import ProjectReport from './components/ProjectReport';
@@ -95,6 +97,20 @@ const mapStyles = {
   dark: { name: 'Escuro', url: 'mapbox://styles/mapbox/dark-v10' },
   light: { name: 'Claro', url: 'mapbox://styles/mapbox/light-v10' },
   outdoors: { name: 'Ar Livre', url: 'mapbox://styles/mapbox/outdoors-v11' },
+};
+
+// Função para garantir lista única (remove duplicatas por ID)
+const deduplicateProjects = (projectsList) => {
+  const uniqueMap = new Map();
+  // Ordena: O mais recente (pela data de atualização) ganha
+  projectsList.sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
+  
+  projectsList.forEach(p => {
+    if (!uniqueMap.has(p.id)) {
+      uniqueMap.set(p.id, p);
+    }
+  });
+  return Array.from(uniqueMap.values());
 };
 
 // Função para gerar UUIDs
@@ -553,6 +569,8 @@ function App() {
   const [showBairroManager, setShowBairroManager] = useState(false)
   const [newBairro, setNewBairro] = useState('')
   const [routeCoordinates, setRouteCoordinates] = useState([])
+  // Estado para controlar o menu de vãos
+  const [spanSelectorInfo, setSpanSelectorInfo] = useState(null);
   const [calculatingRoute, setCalculatingRoute] = useState(false)
   const [isOnline, setIsOnline] = useState(true)
   const [syncPending, setSyncPending] = useState(false)
@@ -622,9 +640,6 @@ function App() {
   
   // NOVO: Estado para controle de lock
   const [projectLock, setProjectLock] = useState(null);
-
-  // ADICIONADO: Estado para seletor de vãos
-  const [spanSelectorInfo, setSpanSelectorInfo] = useState(null); // { x, y, targetPointId, currentSpans }
   
   const kalmanLatRef = useRef(new KalmanFilter(0.1, 0.1));
   const kalmanLngRef = useRef(new KalmanFilter(0.1, 0.1));
@@ -677,10 +692,8 @@ function App() {
         showFeedback("Erro", "Erro ao salvar foto na nuvem", "error");
       }
     } else {
-      // Salva localmente se offline
-      const allProjects = JSON.parse(localStorage.getItem('jamaaw_projects') || '[]');
-      const newAllProjects = allProjects.map(p => p.id === projectId ? updatedProject : p);
-      localStorage.setItem('jamaaw_projects', JSON.stringify(newAllProjects));
+      // Salva localmente usando dbService
+      await dbService.saveProject(updatedProject, isOnline ? 1 : 0);
       showFeedback("Salvo", "Foto salva localmente (Offline)", "warning");
     }
   };
@@ -716,91 +729,6 @@ function App() {
     }))
   }), [filteredMarkers]);
   
-  // ADICIONADO: Lógica para transformar pontos em Segmentos visuais
-  const segmentsGeoJSON = useMemo(() => {
-    const features = [];
-    const pointsToProcess = currentProject ? manualPoints : []; // Ou loadedProjects.points
-
-    pointsToProcess.forEach((point, index) => {
-      // Ignora o primeiro ponto (pois ele não tem "anterior")
-      // A menos que seja ramificação
-      let parent = null;
-      
-      if (point.connectedFrom) {
-        parent = pointsToProcess.find(p => p.id === point.connectedFrom);
-      } else if (index > 0) {
-        parent = pointsToProcess[index - 1];
-      }
-
-      if (parent) {
-        // Pega a qtd de vãos salva no ponto (ou 1 se não tiver)
-        const spans = point.spans || 1;
-        const color = SPAN_COLORS[spans] || SPAN_COLORS[1];
-
-        // Cria a linha (Segmento)
-        features.push({
-          type: 'Feature',
-          properties: {
-            type: 'segment',
-            targetPointId: point.id, // ID do ponto "destino" guarda a info do vão
-            spans: spans,
-            color: color
-          },
-          geometry: {
-            type: 'LineString',
-            coordinates: [[parent.lng, parent.lat], [point.lng, point.lat]]
-          }
-        });
-
-        // Cria o ponto médio para o Badge (Indicador)
-        const midLng = (parent.lng + point.lng) / 2;
-        const midLat = (parent.lat + point.lat) / 2;
-
-        features.push({
-          type: 'Feature',
-          properties: {
-            type: 'badge',
-            targetPointId: point.id, // ID para identificar qual linha editar
-            spans: spans,
-            label: `${spans}x`
-          },
-          geometry: {
-            type: 'Point',
-            coordinates: [midLng, midLat]
-          }
-        });
-      }
-    });
-
-    return { type: 'FeatureCollection', features };
-  }, [manualPoints, currentProject]); // Recalcula sempre que pontos mudam
-
-  // ADICIONADO: Função para calcular distância total com multiplicador
-  const calculateTotalDistanceWithMultiplier = (points) => {
-    if (points.length < 2) return 0;
-    let total = 0;
-
-    // Itera sobre todos os pontos (exceto o primeiro da lista principal)
-    points.forEach((point, index) => {
-      let parent = null;
-      if (point.connectedFrom) {
-        parent = points.find(p => p.id === point.connectedFrom);
-      } else if (index > 0) {
-        parent = points[index - 1];
-      }
-
-      if (parent) {
-        const linearDist = calculateDistance(parent.lat, parent.lng, point.lat, point.lng);
-        const spans = point.spans || 1; // Padrão é 1 se não tiver definido
-        
-        // Multiplica distância pela quantidade de vãos
-        total += (linearDist * spans);
-      }
-    });
-
-    return total;
-  };
-  
   // NOVO: Efeito para manter o lock ativo enquanto edita
   useEffect(() => {
     let interval;
@@ -818,46 +746,43 @@ function App() {
   
   // Dentro do componente App
   const loadProjectsFromSupabase = async () => {
-    if (!user) return [];
-    try {
+  if (!user) return [];
+  
+  try {
+    // 1. Carrega do Cache Local (Instantâneo)
+    const localRaw = localStorage.getItem('jamaaw_projects');
+    const localProjects = localRaw ? JSON.parse(localRaw) : [];
+    
+    // 2. Tenta carregar da Nuvem (Se tiver internet)
+    let cloudProjects = [];
+    if (isOnline) {
+      // Busca projetos onde sou dono
       const { data: myProjects, error: err1 } = await supabase
         .from('projetos')
         .select('*')
         .eq('user_id', user.id);
       
-      if (err1) throw err1;
+      if (!err1 && myProjects) cloudProjects = [...cloudProjects, ...myProjects];
       
-      const { data: memberData, error: err2 } = await supabase
-        .from('project_members')
-        .select('project_id')
-        .eq('user_id', user.id);
-      
-      if (err2) throw err2;
-      
-      let sharedProjects = [];
-      if (memberData && memberData.length > 0) {
-        const ids = memberData.map(m => m.project_id);
-        const { data: shared, error: err3 } = await supabase
-          .from('projetos')
-          .select('*')
-          .in('id', ids);
-        
-        if (err3) throw err3;
-        sharedProjects = shared;
-      }
-      
-      const allProjects = [...(myProjects || []), ...(sharedProjects || [])];
-      
-      allProjects.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
-      
-      localStorage.setItem('jamaaw_projects', JSON.stringify(allProjects));
-      return allProjects;
-      
-    } catch (error) {
-      console.error('Erro ao carregar projetos:', error);
-      return JSON.parse(localStorage.getItem('jamaaw_projects') || '[]');
+      // Se tiver lógica de membros compartilhados, adicione aqui (opcional)
     }
-  };
+    
+    // 3. Funde as duas listas e remove duplicatas
+    const mergedProjects = [...cloudProjects, ...localProjects];
+    const uniqueProjects = deduplicateProjects(mergedProjects);
+    
+    // 4. Atualiza o cache local com a lista limpa
+    localStorage.setItem('jamaaw_projects', JSON.stringify(uniqueProjects));
+    
+    return uniqueProjects;
+    
+  } catch (error) {
+    console.error('Erro ao carregar projetos:', error);
+    // Fallback: retorna o que tem no local storage
+    const saved = localStorage.getItem('jamaaw_projects');
+    return saved ? JSON.parse(saved) : [];
+  }
+};
   
   const refreshProjectNeighborhoods = async () => {
     if (!projects || projects.length === 0) return;
@@ -901,7 +826,10 @@ function App() {
     
     if (hasUpdates) {
       setProjects(updatedProjectsList);
-      localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjectsList));
+      // Atualizar localmente usando dbService
+      for (const project of updatedProjectsList) {
+        await dbService.saveProject(project, isOnline ? 1 : 0);
+      }
       console.log('Lista de projetos atualizada com novos bairros.');
     }
   };
@@ -910,7 +838,7 @@ function App() {
   // Efeito de Realtime OTIMIZADO (Filtra apenas o projeto atual)
 useEffect(() => {
   // Só conecta se tiver um projeto carregado
-  if (!currentProject || !isOnline) return;
+  if (!currentProject?.id || !isOnline) return;
   
   console.log(`📡 Conectando Realtime para projeto: ${currentProject.id}`);
   
@@ -989,7 +917,11 @@ useEffect(() => {
       
       const updatedProjects = projects.filter(p => !deletedIds.includes(p.id));
       setProjects(updatedProjects);
-      localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
+      
+      // Atualizar no dbService
+      for (const projectId of deletedIds) {
+        await dbService.deleteProject(projectId);
+      }
       
       setLoadedProjects(prev => prev.filter(p => !deletedIds.includes(p.id)));
       
@@ -1054,8 +986,6 @@ useEffect(() => {
       
       localStorage.removeItem('supabase.auth.token');
       sessionStorage.removeItem('supabase.auth.token');
-      localStorage.removeItem('jamaaw_projects');
-      localStorage.removeItem('jamaaw_bairros');
       
       if (user) {
         localStorage.removeItem(`jamaaw_favorites_${user.id}`);
@@ -1247,7 +1177,8 @@ useEffect(() => {
           updatedProjects = [...projects, project];
         }
         setProjects(updatedProjects);
-        localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
+        // Salvar no dbService local
+        await dbService.saveProject(project, isOnline ? 1 : 0);
       }
       
       updateImportProgress(100, 5, 'Importação concluída!');
@@ -1372,7 +1303,9 @@ useEffect(() => {
           p.id === editingProject.id ? savedProject : p
         );
         setProjects(updatedProjects);
-        localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
+        
+        // Salvar no dbService local
+        await dbService.saveProject(savedProject, isOnline ? 1 : 0);
         
         setLoadedProjects(prev => {
           const exists = prev.find(p => p.id === savedProject.id);
@@ -1418,7 +1351,9 @@ useEffect(() => {
           p.id === currentProject.id ? savedProject : p
         );
         setProjects(updatedProjects);
-        localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
+        
+        // Salvar no dbService local
+        await dbService.saveProject(savedProject, isOnline ? 1 : 0);
         
         setLoadedProjects(prev => {
           const exists = prev.find(p => p.id === savedProject.id);
@@ -1455,7 +1390,9 @@ useEffect(() => {
         
         const updatedProjects = [...projects, savedProject];
         setProjects(updatedProjects);
-        localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
+        
+        // Salvar no dbService local
+        await dbService.saveProject(savedProject, isOnline ? 1 : 0);
       }
       
       // Se for salvamento manual (não autoSave), libera o lock
@@ -1517,7 +1454,7 @@ if (!autoSave) {
           // Se não conseguir o lock, verifica quem está usando
           const status = await ProjectLockService.checkLockStatus(project.id, user.id);
           if (status.isLocked) {
-            showFeedback('Projeto Travado', `Este projeto está sendo editado por ${status.lockedBy}. Modo leitura ativado.', 'error');
+            showFeedback('Projeto Travado', `Este projeto está sendo editado por ${status.lockedBy}. Modo leitura ativado.`, 'error');
             // Impede a edição e retorna
             return;
           }
@@ -1534,7 +1471,7 @@ if (!autoSave) {
         const lastPoint = project.points[project.points.length - 1];
         setSelectedStartPoint(lastPoint);
         
-        showFeedback('Conectado', 'Rastreamento continuado a partir do Ponto' + ${project.points.length}`, 'success');
+        showFeedback('Conectado', `Rastreamento continuado a partir do Ponto ${project.points.length}`, 'success');
       }
     }
     // 3. Novo Projeto (Do zero)
@@ -1730,6 +1667,9 @@ if (!autoSave) {
   useEffect(() => {
     const checkAuth = async () => {
       try {
+        // Inicializar o dbService
+        await dbService.init();
+
         const clearStoredTokens = () => {
           try {
             localStorage.removeItem('supabase.auth.token')
@@ -1855,11 +1795,8 @@ if (!autoSave) {
     if (!user || !isOnline) return;
     
     try {
-      const savedProjects = localStorage.getItem('jamaaw_projects');
-      if (!savedProjects) return;
-      
-      const projects = JSON.parse(savedProjects);
-      const offlineProjects = projects.filter(p => p.id && p.id.toString().startsWith('offline_'));
+      // Buscar projetos offline do dbService
+      const offlineProjects = await dbService.getProjects(user.id, 0);
       
       for (const project of offlineProjects) {
         try {
@@ -1877,11 +1814,12 @@ if (!autoSave) {
           
           if (error) throw error;
           
-          const updatedProjects = projects.map(p =>
-            p.id === project.id ? data[0] : p
-          );
-          localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
-          setProjects(updatedProjects);
+          // Atualizar o projeto no dbService para status online (1) e com o novo id
+          const updatedProject = { ...project, id: data[0].id };
+          await dbService.saveProject(updatedProject, 1);
+          
+          // Remover a versão offline
+          await dbService.deleteProject(project.id);
           
           console.log('Projeto offline sincronizado:', project.name);
           
@@ -1889,6 +1827,11 @@ if (!autoSave) {
           console.error('Erro ao sincronizar projeto offline:', projectError);
         }
       }
+      
+      // Recarregar a lista de projetos
+      const updatedList = await loadProjectsFromSupabase();
+      setProjects(updatedList);
+      
     } catch (error) {
       console.error('Erro na sincronização offline:', error);
     }
@@ -1907,20 +1850,14 @@ if (!autoSave) {
               loadedProjects = data || [];
               console.log('Projetos carregados:', loadedProjects.length);
               
-              localStorage.setItem('jamaaw_projects', JSON.stringify(loadedProjects));
-              
             } catch (supabaseError) {
               console.error('Erro ao carregar do Supabase:', supabaseError);
-              const savedProjects = localStorage.getItem('jamaaw_projects');
-              if (savedProjects) {
-                loadedProjects = JSON.parse(savedProjects).filter(isValidProject);
-              }
+              // Carregar do dbService local
+              loadedProjects = await dbService.getProjects(user.id) || [];
             }
           } else {
-            const savedProjects = localStorage.getItem('jamaaw_projects');
-            if (savedProjects) {
-              loadedProjects = JSON.parse(savedProjects).filter(isValidProject);
-            }
+            // Carregar do dbService local
+            loadedProjects = await dbService.getProjects(user.id) || [];
           }
         }
         
@@ -1942,18 +1879,24 @@ if (!autoSave) {
   }, [isOnline, user]);
   
   useEffect(() => {
-    const savedBairros = localStorage.getItem('jamaaw_bairros')
-    if (savedBairros) {
-      setBairros(JSON.parse(savedBairros))
-    }
+    const loadBairros = async () => {
+      const savedBairros = await dbService.getBairros();
+      if (savedBairros) {
+        setBairros(savedBairros);
+      }
+    };
+    loadBairros();
   }, [])
   
   useEffect(() => {
     if (user) {
-      const savedFavorites = localStorage.getItem(`jamaaw_favorites_${user.id}`)
-      if (savedFavorites) {
-        setFavorites(JSON.parse(savedFavorites))
-      }
+      const loadFavorites = async () => {
+        const savedFavorites = await dbService.getFavorites(user.id);
+        if (savedFavorites) {
+          setFavorites(savedFavorites);
+        }
+      };
+      loadFavorites();
     }
   }, [user])
   
@@ -2022,43 +1965,43 @@ if (!autoSave) {
     }
   }, [tracking, paused])
   
-  const saveBairros = (newBairros) => {
-    setBairros(newBairros)
-    localStorage.setItem('jamaaw_bairros', JSON.stringify(newBairros))
+  const saveBairros = async (newBairros) => {
+    setBairros(newBairros);
+    await dbService.saveBairros(newBairros);
   }
   
-  const handleAddBairro = () => {
+  const handleAddBairro = async () => {
     if (newBairro.trim() && !bairros.includes(newBairro.trim())) {
-      const updatedBairros = [...bairros, newBairro.trim()]
-      saveBairros(updatedBairros)
-      setNewBairro('')
-      setShowAddBairro(false)
-      setShowBairroManager(false)
+      const updatedBairros = [...bairros, newBairro.trim()];
+      await saveBairros(updatedBairros);
+      setNewBairro('');
+      setShowAddBairro(false);
+      setShowBairroManager(false);
     }
   }
   
-  const handleRemoveBairro = (bairro) => {
+  const handleRemoveBairro = async (bairro) => {
     if (DEFAULT_BAIRROS.includes(bairro)) {
       showFeedback('Erro', 'Não é possível remover bairros padrão.', 'error');
-      return
+      return;
     }
     if (confirm(`Deseja remover o bairro "${bairro}"?`)) {
-      const updatedBairros = bairros.filter(b => b !== bairro)
-      saveBairros(updatedBairros)
+      const updatedBairros = bairros.filter(b => b !== bairro);
+      await saveBairros(updatedBairros);
       if (selectedBairro === bairro) {
-        setSelectedBairro('todos')
+        setSelectedBairro('todos');
       }
     }
   }
   
-  const toggleFavorite = (markerId) => {
+  const toggleFavorite = async (markerId) => {
     const newFavorites = favorites.includes(markerId) ?
       favorites.filter(id => id !== markerId) :
-      [...favorites, markerId]
+      [...favorites, markerId];
     
-    setFavorites(newFavorites)
+    setFavorites(newFavorites);
     if (user) {
-      localStorage.setItem(`jamaaw_favorites_${user.id}`, JSON.stringify(newFavorites))
+      await dbService.saveFavorites(user.id, newFavorites);
     }
   }
   
@@ -2462,6 +2405,106 @@ if (!autoSave) {
     })
   }
   
+  // --- LÓGICA DE CÁLCULO COM MULTIPLICADOR ---
+  const calculateTotalDistanceWithMultiplier = (points) => {
+    if (!points || points.length < 2) return 0;
+    let total = 0;
+
+    points.forEach((point, index) => {
+      let parent = null;
+      if (point.connectedFrom) {
+        parent = points.find(p => p.id === point.connectedFrom);
+      } else if (index > 0) {
+        parent = points[index - 1];
+      }
+
+      if (parent) {
+        const linearDist = calculateDistance(parent.lat, parent.lng, point.lat, point.lng);
+        // Se tiver spans definido usa, senão usa 1
+        const spans = point.spans || 1; 
+        total += (linearDist * spans);
+      }
+    });
+
+    return total;
+  };
+
+  // --- ATUALIZAR VÃOS ---
+  const handleSpanChange = (count) => {
+    if (!spanSelectorInfo) return;
+
+    const updatedPoints = manualPoints.map(p => {
+      if (p.id === spanSelectorInfo.targetPointId) {
+        return { ...p, spans: count };
+      }
+      return p;
+    });
+
+    setManualPoints(updatedPoints);
+    
+    // Atualiza distância total
+    const newTotal = calculateTotalDistanceWithMultiplier(updatedPoints);
+    setTotalDistance(newTotal);
+
+    setSpanSelectorInfo(null);
+  };
+
+  // --- GEOJSON DE SEGMENTOS (MEMOIZADO PARA PERFORMANCE) ---
+  const segmentsGeoJSON = useMemo(() => {
+    const features = [];
+    // Processa apenas se tivermos pontos manuais
+    if (manualPoints.length > 0) {
+      manualPoints.forEach((point, index) => {
+        let parent = null;
+        if (point.connectedFrom) {
+          parent = manualPoints.find(p => p.id === point.connectedFrom);
+        } else if (index > 0) {
+          parent = manualPoints[index - 1];
+        }
+
+        if (parent) {
+          const spans = point.spans || 1;
+          const color = SPAN_COLORS[spans];
+
+          // 1. A Linha
+          features.push({
+            type: 'Feature',
+            properties: {
+              type: 'segment',
+              targetPointId: point.id,
+              spans: spans,
+              color: color
+            },
+            geometry: {
+              type: 'LineString',
+              coordinates: [[parent.lng, parent.lat], [point.lng, point.lat]]
+            }
+          });
+
+          // 2. O Badge (Bolinha com número) no meio
+          const midLng = (parent.lng + point.lng) / 2;
+          const midLat = (parent.lat + point.lat) / 2;
+
+          features.push({
+            type: 'Feature',
+            properties: {
+              type: 'badge',
+              targetPointId: point.id,
+              spans: spans,
+              label: `${spans}x`,
+              color: color
+            },
+            geometry: {
+              type: 'Point',
+              coordinates: [midLng, midLat]
+            }
+          });
+        }
+      });
+    }
+    return { type: 'FeatureCollection', features };
+  }, [manualPoints]);
+  
   const downloadKML = async (kmlContent, filename) => {
   try {
     console.log('Iniciando download...', filename);
@@ -2828,7 +2871,7 @@ if (!autoSave) {
   }
   
   const handleShareLocation = (marker) => {
-    const url = `https://www.google.com/maps?q=${marker.lat},${marker.lng}`
+    const url = `https://www.google.com/maps?q=${marker.lat},${marker.lng}`;
     if (navigator.share) {
       navigator.share({
         title: marker.name,
@@ -2876,6 +2919,7 @@ if (!autoSave) {
     user_id: user.id,
     user_email: user.email
   }
+  spans: 1,
   
   setManualPoints(prev => {
     const updatedPoints = [...prev, newPoint]
@@ -2929,27 +2973,6 @@ if (!autoSave) {
   
   const toggleSnapping = () => {
     setSnappingEnabled(!snappingEnabled);
-  };
-  
-  // ADICIONADO: Função para alterar quantidade de vãos
-  const handleSpanChange = (count) => {
-    if (!spanSelectorInfo) return;
-
-    // Atualiza o array de pontos
-    const updatedPoints = manualPoints.map(p => {
-      if (p.id === spanSelectorInfo.targetPointId) {
-        return { ...p, spans: count }; // Salva a qtd de vãos no ponto
-      }
-      return p;
-    });
-
-    setManualPoints(updatedPoints);
-    
-    // Recalcula distância total (Considerando multiplicador)
-    const newTotal = calculateTotalDistanceWithMultiplier(updatedPoints);
-    setTotalDistance(newTotal);
-
-    setSpanSelectorInfo(null); // Fecha o seletor
   };
   
   // ATUALIZADA: Função stopTracking com sistema de lock
@@ -3029,7 +3052,9 @@ if (!autoSave) {
       
       const updatedProjects = projects.filter(p => p.id !== projectId);
       setProjects(updatedProjects);
-      localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
+      
+      // Deletar do dbService
+      await dbService.deleteProject(projectId);
       
       if (currentProject && currentProject.id === projectId) {
         setCurrentProject(null);
@@ -3242,34 +3267,30 @@ if (!autoSave) {
           cursor={tracking && trackingInputMode === 'touch' && !paused ? 'crosshair' : 'auto'}
           preserveDrawingBuffer={true}
           onClick={async (e) => {
-            // NOVO: Detectar clique no segmento ou no badge
-            const segmentFeatures = e.target.queryRenderedFeatures(e.point, {
-              layers: ['segment-hit-area', 'segment-badge-circle', 'segment-badge-text'] // Camadas clicáveis
+            const features = e.target.queryRenderedFeatures(e.point, {
+              layers: ['markers-hit-area', 'markers-layer']
             });
+            
+            if (tracking && !paused) {
+                const segmentFeatures = e.target.queryRenderedFeatures(e.point, {
+                  layers: ['segment-hit-area', 'segment-badge-bg'] // Camadas clicáveis
+                });
 
-            if (segmentFeatures.length > 0) {
-              const feature = segmentFeatures[0];
-              const pointId = feature.properties.targetPointId;
-              const currentSpans = feature.properties.spans;
-
-              // Abre o seletor na posição do clique
-              setSpanSelectorInfo({
-                x: e.point.x,
-                y: e.point.y,
-                targetPointId: pointId,
-                currentSpans: currentSpans
-              });
-              
-              // Impede de criar um ponto novo embaixo
-              return; 
+                if (segmentFeatures.length > 0) {
+                  const feature = segmentFeatures[0];
+                  // Abre o seletor
+                  setSpanSelectorInfo({
+                    x: e.point.x,
+                    y: e.point.y,
+                    targetPointId: feature.properties.targetPointId,
+                    currentSpans: feature.properties.spans
+                  });
+                  return; // Para aqui, não cria ponto novo
+                }
             }
             
             // Fecha seletor se clicar fora
             setSpanSelectorInfo(null);
-
-            const features = e.target.queryRenderedFeatures(e.point, {
-              layers: ['markers-hit-area', 'markers-layer']
-            });
 
             if (features.length > 0) {
               const feature = features[0];
@@ -3333,64 +3354,6 @@ if (!autoSave) {
                 'circle-radius': 20,
                 'circle-color': 'transparent',
                 'circle-opacity': 0
-              }}
-            />
-          </Source>
-
-          {/* ADICIONADO: CAMADA DE SEGMENTOS (TRAÇADO INTELIGENTE) */}
-          <Source id="segments-source" type="geojson" data={segmentsGeoJSON}>
-            {/* 1. Área de Clique (Linha grossa transparente para facilitar o toque) */}
-            <Layer
-              id="segment-hit-area"
-              type="line"
-              paint={{
-                'line-width': 20, // Área gorda para clicar fácil
-                'line-opacity': 0
-              }}
-            />
-
-            {/* 2. A Linha Visual */}
-            <Layer
-              id="segment-line"
-              type="line"
-              paint={{
-                'line-color': ['get', 'color'], // Cor dinâmica baseada no vão
-                'line-width': 4,
-                'line-opacity': 0.9,
-                'line-cap': 'round'
-              }}
-            />
-
-            {/* 3. O Badge (Bolinha no meio) */}
-            <Layer
-              id="segment-badge-circle"
-              type="circle"
-              filter={['==', 'type', 'badge']}
-              paint={{
-                'circle-color': '#0f172a', // Slate 900
-                'circle-radius': 10,
-                'circle-stroke-width': 2,
-                'circle-stroke-color': ['case', 
-                  ['==', ['get', 'spans'], 1], '#3b82f6',
-                  ['==', ['get', 'spans'], 2], '#10b981',
-                  ['==', ['get', 'spans'], 3], '#f59e0b',
-                  '#8b5cf6'
-                ]
-              }}
-            />
-
-            {/* 4. O Texto do Badge (2x, 3x) */}
-            <Layer
-              id="segment-badge-text"
-              type="symbol"
-              filter={['==', 'type', 'badge']}
-              layout={{
-                'text-field': ['get', 'label'],
-                'text-size': 10,
-                'text-font': ['DIN Offc Pro Bold', 'Arial Unicode MS Bold'],
-              }}
-              paint={{
-                'text-color': '#ffffff'
               }}
             />
           </Source>
@@ -3466,53 +3429,61 @@ if (!autoSave) {
   </React.Fragment>
 ))}
 
+          {/* --- NOVA CAMADA DE TRAÇADO COM VÃOS --- */}
           {manualPoints.length > 0 && (
-            <Source 
-              id="manual-route" 
-              type="geojson" 
-              data={{
-                type: 'FeatureCollection',
-                features: manualPoints.map((point, index) => {
-                  if (point.connectedFrom) {
-                    const parent = manualPoints.find(p => p.id === point.connectedFrom);
-                    if (parent) {
-                      return {
-                        type: 'Feature',
-                        geometry: {
-                          type: 'LineString',
-                          coordinates: [
-                            [parent.lng, parent.lat],
-                            [point.lng, point.lat]
-                          ]
-                        }
-                      };
-                    }
-                  }
-                  else if (index > 0) {
-                    const prev = manualPoints[index - 1];
-                    return {
-                      type: 'Feature',
-                      geometry: {
-                        type: 'LineString',
-                        coordinates: [
-                          [prev.lng, prev.lat],
-                          [point.lng, point.lat]
-                        ]
-                      }
-                    };
-                  }
-                  return null;
-                }).filter(Boolean)
-              }}
-            >
+            <Source id="segments-source" type="geojson" data={segmentsGeoJSON}>
+              
+              {/* 1. Área de Clique Invisível (Mais grossa para facilitar toque) */}
               <Layer
+                id="segment-hit-area"
                 type="line"
                 paint={{
-                  'line-color': '#1e3a8a',
+                  'line-width': 20,
+                  'line-opacity': 0
+                }}
+              />
+
+              {/* 2. A Linha Visível Colorida */}
+              <Layer
+                id="segment-line"
+                type="line"
+                layout={{
+                  'line-join': 'round',
+                  'line-cap': 'round'
+                }}
+                paint={{
+                  'line-color': ['get', 'color'],
                   'line-width': 4,
-                  'line-opacity': 0.8,
-                  'line-cap': 'round',
-                  'line-join': 'round'
+                  'line-opacity': 0.9
+                }}
+              />
+
+              {/* 3. Círculo do Badge */}
+              <Layer
+                id="segment-badge-bg"
+                type="circle"
+                filter={['==', 'type', 'badge']}
+                paint={{
+                  'circle-radius': 8,
+                  'circle-color': '#0f172a',
+                  'circle-stroke-width': 2,
+                  'circle-stroke-color': ['get', 'color']
+                }}
+              />
+
+              {/* 4. Texto do Badge (Ex: 2x) */}
+              <Layer
+                id="segment-badge-text"
+                type="symbol"
+                filter={['==', 'type', 'badge']}
+                layout={{
+                  'text-field': ['get', 'label'],
+                  'text-size': 10,
+                  'text-font': ['DIN Offc Pro Bold', 'Arial Unicode MS Bold'],
+                  'text-allow-overlap': true
+                }}
+                paint={{
+                  'text-color': '#ffffff'
                 }}
               />
             </Source>
@@ -3676,20 +3647,6 @@ if (!autoSave) {
           )}
         </Map>
       </div>
-
-      {/* ADICIONADO: SELETOR DE VÃOS (Renderizado condicionalmente) */}
-      {spanSelectorInfo && (
-        <SpanSelector
-          currentSpans={spanSelectorInfo.currentSpans}
-          onSelect={handleSpanChange}
-          onClose={() => setSpanSelectorInfo(null)}
-          style={{
-            // Posiciona exatamente onde clicou, mas ajusta para não sair da tela (simples)
-            left: Math.min(spanSelectorInfo.x - 90, window.innerWidth - 200), 
-            top: spanSelectorInfo.y - 80 
-          }}
-        />
-      )}
 
       <div className="absolute top-4 left-4 right-4 z-10 flex items-center gap-2">
         <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
@@ -4421,11 +4378,23 @@ if (!autoSave) {
         onChange={handleProjectImport}
         className="hidden"
       />
+      
+      {/* SELETOR DE VÃOS FLUTUANTE */}
+      {spanSelectorInfo && (
+        <SpanSelector
+          currentSpans={spanSelectorInfo.currentSpans}
+          onSelect={handleSpanChange}
+          onClose={() => setSpanSelectorInfo(null)}
+          style={{
+            // Posiciona perto do clique, mas garante que não saia da tela
+            left: Math.min(spanSelectorInfo.x - 80, window.innerWidth - 170),
+            top: spanSelectorInfo.y - 60 
+          }}
+        />
+      )}
 
     </div>
   )
 }
 
-
 export default App
-}}
