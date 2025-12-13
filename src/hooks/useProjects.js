@@ -1,6 +1,5 @@
 import { useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
-import { dbService } from '../services/dbService'; // Ajuste o import conforme seu arquivo real
 
 // Helper para remover duplicatas
 const deduplicateProjects = (projectsList) => {
