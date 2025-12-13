@@ -1823,51 +1823,23 @@ function App() {
   };
   
   // Adicione esta função dentro do componente App, junto com deleteProject, etc.
-  const handleRenameProject = async (projectId, newName) => {
-    if (!newName.trim()) return;
-
-    // 1. Atualização Otimista (UI instantânea)
-    const updatedProjects = projects.map(p => 
-      p.id === projectId ? { ...p, name: newName, updated_at: new Date().toISOString() } : p
-    );
-    setProjects(updatedProjects);
-
-    // Atualiza se for o projeto atual
-    if (currentProject && currentProject.id === projectId) {
-      setCurrentProject(prev => ({ ...prev, name: newName }));
-      setProjectName(newName);
-    }
-    
-    // Atualiza projetos carregados (visualização)
-    setLoadedProjects(prev => prev.map(p => 
-      p.id === projectId ? { ...p, name: newName } : p
-    ));
-
-    try {
-      if (isOnline && user && !projectId.toString().startsWith('offline_')) {
-        // 2. Salva no Supabase
-        const { error } = await supabase
-          .from('projetos')
-          .update({ name: newName, updated_at: new Date().toISOString() })
-          .eq('id', projectId);
-
-        if (error) throw error;
-        showFeedback('Sucesso', 'Projeto renomeado na nuvem', 'success');
-      } else {
-        // 3. Salva Localmente (Offline)
-        const userProjects = storage.loadProjects(user?.id);
-        const updatedLocal = userProjects.map(p => 
-          p.id === projectId ? { ...p, name: newName, updated_at: new Date().toISOString() } : p
-        );
-        storage.saveProjects(user?.id, updatedLocal);
-        showFeedback('Salvo', 'Projeto renomeado localmente', 'success');
-      }
-    } catch (error) {
-      console.error("Erro ao renomear:", error);
-      showFeedback('Erro', 'Falha ao salvar o novo nome', 'error');
-      // Reverteria o estado aqui se fosse crítico, mas para nomes não costuma ser necessário
-    }
-  };
+  // Dentro do App.jsx (Substituindo a função antiga gigante)
+const handleRenameProject = async (projectId, newName) => {
+  // 1. Chama a lógica do hook (que lida com Supabase e LocalStorage)
+  await renameProject(projectId, newName);
+  
+  // 2. Atualiza apenas os estados visuais específicos do App.jsx que o hook não conhece
+  if (currentProject && currentProject.id === projectId) {
+    setCurrentProject(prev => ({ ...prev, name: newName }));
+    setProjectName(newName);
+  }
+  
+  setLoadedProjects(prev => prev.map(p =>
+    p.id === projectId ? { ...p, name: newName } : p
+  ));
+  
+  showFeedback('Sucesso', 'Projeto renomeado', 'success');
+};
   
   const deleteProjectFromSupabase = async (projectId) => {
     if (!user) return false;
