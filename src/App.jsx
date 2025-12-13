@@ -1820,6 +1820,53 @@ function App() {
     }
   };
   
+  // Adicione esta função dentro do componente App, junto com deleteProject, etc.
+  const handleRenameProject = async (projectId, newName) => {
+    if (!newName.trim()) return;
+
+    // 1. Atualização Otimista (UI instantânea)
+    const updatedProjects = projects.map(p => 
+      p.id === projectId ? { ...p, name: newName, updated_at: new Date().toISOString() } : p
+    );
+    setProjects(updatedProjects);
+
+    // Atualiza se for o projeto atual
+    if (currentProject && currentProject.id === projectId) {
+      setCurrentProject(prev => ({ ...prev, name: newName }));
+      setProjectName(newName);
+    }
+    
+    // Atualiza projetos carregados (visualização)
+    setLoadedProjects(prev => prev.map(p => 
+      p.id === projectId ? { ...p, name: newName } : p
+    ));
+
+    try {
+      if (isOnline && user && !projectId.toString().startsWith('offline_')) {
+        // 2. Salva no Supabase
+        const { error } = await supabase
+          .from('projetos')
+          .update({ name: newName, updated_at: new Date().toISOString() })
+          .eq('id', projectId);
+
+        if (error) throw error;
+        showFeedback('Sucesso', 'Projeto renomeado na nuvem', 'success');
+      } else {
+        // 3. Salva Localmente (Offline)
+        const userProjects = storage.loadProjects(user?.id);
+        const updatedLocal = userProjects.map(p => 
+          p.id === projectId ? { ...p, name: newName, updated_at: new Date().toISOString() } : p
+        );
+        storage.saveProjects(user?.id, updatedLocal);
+        showFeedback('Salvo', 'Projeto renomeado localmente', 'success');
+      }
+    } catch (error) {
+      console.error("Erro ao renomear:", error);
+      showFeedback('Erro', 'Falha ao salvar o novo nome', 'error');
+      // Reverteria o estado aqui se fosse crítico, mas para nomes não costuma ser necessário
+    }
+  };
+  
   const deleteProjectFromSupabase = async (projectId) => {
     if (!user) return false;
     
@@ -3783,27 +3830,24 @@ function App() {
       )}
 
       <ProjectManager
-        isOpen={showProjectsList}
-        onClose={() => setShowProjectsList(false)}
-        projects={projects}
-        currentUserId={user?.id}
-        onLoadProject={(p) => {
-          loadProject(p);
-          setShowProjectsList(false);
-        }}
-        // ... outras props ...
+  isOpen={showProjectsList}
+  onClose={() => setShowProjectsList(false)}
   projects={projects}
-  onDeleteProject={deleteProject} // Agora usa a do hook
-  onRenameProject={renameProject} // <--- Conecta a nova função
-        onDeleteProject={deleteProject}
-        onExportProject={exportProjectAsKML}
-        onJoinProject={handleJoinProject}
-        onOpenReport={(project) => {
-          const img = getMapImage();
-          setReportData({ project, image: img });
-          setShowProjectsList(false);
-        }}
-      />
+  currentUserId={user?.id}
+  onLoadProject={(p) => {
+    loadProject(p);
+    setShowProjectsList(false);
+  }}
+  onDeleteProject={deleteProject} // Supondo que você já tenha essa função
+  onExportProject={exportProjectAsKML}
+  onJoinProject={handleJoinProject}
+  onRenameProject={handleRenameProject} // <--- ADICIONE ESTA LINHA
+  onOpenReport={(project) => {
+    const img = getMapImage();
+    setReportData({ project, image: img });
+    setShowProjectsList(false);
+  }}
+/>
 
       <LoadedProjectsManager
         isOpen={showLoadedProjects}

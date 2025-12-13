@@ -13,7 +13,6 @@ import {
   DialogDescription,
   DialogFooter
 } from '@/components/ui/dialog';
-import ProjectReport from './ProjectReport';
 
 const ProjectManager = ({ 
   isOpen, 
@@ -24,7 +23,7 @@ const ProjectManager = ({
   onDeleteProject, 
   onExportProject,
   onJoinProject,
-  onRenameProject, // <--- NOVA PROP
+  onRenameProject, // <--- NOVA PROP RECEBIDA DO APP.JSX
   onOpenReport 
 }) => {
   const [activeTab, setActiveTab] = useState('mine');
@@ -32,7 +31,7 @@ const ProjectManager = ({
   const [copiedId, setCopiedId] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   
-  // Estado para renomear
+  // Estado para controlar o Dialog de Renomear
   const [renameData, setRenameData] = useState(null); // { id: string, name: string }
 
   const myProjects = projects.filter(p => p.user_id === currentUserId);
@@ -65,7 +64,7 @@ const ProjectManager = ({
         {/* Header do Card */}
         <div className="flex justify-between items-start relative z-10 gap-3">
           
-          {/* Ícone e Texto (Área Flexível que encolhe) */}
+          {/* LADO ESQUERDO: Ícone + Textos (Com flex-1 e min-w-0 para permitir truncate) */}
           <div className="flex gap-3 items-center flex-1 min-w-0">
             <div className="w-10 h-10 flex-shrink-0 icon-glow-container">
               <div className={`icon-glow-bg ${glowColor}`}></div>
@@ -74,16 +73,20 @@ const ProjectManager = ({
               </div>
             </div>
 
-            <div className="flex-1 min-w-0"> {/* min-w-0 é CRUCIAL para o truncate funcionar no Flex */}
+            <div className="flex-1 min-w-0 pr-1"> 
               <div className="flex items-center gap-2">
                 <h3 className="text-sm font-bold text-white truncate" title={project.name}>
                   {project.name}
                 </h3>
-                {/* Botão de Editar Nome (Pequeno e discreto ao lado do nome) */}
+                {/* Botão de Editar Nome (Só aparece no hover ou se for mobile) */}
                 {isMine && (
                   <button 
-                    onClick={(e) => { e.stopPropagation(); setRenameData({ id: project.id, name: project.name }); }}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-500 hover:text-cyan-400 p-1"
+                    onClick={(e) => { 
+                      e.stopPropagation(); 
+                      setRenameData({ id: project.id, name: project.name }); 
+                    }}
+                    className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-slate-500 hover:text-cyan-400 p-1"
+                    title="Renomear projeto"
                   >
                     <Edit3 size={12} />
                   </button>
@@ -101,7 +104,7 @@ const ProjectManager = ({
             </div>
           </div>
 
-          {/* Botão Copiar ID (Fixo, não esmaga) */}
+          {/* LADO DIREITO: Botão Copiar ID (Com flex-shrink-0 para nunca sumir) */}
           <button 
             onClick={(e) => handleCopyId(e, project.id)}
             className="flex-shrink-0 p-2 rounded-full hover:bg-white/10 text-slate-600 hover:text-white transition-colors active:bg-cyan-500/20"
@@ -148,6 +151,7 @@ const ProjectManager = ({
         <DialogContent className="fixed z-[10000] left-[50%] top-[50%] translate-x-[-50%] translate-y-[-50%] w-[95vw] max-w-md h-[85vh] p-0 border-none bg-transparent shadow-none outline-none [&>button]:hidden">
           <div className="flex flex-col h-full liquid-glass rounded-[32px] overflow-hidden relative shadow-2xl">
             
+            {/* Header Fixo */}
             <div className="flex-none p-5 pb-2 bg-gradient-to-b from-white/5 to-transparent">
               <DialogHeader className="flex flex-row items-center justify-between mb-4 space-y-0 text-left">
                 <DialogTitle className="text-xl font-bold text-white tracking-tight">Meus Projetos</DialogTitle>
@@ -170,16 +174,13 @@ const ProjectManager = ({
               </div>
             </div>
 
-            {activeTab === 'shared' && (
-              <div className="px-5 pb-2 animate-in slide-in-from-top-2 flex gap-2">
-                <input value={joinId} onChange={(e) => setJoinId(e.target.value)} placeholder="ID do projeto..." className="flex-1 bg-purple-900/10 border border-purple-500/20 rounded-xl px-4 py-2 text-sm text-white focus:border-purple-500/50 outline-none" />
-                <Button size="icon" onClick={() => { if(joinId) onJoinProject(joinId); }} className="rounded-xl bg-purple-600 hover:bg-purple-500 text-white w-10 h-10 shadow-lg"><Plus size={20} /></Button>
-              </div>
-            )}
-
+            {/* Lista com Scroll */}
             <div className="flex-1 overflow-y-auto px-5 py-2 custom-scrollbar space-y-1 pb-20">
               {displayedProjects.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-48 text-slate-500"><FolderOpen size={32} className="opacity-20 mb-2" /><p className="text-sm font-medium opacity-50">Nenhum projeto</p></div>
+                <div className="flex flex-col items-center justify-center h-48 text-slate-500">
+                  <FolderOpen size={32} className="opacity-20 mb-2" />
+                  <p className="text-sm font-medium opacity-50">Nenhum projeto encontrado</p>
+                </div>
               ) : (
                 displayedProjects.map(project => <ProjectCard key={project.id} project={project} />)
               )}
@@ -188,23 +189,26 @@ const ProjectManager = ({
         </DialogContent>
       </Dialog>
 
-      {/* DIALOG DE RENOMEAR */}
+      {/* NOVO DIALOG DE RENOMEAR */}
       <Dialog open={!!renameData} onOpenChange={() => setRenameData(null)}>
-        <DialogContent className="bg-slate-900 border border-slate-700 text-white max-w-sm rounded-2xl">
+        <DialogContent className="fixed z-[10010] left-[50%] top-[50%] translate-x-[-50%] translate-y-[-50%] bg-slate-900 border border-slate-700 text-white w-[90vw] max-w-sm rounded-2xl">
           <DialogHeader>
             <DialogTitle>Renomear Projeto</DialogTitle>
-            <DialogDescription className="text-slate-400">Digite o novo nome para o projeto.</DialogDescription>
+            <DialogDescription className="text-slate-400">
+              Digite o novo nome para o projeto.
+            </DialogDescription>
           </DialogHeader>
           <div className="py-2">
             <Input 
               value={renameData?.name || ''} 
               onChange={(e) => setRenameData(prev => ({ ...prev, name: e.target.value }))}
               className="bg-slate-950 border-slate-700 text-white"
+              autoFocus
             />
           </div>
           <DialogFooter className="flex gap-2">
             <Button variant="ghost" onClick={() => setRenameData(null)}>Cancelar</Button>
-            <Button onClick={handleRenameSubmit} className="bg-cyan-600 text-white">Salvar</Button>
+            <Button onClick={handleRenameSubmit} className="bg-cyan-600 hover:bg-cyan-500 text-white">Salvar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
