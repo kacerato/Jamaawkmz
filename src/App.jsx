@@ -643,7 +643,7 @@ function App() {
   const [manualPoints, setManualPoints] = useState([])
   const [totalDistance, setTotalDistance] = useState(0)
   const [currentProject, setCurrentProject] = useState(null)
-  const [projects, setProjects] = useState([])
+  
   const [showProjectDialog, setShowProjectDialog] = useState(false)
   const [projectName, setProjectName] = useState('')
   const [showProjectsList, setShowProjectsList] = useState(false)
