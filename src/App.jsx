@@ -596,15 +596,7 @@ const TrackingPointPopupContent = ({ pointInfo, onClose, onSelectStart, selected
 };
 
 function App() {
-  // ... outros hooks ...
-  const {
-    projects,
-    setProjects,
-    loadProjects,
-    renameProject,
-    deleteProject
-  } = useProjects(user, isOnline);
-  // ...
+  
   const mapboxToken = 'pk.eyJ1Ijoia2FjZXJhdG8iLCJhIjoiY21oZG1nNnViMDRybjJub2VvZHV1aHh3aiJ9.l7tCaIPEYqcqDI8_aScm7Q';
   const mapRef = useRef();
   const fileInputRef = useRef(null);
@@ -691,6 +683,16 @@ function App() {
   const [trackingInputMode, setTrackingInputMode] = useState('gps');
   
   const [projectLock, setProjectLock] = useState(null);
+  
+  // ... outros hooks ...
+  const {
+    projects,
+    setProjects,
+    loadProjects,
+    renameProject,
+    deleteProject
+  } = useProjects(user, isOnline);
+  // ...
   
   const kalmanLatRef = useRef(new KalmanFilter(0.1, 0.1));
   const kalmanLngRef = useRef(new KalmanFilter(0.1, 0.1));
