@@ -72,11 +72,11 @@ import ImportProgressPopup from './components/ImportProgressPopup'
 import MultipleSelectionPopup from './components/MultipleSelectionPopup'
 import BairroDetectionService from './components/BairroDetectionService'
 import ProjectLockService from './services/ProjectLockService'
-import { useProjects } from './hooks/useProjects'
-import ProjectReport from './components/ProjectReport';
+import { useProjects } from './hooks/useProjects';
 
 import 'mapbox-gl/dist/mapbox-gl.css'
 import './App.css'
+import ProjectReport from './components/ProjectReport';
 
 const DEFAULT_BAIRROS = [
   'Ponta Verde',
@@ -596,6 +596,15 @@ const TrackingPointPopupContent = ({ pointInfo, onClose, onSelectStart, selected
 };
 
 function App() {
+  // ... outros hooks ...
+  const {
+    projects,
+    setProjects,
+    loadProjects,
+    renameProject,
+    deleteProject
+  } = useProjects(user, isOnline);
+  // ...
   const mapboxToken = 'pk.eyJ1Ijoia2FjZXJhdG8iLCJhIjoiY21oZG1nNnViMDRybjJub2VvZHV1aHh3aiJ9.l7tCaIPEYqcqDI8_aScm7Q';
   const mapRef = useRef();
   const fileInputRef = useRef(null);
@@ -634,6 +643,7 @@ function App() {
   const [manualPoints, setManualPoints] = useState([])
   const [totalDistance, setTotalDistance] = useState(0)
   const [currentProject, setCurrentProject] = useState(null)
+  const [projects, setProjects] = useState([])
   const [showProjectDialog, setShowProjectDialog] = useState(false)
   const [projectName, setProjectName] = useState('')
   const [showProjectsList, setShowProjectsList] = useState(false)
@@ -684,15 +694,6 @@ function App() {
   
   const kalmanLatRef = useRef(new KalmanFilter(0.1, 0.1));
   const kalmanLngRef = useRef(new KalmanFilter(0.1, 0.1));
-  
-  // Usando o hook useProjects
-  const { 
-    projects, 
-    setProjects, 
-    loadProjects, 
-    renameProject, 
-    deleteProject 
-  } = useProjects(user, isOnline);
   
   const totalDistanceAllProjects = calculateTotalDistanceAllProjects(projects);
   
@@ -795,6 +796,9 @@ function App() {
     }
     return () => clearInterval(interval);
   }, [tracking, currentProject, isOnline, user]);
+  
+  // Carregar projetos do Supabase
+ 
   
   // Atualizar bairros dos projetos
   const refreshProjectNeighborhoods = async () => {
@@ -1209,7 +1213,7 @@ function App() {
         } else {
           await supabase.from('projetos').insert([project]);
         }
-        const updatedList = await loadProjects();
+        const updatedList = await loadProjectsFromSupabase();
         setProjects(updatedList);
       } else {
         let updatedProjects;
@@ -1870,7 +1874,7 @@ function App() {
         }
       }
       
-      const updatedList = await loadProjects();
+      const updatedList = await loadProjectsFromSupabase();
       setProjects(updatedList);
       
     } catch (error) {
@@ -1878,16 +1882,12 @@ function App() {
     }
   };
   
-  // Efeito para carregar projetos usando o hook
+  // Efeito para carregar projetos
   useEffect(() => {
-    const loadProjectsData = async () => {
-      if (user) {
-        await loadProjects();
-      }
-    };
-    
-    loadProjectsData();
-  }, [user, isOnline, loadProjects]);
+  if (user) {
+    loadProjects();
+  }
+}, [user, isOnline]);
   
   useEffect(() => {
     if (isOnline && user) {
@@ -2195,7 +2195,7 @@ function App() {
       
       if (data.success) {
         showFeedback('Sucesso', data.message, 'success');
-        const updatedList = await loadProjects();
+        const updatedList = await loadProjectsFromSupabase();
         setProjects(updatedList);
       } else {
         showFeedback('Erro', data.message, 'error');
@@ -2999,23 +2999,7 @@ function App() {
     }
   };
   
-  const deleteProjectFromSupabase = async (projectId) => {
-    if (!user) return false;
-    
-    try {
-      const { error } = await supabase
-        .from('projetos')
-        .delete()
-        .eq('id', projectId)
-        .eq('user_id', user.id);
-      
-      if (error) throw error;
-      return true;
-    } catch (error) {
-      console.error('Erro ao deletar projeto do Supabase:', error);
-      return false;
-    }
-  };
+
   
   const exportProjectAsKML = (project = currentProject) => {
     if (!project) return;
@@ -3807,8 +3791,11 @@ function App() {
           loadProject(p);
           setShowProjectsList(false);
         }}
+        // ... outras props ...
+  projects={projects}
+  onDeleteProject={deleteProject} // Agora usa a do hook
+  onRenameProject={renameProject} // <--- Conecta a nova função
         onDeleteProject={deleteProject}
-        onRenameProject={renameProject}
         onExportProject={exportProjectAsKML}
         onJoinProject={handleJoinProject}
         onOpenReport={(project) => {
