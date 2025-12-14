@@ -40,8 +40,7 @@ import {
   Globe,
   Lock,
   Unlock,
-  AlertCircle,
-  Link as LinkIcon  // Adicionado ícone de conexão
+  AlertCircle
 } from 'lucide-react'
 import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.jsx'
@@ -291,49 +290,6 @@ const calculateDistance = (lat1, lon1, lat2, lon2) => {
   
   return d;
 }
-
-// Função MESTRA de cálculo de distância
-const calculateTotalProjectDistance = (points, connections = []) => {
-  if (!points || points.length === 0) return 0;
-  
-  let total = 0;
-  
-  // 1. Calcula conexões da Árvore (Pai -> Filho)
-  points.forEach((point, index) => {
-    let parent = null;
-    
-    // Se tem pai explícito (Ramificação)
-    if (point.connectedFrom) {
-      parent = points.find(p => p.id === point.connectedFrom);
-    } 
-    // Se não tem pai, mas é sequencial (Lógica antiga de linha reta)
-    else if (index > 0) {
-      parent = points[index - 1];
-    }
-
-    if (parent) {
-      const dist = calculateDistance(parent.lat, parent.lng, point.lat, point.lng);
-      const spans = point.spans || 1; // Aplica o multiplicador de vãos
-      total += (dist * spans);
-    }
-  });
-
-  // 2. Calcula conexões Extras (Loops manuais)
-  if (connections && connections.length > 0) {
-    connections.forEach(conn => {
-      const p1 = points.find(p => p.id === conn.fromId);
-      const p2 = points.find(p => p.id === conn.toId);
-      
-      if (p1 && p2) {
-        const dist = calculateDistance(p1.lat, p1.lng, p2.lat, p2.lng);
-        const spans = conn.spans || 1; // Aplica o multiplicador de vãos também aqui
-        total += (dist * spans);
-      }
-    });
-  }
-  
-  return total;
-};
 
 // Funções de localStorage
 const storage = {
@@ -689,9 +645,9 @@ function App() {
   const [newMarkerData, setNewMarkerData] = useState(null);
   const [snappingEnabled, setSnappingEnabled] = useState(true);
   const [snappingPoints, setSnappingPoints] = useState([]);
-  
-  const [showStyleMenu, setShowStyleMenu] = useState(false);
-  const [mapStyle, setMapStyle] = useState('satellite');
+  // Adicione junto com os outros states
+const [showStyleMenu, setShowStyleMenu] = useState(false);
+const [mapStyle, setMapStyle] = useState('satellite'); // Começar com satélite ou streets
   
   const [loadedProjects, setLoadedProjects] = useState([]);
   const [showLoadedProjects, setShowLoadedProjects] = useState(false);
@@ -729,11 +685,7 @@ function App() {
   
   const [projectLock, setProjectLock] = useState(null);
   
-  // Novos estados para conexões extras
-  const [extraConnections, setExtraConnections] = useState([]); // Lista das conexões manuais
-  const [connectionMode, setConnectionMode] = useState(false);  // Ativa/desativa o modo de criar conexão
-  const [connectionStartPoint, setConnectionStartPoint] = useState(null); // Guarda o primeiro poste do clique
-  
+  // ... outros hooks ...
   const {
     projects,
     setProjects,
@@ -741,6 +693,7 @@ function App() {
     renameProject,
     deleteProject
   } = useProjects(user, isOnline);
+  // ...
   
   const kalmanLatRef = useRef(new KalmanFilter(0.1, 0.1));
   const kalmanLngRef = useRef(new KalmanFilter(0.1, 0.1));
@@ -817,65 +770,6 @@ function App() {
     return null;
   };
   
-  // Função para lidar com clique de conexão
-  const handleConnectionClick = (point) => {
-    // Se não estiver no modo conexão, sai
-    if (!connectionMode) return false; 
-
-    if (!connectionStartPoint) {
-      // ESTÁGIO 1: Selecionar o primeiro poste (Origem)
-      setConnectionStartPoint(point);
-      showFeedback('Conectar', 'Origem definida. Agora clique no poste de destino.', 'info');
-      return true; 
-    } else {
-      // ESTÁGIO 2: Selecionar o segundo poste (Destino)
-      
-      // Validação 1: Não pode conectar nele mesmo
-      if (point.id === connectionStartPoint.id) {
-        showFeedback('Erro', 'Não é possível conectar um poste a ele mesmo.', 'warning');
-        setConnectionStartPoint(null);
-        return true;
-      }
-
-      // Validação 2: Verifica se já existe essa conexão extra
-      const exists = extraConnections.some(conn => 
-        (conn.fromId === connectionStartPoint.id && conn.toId === point.id) ||
-        (conn.fromId === point.id && conn.toId === connectionStartPoint.id)
-      );
-
-      // Validação 3: Verifica se já existe conexão direta normal (pai/filho)
-      const isParentChild = 
-        point.connectedFrom === connectionStartPoint.id || 
-        connectionStartPoint.connectedFrom === point.id;
-
-      if (exists || isParentChild) {
-        showFeedback('Aviso', 'Esses postes já estão conectados.', 'warning');
-        setConnectionStartPoint(null);
-        return true;
-      }
-
-      // CRIA A CONEXÃO
-      const newConn = {
-        id: generateUUID(),
-        fromId: connectionStartPoint.id,
-        toId: point.id,
-        spans: 1, // Começa com 1 vão por padrão
-        type: 'extra'
-      };
-
-      const updatedConnections = [...extraConnections, newConn];
-      setExtraConnections(updatedConnections);
-      
-      // Atualiza a distância total na hora
-      const newTotal = calculateTotalProjectDistance(manualPoints, updatedConnections);
-      setTotalDistance(newTotal);
-
-      showFeedback('Sucesso', 'Conexão criada!', 'success');
-      setConnectionStartPoint(null); // Reseta para permitir próxima conexão
-      return true;
-    }
-  };
-  
   // GeoJSON para marcadores
   const markersGeoJSON = useMemo(() => ({
     type: 'FeatureCollection',
@@ -907,6 +801,7 @@ function App() {
   }, [tracking, currentProject, isOnline, user]);
   
   // Carregar projetos do Supabase
+ 
   
   // Atualizar bairros dos projetos
   const refreshProjectNeighborhoods = async () => {
@@ -1052,9 +947,6 @@ function App() {
         setManualPoints([]);
         setTotalDistance(0);
         setSelectedStartPoint(null);
-        setExtraConnections([]);
-        setConnectionMode(false);
-        setConnectionStartPoint(null);
       }
       
       setSelectedProjects([]);
@@ -1069,6 +961,37 @@ function App() {
       console.error('Erro ao excluir múltiplos projetos:', error);
       showFeedback('Erro', 'Erro ao excluir projetos. Tente novamente.', 'error');
     }
+  };
+  
+  const calculateTotalDistanceWithBranches = (points) => {
+    if (points.length < 2) return 0;
+    
+    let total = 0;
+    
+    const mainPathPoints = points.filter(point => point.connectedFrom === null);
+    for (let i = 0; i < mainPathPoints.length - 1; i++) {
+      total += calculateDistance(
+        mainPathPoints[i].lat,
+        mainPathPoints[i].lng,
+        mainPathPoints[i + 1].lat,
+        mainPathPoints[i + 1].lng
+      );
+    }
+    
+    const branchPoints = points.filter(point => point.connectedFrom !== null);
+    for (const branchPoint of branchPoints) {
+      const parentPoint = points.find(p => p.id === branchPoint.connectedFrom);
+      if (parentPoint) {
+        total += calculateDistance(
+          parentPoint.lat,
+          parentPoint.lng,
+          branchPoint.lat,
+          branchPoint.lng
+        );
+      }
+    }
+    
+    return total;
   };
   
   const handleLogout = async () => {
@@ -1099,9 +1022,6 @@ function App() {
       setCurrentProject(null);
       setSelectedMarkers([]);
       setSelectedStartPoint(null);
-      setExtraConnections([]);
-      setConnectionMode(false);
-      setConnectionStartPoint(null);
       
     } catch (error) {
       console.error('Erro durante logout:', error);
@@ -1110,9 +1030,6 @@ function App() {
       setProjects([]);
       setSelectedMarkers([]);
       setSelectedStartPoint(null);
-      setExtraConnections([]);
-      setConnectionMode(false);
-      setConnectionStartPoint(null);
     }
   };
   
@@ -1285,7 +1202,6 @@ function App() {
         id: existingProject && shouldOverwrite ? existingProject.id : generateUUID(),
         name: projectName,
         points: points,
-        extra_connections: [],
         total_distance: totalDistanceVal,
         totalDistance: totalDistanceVal,
         bairro: 'Importado',
@@ -1301,8 +1217,10 @@ function App() {
           await supabase.from('projetos').insert([project]);
         }
         
-        await loadProjects();
+        // CORREÇÃO AQUI:
+        await loadProjects(); // Usa a função do hook
       } else {
+        // ... (código offline mantém igual)
         let updatedProjects;
         if (existingProject && shouldOverwrite) {
           updatedProjects = projects.map(p => p.id === existingProject.id ? project : p);
@@ -1357,191 +1275,184 @@ function App() {
     }
   };
   
-  const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
-    try {
-      let finalPoints = pointsToSave;
-      
-      if (editingProject && finalPoints.length === 0) {
-        finalPoints = editingProject.points;
-      }
-      
-      if (!finalPoints || finalPoints.length === 0) {
-        if (!autoSave) showFeedback('Erro', 'Não há pontos para salvar.', 'error');
-        return;
-      }
-      
-      if (!projectName.trim() && !autoSave && !editingProject && !currentProject) {
-        showFeedback('Erro', 'Digite um nome para o projeto.', 'error');
-        return;
-      }
-      
-      let projectNameToUse = projectName;
-      if (editingProject && !projectName.trim()) projectNameToUse = editingProject.name;
-      else if (currentProject && !projectName.trim()) projectNameToUse = currentProject.name;
-      else if (autoSave && !projectName.trim()) projectNameToUse = `Rastreamento ${new Date().toLocaleString('pt-BR')}`;
-      
-      // Sanitização segura (sem usar new desnecessário)
-      const sanitizedPoints = finalPoints.map(p => ({
-        ...p,
-        id: (p.id && typeof p.id === 'string') ? p.id : generateUUID(),
-        connectedFrom: (p.connectedFrom && typeof p.connectedFrom === 'string') ? p.connectedFrom : null
-      }));
-      
-      const calculatedTotalDistance = calculateTotalProjectDistance(sanitizedPoints, extraConnections) || 0;
-      
-      // Cria a data de forma segura
-      const nowISO = new Date().toISOString();
-      
-      const projectData = {
-        name: projectNameToUse.trim(),
-        points: sanitizedPoints,
-        extra_connections: extraConnections,
-        total_distance: calculatedTotalDistance,
-        bairro: selectedBairro !== 'todos' ? selectedBairro : 'Vários',
-        tracking_mode: 'manual',
-        updated_at: nowISO
-      };
-      
-      let savedProject;
-      
-      if (editingProject) {
-        // Lógica de Edição
-        if (isOnline && user) {
-          const { data, error } = await supabase.from('projetos').update(projectData).eq('id', editingProject.id).select();
-          if (error) throw error;
-          savedProject = data[0];
-        } else {
-          savedProject = { ...editingProject, ...projectData };
-        }
-        // Atualiza estados
-        setProjects(prev => prev.map(p => p.id === editingProject.id ? savedProject : p));
-        setEditingProject(null);
-        
-      } else if (currentProject) {
-        // Lógica de Projeto Atual
-        if (isOnline && user) {
-          const { data, error } = await supabase.from('projetos').update(projectData).eq('id', currentProject.id).select();
-          if (error) throw error;
-          savedProject = data[0];
-        } else {
-          savedProject = { ...currentProject, ...projectData };
-        }
-        // Atualiza estados
-        setProjects(prev => prev.map(p => p.id === currentProject.id ? savedProject : p));
-        setCurrentProject(savedProject);
-        
+const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
+  try {
+    let finalPoints = pointsToSave;
+    
+    if (editingProject && finalPoints.length === 0) {
+      finalPoints = editingProject.points;
+    }
+    
+    if (!finalPoints || finalPoints.length === 0) {
+      if (!autoSave) showFeedback('Erro', 'Não há pontos para salvar.', 'error');
+      return;
+    }
+    
+    if (!projectName.trim() && !autoSave && !editingProject && !currentProject) {
+      showFeedback('Erro', 'Digite um nome para o projeto.', 'error');
+      return;
+    }
+    
+    let projectNameToUse = projectName;
+    if (editingProject && !projectName.trim()) projectNameToUse = editingProject.name;
+    else if (currentProject && !projectName.trim()) projectNameToUse = currentProject.name;
+    else if (autoSave && !projectName.trim()) projectNameToUse = `Rastreamento ${new Date().toLocaleString('pt-BR')}`;
+    
+    // Sanitização segura (sem usar new desnecessário)
+    const sanitizedPoints = finalPoints.map(p => ({
+      ...p,
+      id: (p.id && typeof p.id === 'string') ? p.id : generateUUID(),
+      connectedFrom: (p.connectedFrom && typeof p.connectedFrom === 'string') ? p.connectedFrom : null
+    }));
+    
+    const calculatedTotalDistance = calculateTotalDistanceWithBranches(sanitizedPoints) || 0;
+    
+    // Cria a data de forma segura
+    const nowISO = new Date().toISOString();
+    
+    const projectData = {
+      name: projectNameToUse.trim(),
+      points: sanitizedPoints,
+      total_distance: calculatedTotalDistance,
+      bairro: selectedBairro !== 'todos' ? selectedBairro : 'Vários',
+      tracking_mode: 'manual',
+      updated_at: nowISO
+    };
+    
+    let savedProject;
+    
+    if (editingProject) {
+      // ... Lógica de Edição ...
+      if (isOnline && user) {
+        const { data, error } = await supabase.from('projetos').update(projectData).eq('id', editingProject.id).select();
+        if (error) throw error;
+        savedProject = data[0];
       } else {
-        // Lógica de Novo Projeto
-        if (isOnline && user) {
-          const { data, error } = await supabase.from('projetos').insert([{ ...projectData, user_id: user.id }]).select();
-          if (error) throw error;
-          savedProject = data[0];
-        } else {
-          savedProject = {
-            ...projectData,
-            id: `offline_${Date.now()}`,
-            created_at: nowISO,
-            user_id: user?.id || 'offline'
-          };
-        }
-        setProjects(prev => [...prev, savedProject]);
+        savedProject = { ...editingProject, ...projectData };
       }
+      // ... Atualiza estados ...
+      setProjects(prev => prev.map(p => p.id === editingProject.id ? savedProject : p));
+      setEditingProject(null);
       
-      // Salva no LocalStorage
-      const userProjects = storage.loadProjects(user?.id);
-      // Remove versão antiga se existir e adiciona nova
-      const otherProjects = userProjects.filter(p => p.id !== savedProject.id);
-      storage.saveProjects(user?.id, [...otherProjects, savedProject]);
-      
-      // Tenta liberar o lock com segurança
-      if (!autoSave && currentProject && isOnline && user) {
-        try {
-          if (ProjectLockService && typeof ProjectLockService.releaseLock === 'function') {
-            await ProjectLockService.releaseLock(currentProject.id, user.id);
-          }
-        } catch (lockError) {
-          console.warn("Erro ao liberar lock (não crítico):", lockError);
-        }
+    } else if (currentProject) {
+      // ... Lógica de Projeto Atual ...
+      if (isOnline && user) {
+        const { data, error } = await supabase.from('projetos').update(projectData).eq('id', currentProject.id).select();
+        if (error) throw error;
+        savedProject = data[0];
+      } else {
+        savedProject = { ...currentProject, ...projectData };
       }
+      // ... Atualiza estados ...
+      setProjects(prev => prev.map(p => p.id === currentProject.id ? savedProject : p));
+      setCurrentProject(savedProject);
       
-      if (!autoSave) {
-        setProjectName('');
-        setShowProjectDialog(false);
-        if (!editingProject) {
-          setTracking(false);
-          setPaused(false);
-          setShowTrackingControls(false);
-          setManualPoints([]);
-          setTotalDistance(0);
-          setSelectedStartPoint(null);
-          setExtraConnections([]);
-          setConnectionMode(false);
-          setConnectionStartPoint(null);
-        }
-        showFeedback('Sucesso', 'Projeto salvo com sucesso!', 'success');
+    } else {
+      // ... Lógica de Novo Projeto ...
+      if (isOnline && user) {
+        const { data, error } = await supabase.from('projetos').insert([{ ...projectData, user_id: user.id }]).select();
+        if (error) throw error;
+        savedProject = data[0];
+      } else {
+        savedProject = {
+          ...projectData,
+          id: `offline_${Date.now()}`,
+          created_at: nowISO,
+          user_id: user?.id || 'offline'
+        };
       }
-      
-    } catch (error) {
-      console.error('Erro CRÍTICO ao salvar projeto:', error);
-      if (!autoSave) {
-        showFeedback('Erro', 'Falha ao salvar. Verifique o console.', 'error');
+      setProjects(prev => [...prev, savedProject]);
+    }
+    
+    // Salva no LocalStorage
+    const userProjects = storage.loadProjects(user?.id);
+    // Remove versão antiga se existir e adiciona nova
+    const otherProjects = userProjects.filter(p => p.id !== savedProject.id);
+    storage.saveProjects(user?.id, [...otherProjects, savedProject]);
+    
+    // Tenta liberar o lock com segurança (try/catch interno para não quebrar o save se o lock falhar)
+    if (!autoSave && currentProject && isOnline && user) {
+      try {
+        // Verifique se ProjectLockService está importado corretamente no topo
+        if (ProjectLockService && typeof ProjectLockService.releaseLock === 'function') {
+          await ProjectLockService.releaseLock(currentProject.id, user.id);
+        }
+      } catch (lockError) {
+        console.warn("Erro ao liberar lock (não crítico):", lockError);
       }
     }
-  };
+    
+    if (!autoSave) {
+      setProjectName('');
+      setShowProjectDialog(false);
+      if (!editingProject) {
+        setTracking(false);
+        setPaused(false);
+        setShowTrackingControls(false);
+        setManualPoints([]);
+        setTotalDistance(0);
+        setSelectedStartPoint(null);
+      }
+      showFeedback('Sucesso', 'Projeto salvo com sucesso!', 'success');
+    }
+    
+  } catch (error) {
+    console.error('Erro CRÍTICO ao salvar projeto:', error);
+    if (!autoSave) {
+      showFeedback('Erro', 'Falha ao salvar. Verifique o console.', 'error');
+    }
+  }
+};
   
   // Função startTracking com sistema de lock
   const startTracking = async (mode = 'gps') => {
-  if (loadedProjects.length > 1) {
-    showFeedback('Bloqueado', 'Múltiplos projetos ativos. Deixe apenas UM projeto no mapa para continuar o traçado.', 'error');
-    return;
-  }
-  
-  if (loadedProjects.length === 1) {
-    const project = loadedProjects[0];
+    if (loadedProjects.length > 1) {
+      showFeedback('Bloqueado', 'Múltiplos projetos ativos. Deixe apenas UM projeto no mapa para continuar o traçado.', 'error');
+      return;
+    }
     
-    if (isOnline && user) {
-      const hasLock = await ProjectLockService.acquireLock(project.id, user.id);
-      if (!hasLock) {
-        const status = await ProjectLockService.checkLockStatus(project.id, user.id);
-        if (status.isLocked) {
-          showFeedback('Projeto Travado', `Este projeto está sendo editado por ${status.lockedBy}. Modo leitura ativado.`, 'error');
-          return;
+    if (loadedProjects.length === 1) {
+      const project = loadedProjects[0];
+      
+      if (isOnline && user) {
+        const hasLock = await ProjectLockService.acquireLock(project.id, user.id);
+        if (!hasLock) {
+          const status = await ProjectLockService.checkLockStatus(project.id, user.id);
+          if (status.isLocked) {
+            showFeedback('Projeto Travado', `Este projeto está sendo editado por ${status.lockedBy}. Modo leitura ativado.`, 'error');
+            return;
+          }
         }
       }
-    }
-    
-    setCurrentProject(project);
-    setManualPoints(project.points);
-    setExtraConnections(project.extra_connections || []);
-    setTotalDistance(project.totalDistance || project.total_distance || 0);
-    setProjectName(project.name);
-    
-    const total = calculateTotalProjectDistance(project.points, project.extra_connections || []);
-    setTotalDistance(total);
-    
-    if (project.points && project.points.length > 0) {
-      const lastPoint = project.points[project.points.length - 1];
-      setSelectedStartPoint(lastPoint);
       
-      showFeedback('Conectado', `Rastreamento continuado a partir do Ponto ${project.points.length}`, 'success');
+      setCurrentProject(project);
+      setManualPoints(project.points);
+      setTotalDistance(project.totalDistance || project.total_distance || 0);
+      setProjectName(project.name);
+      
+      if (project.points && project.points.length > 0) {
+        const lastPoint = project.points[project.points.length - 1];
+        setSelectedStartPoint(lastPoint);
+        
+        showFeedback('Conectado', `Rastreamento continuado a partir do Ponto ${project.points.length}`, 'success');
+      }
     }
-  }
-  else if (!currentProject) {
-    setManualPoints([]);
-    setTotalDistance(0);
-    setProjectName('');
-    setSelectedStartPoint(null);
-  }
-  
-  setTrackingInputMode(mode);
-  setTracking(true);
-  setPaused(false);
-  setShowTrackingControls(true);
-  setShowRulerPopup(false);
-  
-  kalmanLatRef.current = new KalmanFilter(0.1, 0.1);
-  kalmanLngRef.current = new KalmanFilter(0.1, 0.1);
-};
+    else if (!currentProject) {
+      setManualPoints([]);
+      setTotalDistance(0);
+      setProjectName('');
+      setSelectedStartPoint(null);
+    }
+    
+    setTrackingInputMode(mode);
+    setTracking(true);
+    setPaused(false);
+    setShowTrackingControls(true);
+    setShowRulerPopup(false);
+    
+    kalmanLatRef.current = new KalmanFilter(0.1, 0.1);
+    kalmanLngRef.current = new KalmanFilter(0.1, 0.1);
+  };
   
   // Função loadProject com sistema de lock
   const loadProject = async (project) => {
@@ -1568,13 +1479,10 @@ function App() {
     
     requestAnimationFrame(async () => {
       setManualPoints([]);
-      setExtraConnections([]);
       setTotalDistance(0);
       setSelectedStartPoint(null);
       setTracking(false);
       setPaused(false);
-      setConnectionMode(false);
-      setConnectionStartPoint(null);
       
       setCurrentProject(project);
       
@@ -1594,8 +1502,7 @@ function App() {
           ...project,
           bairro: bairroDetectado || 'Vários',
           color: project.color || generateRandomColor(),
-          points: project.points,
-          extra_connections: project.extra_connections || []
+          points: project.points
         };
         
         setLoadedProjects(prev => [...prev, projectWithColor]);
@@ -1641,8 +1548,7 @@ function App() {
           ...point,
           projectId: project.id,
           projectName: project.name
-        })),
-        extra_connections: project.extra_connections || []
+        }))
       }));
       
       setLoadedProjects(prev => {
@@ -1664,8 +1570,7 @@ function App() {
           ...point,
           projectId: project.id,
           projectName: project.name
-        })),
-        extra_connections: project.extra_connections || []
+        }))
       }));
       
       setLoadedProjects(prev => {
@@ -1697,11 +1602,8 @@ function App() {
     setCurrentProject(null);
     setProjectName('');
     setManualPoints([]);
-    setExtraConnections([]);
     setTotalDistance(0);
     setSelectedStartPoint(null);
-    setConnectionMode(false);
-    setConnectionStartPoint(null);
     setShowProjectDetails(false);
     setShowRulerPopup(false);
   };
@@ -1765,9 +1667,6 @@ function App() {
           setLoadedProjects([])
           setSelectedMarkers([])
           setSelectedStartPoint(null)
-          setExtraConnections([])
-          setConnectionMode(false)
-          setConnectionStartPoint(null)
         }
       } else if (event === 'SIGNED_IN') {
         setUser(session.user)
@@ -1795,7 +1694,6 @@ function App() {
       const projectData = {
         name: project.name,
         points: project.points,
-        extra_connections: project.extra_connections || [],
         total_distance: project.totalDistance || project.total_distance,
         bairro: project.bairro,
         tracking_mode: 'manual',
@@ -1831,23 +1729,24 @@ function App() {
     }
   };
   
-  // Função para renomear projeto
-  const handleRenameProject = async (projectId, newName) => {
-    // 1. Chama a lógica do hook (que lida com Supabase e LocalStorage)
-    await renameProject(projectId, newName);
-    
-    // 2. Atualiza apenas os estados visuais específicos do App.jsx que o hook não conhece
-    if (currentProject && currentProject.id === projectId) {
-      setCurrentProject(prev => ({ ...prev, name: newName }));
-      setProjectName(newName);
-    }
-    
-    setLoadedProjects(prev => prev.map(p =>
-      p.id === projectId ? { ...p, name: newName } : p
-    ));
-    
-    showFeedback('Sucesso', 'Projeto renomeado', 'success');
-  };
+  // Adicione esta função dentro do componente App, junto com deleteProject, etc.
+  // Dentro do App.jsx (Substituindo a função antiga gigante)
+const handleRenameProject = async (projectId, newName) => {
+  // 1. Chama a lógica do hook (que lida com Supabase e LocalStorage)
+  await renameProject(projectId, newName);
+  
+  // 2. Atualiza apenas os estados visuais específicos do App.jsx que o hook não conhece
+  if (currentProject && currentProject.id === projectId) {
+    setCurrentProject(prev => ({ ...prev, name: newName }));
+    setProjectName(newName);
+  }
+  
+  setLoadedProjects(prev => prev.map(p =>
+    p.id === projectId ? { ...p, name: newName } : p
+  ));
+  
+  showFeedback('Sucesso', 'Projeto renomeado', 'success');
+};
   
   const deleteProjectFromSupabase = async (projectId) => {
     if (!user) return false;
@@ -1867,59 +1766,64 @@ function App() {
     }
   };
   
-  const syncOfflineProjects = async () => {
-    if (!user || !isOnline) return;
+const syncOfflineProjects = async () => {
+  if (!user || !isOnline) return;
+  
+  try {
+    const offlineProjects = storage.loadProjects(user.id);
     
-    try {
-      const offlineProjects = storage.loadProjects(user.id);
-      
-      for (const project of offlineProjects) {
-        if (project.id.toString().startsWith('offline_')) {
-          try {
-            const { data, error } = await supabase
-              .from('projetos')
-              .insert([{
-                name: project.name,
-                points: project.points,
-                extra_connections: project.extra_connections || [],
-                total_distance: project.totalDistance || project.total_distance,
-                bairro: project.bairro,
-                tracking_mode: 'manual',
-                user_id: user.id
-              }])
-              .select();
-            
-            if (error) throw error;
-            
-            // Atualiza o ID local com o ID novo do banco
-            const updatedProject = { ...project, id: data[0].id };
-            const userProjects = storage.loadProjects(user.id);
-            const updatedUserProjects = userProjects.map(p =>
-              p.id === project.id ? updatedProject : p
-            );
-            storage.saveProjects(user.id, updatedUserProjects);
-            
-            console.log('Projeto offline sincronizado:', project.name);
-            
-          } catch (projectError) {
-            console.error('Erro ao sincronizar projeto offline:', projectError);
-          }
+    // Filtra apenas projetos criados offline (id começa com offline_) ou que não estão no supabase
+    // (Sua lógica original já fazia isso ao iterar, mantendo simples aqui)
+    
+    for (const project of offlineProjects) {
+      // Se o projeto tem ID numérico ou UUID válido e já está sincronizado, ignoramos
+      // Se for ID gerado offline (ex: offline_12345), sincronizamos
+      if (project.id.toString().startsWith('offline_')) {
+        try {
+          const { data, error } = await supabase
+            .from('projetos')
+            .insert([{
+              name: project.name,
+              points: project.points,
+              total_distance: project.totalDistance || project.total_distance,
+              bairro: project.bairro,
+              tracking_mode: 'manual',
+              user_id: user.id
+            }])
+            .select();
+          
+          if (error) throw error;
+          
+          // Atualiza o ID local com o ID novo do banco
+          const updatedProject = { ...project, id: data[0].id };
+          const userProjects = storage.loadProjects(user.id);
+          const updatedUserProjects = userProjects.map(p =>
+            p.id === project.id ? updatedProject : p
+          );
+          storage.saveProjects(user.id, updatedUserProjects);
+          
+          console.log('Projeto offline sincronizado:', project.name);
+          
+        } catch (projectError) {
+          console.error('Erro ao sincronizar projeto offline:', projectError);
         }
       }
-      
-      await loadProjects();
-      
-    } catch (error) {
-      console.error('Erro na sincronização offline:', error);
     }
-  };
+    
+    // CORREÇÃO AQUI: Usar loadProjects() do hook em vez de loadProjectsFromSupabase()
+    await loadProjects();
+    
+  } catch (error) {
+    console.error('Erro na sincronização offline:', error);
+  }
+};
   
   // Efeito para carregar projetos
   useEffect(() => {
-    if (user) {
-      loadProjects();
-    }
-  }, [user, isOnline]);
+  if (user) {
+    loadProjects();
+  }
+}, [user, isOnline]);
   
   useEffect(() => {
     if (isOnline && user) {
@@ -2213,36 +2117,37 @@ function App() {
   }
   
   const handleJoinProject = async (projectId) => {
-    if (!user || !isOnline) {
-      showFeedback('Erro', 'Você precisa estar online para importar projetos.', 'error');
-      return;
+  if (!user || !isOnline) {
+    showFeedback('Erro', 'Você precisa estar online para importar projetos.', 'error');
+    return;
+  }
+  
+  try {
+    const { data, error } = await supabase.rpc('join_project', {
+      p_id: projectId
+    });
+    
+    if (error) throw error;
+    
+    if (data.success) {
+      showFeedback('Sucesso', data.message, 'success');
+      
+      // CORREÇÃO AQUI:
+      await loadProjects(); // Usa a função do hook
+      
+    } else {
+      showFeedback('Erro', data.message, 'error');
     }
     
-    try {
-      const { data, error } = await supabase.rpc('join_project', {
-        p_id: projectId
-      });
-      
-      if (error) throw error;
-      
-      if (data.success) {
-        showFeedback('Sucesso', data.message, 'success');
-        
-        await loadProjects();
-        
-      } else {
-        showFeedback('Erro', data.message, 'error');
-      }
-      
-    } catch (error) {
-      console.error("Erro ao importar:", error);
-      if (error.code === '22P02') {
-        showFeedback('Erro', 'ID inválido. Certifique-se de copiar o código completo.', 'error');
-      } else {
-        showFeedback('Erro', 'Erro ao entrar no projeto.', 'error');
-      }
+  } catch (error) {
+    console.error("Erro ao importar:", error);
+    if (error.code === '22P02') {
+      showFeedback('Erro', 'ID inválido. Certifique-se de copiar o código completo.', 'error');
+    } else {
+      showFeedback('Erro', 'Erro ao entrar no projeto.', 'error');
     }
-  };
+  }
+};
   
   const handleFileImport = async (event) => {
     const file = event.target.files[0];
@@ -2427,45 +2332,49 @@ function App() {
       }
     })
   }
+  
+  const calculateTotalDistanceWithMultiplier = (points) => {
+    if (!points || points.length < 2) return 0;
+    let total = 0;
+
+    points.forEach((point, index) => {
+      let parent = null;
+      if (point.connectedFrom) {
+        parent = points.find(p => p.id === point.connectedFrom);
+      } else if (index > 0) {
+        parent = points[index - 1];
+      }
+
+      if (parent) {
+        const linearDist = calculateDistance(parent.lat, parent.lng, point.lat, point.lng);
+        const spans = point.spans || 1; 
+        total += (linearDist * spans);
+      }
+    });
+
+    return total;
+  };
 
   const handleSpanChange = (count) => {
     if (!spanSelectorInfo) return;
 
-    // Verifica se é um segmento extra (tem connId) ou normal (targetPointId)
-    if (spanSelectorInfo.connId) {
-      // Atualiza uma conexão extra
-      const updatedConnections = extraConnections.map(conn => {
-        if (conn.id === spanSelectorInfo.connId) {
-          return { ...conn, spans: count };
-        }
-        return conn;
-      });
-      setExtraConnections(updatedConnections);
-      
-      const newTotal = calculateTotalProjectDistance(manualPoints, updatedConnections);
-      setTotalDistance(newTotal);
-    } else {
-      // Atualiza um ponto normal (já existente)
-      const updatedPoints = manualPoints.map(p => {
-        if (p.id === spanSelectorInfo.targetPointId) {
-          return { ...p, spans: count };
-        }
-        return p;
-      });
+    const updatedPoints = manualPoints.map(p => {
+      if (p.id === spanSelectorInfo.targetPointId) {
+        return { ...p, spans: count };
+      }
+      return p;
+    });
 
-      setManualPoints(updatedPoints);
-      
-      const newTotal = calculateTotalProjectDistance(updatedPoints, extraConnections);
-      setTotalDistance(newTotal);
-    }
+    setManualPoints(updatedPoints);
+    
+    const newTotal = calculateTotalDistanceWithMultiplier(updatedPoints);
+    setTotalDistance(newTotal);
 
     setSpanSelectorInfo(null);
   };
 
   const segmentsGeoJSON = useMemo(() => {
     const features = [];
-    
-    // 1. DESENHA LINHAS NORMAIS (Ramificações)
     if (manualPoints.length > 0) {
       manualPoints.forEach((point, index) => {
         let parent = null;
@@ -2477,58 +2386,44 @@ function App() {
 
         if (parent) {
           const spans = point.spans || 1;
-          const color = SPAN_COLORS[spans] || '#1e3a8a';
+          const color = SPAN_COLORS[spans];
 
           features.push({
             type: 'Feature',
-            properties: { type: 'segment', targetPointId: point.id, spans: spans, color: color },
-            geometry: { type: 'LineString', coordinates: [[parent.lng, parent.lat], [point.lng, point.lat]] }
-          });
-          
-          // Badge do meio (número de vãos)
-          features.push({
-              type: 'Feature',
-              properties: { type: 'badge', label: `${spans}x`, color: color },
-              geometry: { type: 'Point', coordinates: [(parent.lng + point.lng)/2, (parent.lat + point.lat)/2] }
-          });
-        }
-      });
-    }
-
-    // 2. DESENHA LINHAS EXTRAS (Loops)
-    if (extraConnections && extraConnections.length > 0) {
-      extraConnections.forEach(conn => {
-        const p1 = manualPoints.find(p => p.id === conn.fromId);
-        const p2 = manualPoints.find(p => p.id === conn.toId);
-
-        if (p1 && p2) {
-          const spans = conn.spans || 1;
-          const color = SPAN_COLORS[spans] || '#d97706'; // Âmbar para destacar
-
-          features.push({
-            type: 'Feature',
-            properties: { 
-              type: 'segment', 
-              isExtra: true, // Flag para saber que é extra
-              connId: conn.id, 
-              spans: spans, 
-              color: color 
+            properties: {
+              type: 'segment',
+              targetPointId: point.id,
+              spans: spans,
+              color: color
             },
-            geometry: { type: 'LineString', coordinates: [[p1.lng, p1.lat], [p2.lng, p2.lat]] }
+            geometry: {
+              type: 'LineString',
+              coordinates: [[parent.lng, parent.lat], [point.lng, point.lat]]
+            }
           });
-          
-          // Badge do meio para extras
+
+          const midLng = (parent.lng + point.lng) / 2;
+          const midLat = (parent.lat + point.lat) / 2;
+
           features.push({
-              type: 'Feature',
-              properties: { type: 'badge', label: `${spans}x`, color: color },
-              geometry: { type: 'Point', coordinates: [(p1.lng + p2.lng)/2, (p1.lat + p2.lat)/2] }
+            type: 'Feature',
+            properties: {
+              type: 'badge',
+              targetPointId: point.id,
+              spans: spans,
+              label: `${spans}x`,
+              color: color
+            },
+            geometry: {
+              type: 'Point',
+              coordinates: [midLng, midLat]
+            }
           });
         }
       });
     }
-
     return { type: 'FeatureCollection', features };
-  }, [manualPoints, extraConnections]);
+  }, [manualPoints]);
   
   const downloadKML = async (kmlContent, filename) => {
     try {
@@ -2812,11 +2707,8 @@ function App() {
     if (currentProject && currentProject.id === projectId) {
       setCurrentProject(null);
       setManualPoints([]);
-      setExtraConnections([]);
       setTotalDistance(0);
       setSelectedStartPoint(null);
-      setConnectionMode(false);
-      setConnectionStartPoint(null);
     }
     
     if (mapRef.current) {
@@ -2942,7 +2834,7 @@ function App() {
     
     setManualPoints(prev => {
       const updatedPoints = [...prev, newPoint]
-      const newTotalDistance = calculateTotalProjectDistance(updatedPoints, extraConnections);
+      const newTotalDistance = calculateTotalDistanceWithBranches(updatedPoints);
       setTotalDistance(newTotalDistance);
       return updatedPoints
     })
@@ -2959,7 +2851,7 @@ function App() {
       const newPoints = manualPoints.slice(0, -1);
       
       setManualPoints(newPoints);
-      const newTotalDistance = calculateTotalProjectDistance(newPoints, extraConnections);
+      const newTotalDistance = calculateTotalDistanceWithBranches(newPoints);
       setTotalDistance(newTotalDistance);
       
       if (selectedStartPoint && selectedStartPoint.id === pointToRemove.id) {
@@ -3019,40 +2911,33 @@ function App() {
       setPaused(false);
       setShowTrackingControls(false);
       setManualPoints([]);
-      setExtraConnections([]);
       setTotalDistance(0);
       setSelectedStartPoint(null);
       setPositionHistory([]);
       setGpsAccuracy(null);
       setSpeed(0);
-      setConnectionMode(false);
-      setConnectionStartPoint(null);
     }
   };
   
   const clearManualPoints = () => {
     setManualPoints([])
-    setExtraConnections([])
     setTotalDistance(0)
     setCurrentProject(null)
     setSelectedStartPoint(null)
-    setConnectionMode(false)
-    setConnectionStartPoint(null)
   }
   
   const handleRemovePoints = () => {
     if (currentProject && confirm(`Tem certeza que deseja remover todos os pontos do projeto "${currentProject.name}"?`)) {
       setManualPoints([]);
-      setExtraConnections([]);
       setTotalDistance(0);
       setCurrentProject(null);
       setSelectedStartPoint(null);
-      setConnectionMode(false);
-      setConnectionStartPoint(null);
       setShowProjectDetails(false);
       setProjectName('');
     }
   };
+  
+
   
   const exportProjectAsKML = (project = currentProject) => {
     if (!project) return;
@@ -3246,87 +3131,86 @@ function App() {
           cursor={tracking && trackingInputMode === 'touch' && !paused ? 'crosshair' : 'auto'}
           preserveDrawingBuffer={true}
           onClick={async (e) => {
-            // 1. Verificação de segurança: O mapa está carregado?
-            if (!mapRef.current) return;
+    // 1. Verificação de segurança: O mapa está carregado?
+    if (!mapRef.current) return;
 
-            // 2. Tenta pegar features de marcadores (Markers)
-            // Filtramos apenas as camadas que realmente existem no mapa agora
-            const markerLayers = ['markers-hit-area', 'markers-layer'].filter(id => 
-              mapRef.current.getLayer(id)
-            );
-            
-            let features = [];
-            if (markerLayers.length > 0) {
-              features = e.target.queryRenderedFeatures(e.point, {
-                layers: markerLayers
-              });
-            }
-            
-            // Lógica do segmento (Traçado)
-            if (tracking && !paused) {
-              // 3. CORREÇÃO PRINCIPAL: Verifica se as camadas de segmento existem antes de consultar
-              const segmentLayers = ['segment-hit-area', 'segment-badge-bg'].filter(id => 
-                mapRef.current.getLayer(id)
-              );
+    // 2. Tenta pegar features de marcadores (Markers)
+    // Filtramos apenas as camadas que realmente existem no mapa agora
+    const markerLayers = ['markers-hit-area', 'markers-layer'].filter(id => 
+      mapRef.current.getLayer(id)
+    );
+    
+    let features = [];
+    if (markerLayers.length > 0) {
+      features = e.target.queryRenderedFeatures(e.point, {
+        layers: markerLayers
+      });
+    }
+    
+    // Lógica do segmento (Traçado)
+    if (tracking && !paused) {
+      // 3. CORREÇÃO PRINCIPAL: Verifica se as camadas de segmento existem antes de consultar
+      const segmentLayers = ['segment-hit-area', 'segment-badge-bg'].filter(id => 
+        mapRef.current.getLayer(id)
+      );
 
-              if (segmentLayers.length > 0) {
-                const segmentFeatures = e.target.queryRenderedFeatures(e.point, {
-                  layers: segmentLayers
-                });
+      if (segmentLayers.length > 0) {
+        const segmentFeatures = e.target.queryRenderedFeatures(e.point, {
+          layers: segmentLayers
+        });
 
-                if (segmentFeatures.length > 0) {
-                  const feature = segmentFeatures[0];
-                  setSpanSelectorInfo({
-                    x: e.point.x,
-                    y: e.point.y,
-                    targetPointId: feature.properties.targetPointId,
-                    connId: feature.properties.connId, // pode ser undefined
-                    currentSpans: feature.properties.spans
-                  });
-                  return;
-                }
-              }
-            }
-            
-            setSpanSelectorInfo(null);
+        if (segmentFeatures.length > 0) {
+          const feature = segmentFeatures[0];
+          setSpanSelectorInfo({
+            x: e.point.x,
+            y: e.point.y,
+            targetPointId: feature.properties.targetPointId,
+            currentSpans: feature.properties.spans
+          });
+          return;
+        }
+      }
+    }
+    
+    setSpanSelectorInfo(null);
 
-            // Lógica de clique no Marcador
-            if (features.length > 0) {
-              const feature = features[0];
-              const markerData = {
-                ...feature.properties,
-                lat: feature.geometry.coordinates[1],
-                lng: feature.geometry.coordinates[0]
-              };
-              
-              setPopupMarker(markerData);
-              return;
-            }
+    // Lógica de clique no Marcador
+    if (features.length > 0) {
+      const feature = features[0];
+      const markerData = {
+        ...feature.properties,
+        lat: feature.geometry.coordinates[1],
+        lng: feature.geometry.coordinates[0]
+      };
+      
+      setPopupMarker(markerData);
+      return;
+    }
 
-            // Lógica de adicionar ponto (Toque)
-            if (tracking && trackingInputMode === 'touch' && !paused) {
-              const { lat, lng } = e.lngLat;
-              
-              if (snappingEnabled) {
-                try {
-                  const snapped = await RoadSnappingService.snapToRoad(lat, lng);
-                  if (snapped.snapped) {
-                    addPoint({ lat: snapped.lat, lng: snapped.lng });
-                  } else {
-                    addPoint({ lat, lng });
-                  }
-                } catch (error) {
-                  console.warn('Erro no snapping de toque:', error);
-                  addPoint({ lat, lng });
-                }
-              } else {
-                addPoint({ lat, lng });
-              }
-              return;
-            }
+    // Lógica de adicionar ponto (Toque)
+    if (tracking && trackingInputMode === 'touch' && !paused) {
+      const { lat, lng } = e.lngLat;
+      
+      if (snappingEnabled) {
+        try {
+          const snapped = await RoadSnappingService.snapToRoad(lat, lng);
+          if (snapped.snapped) {
+            addPoint({ lat: snapped.lat, lng: snapped.lng });
+          } else {
+            addPoint({ lat, lng });
+          }
+        } catch (error) {
+          console.warn('Erro no snapping de toque:', error);
+          addPoint({ lat, lng });
+        }
+      } else {
+        addPoint({ lat, lng });
+      }
+      return;
+    }
 
-            setPopupMarker(null); 
-          }}
+    setPopupMarker(null); 
+  }}
         >
           <NavigationControl position="top-right" />
 
@@ -3386,35 +3270,25 @@ function App() {
                           coordinates: [[parent.lng, parent.lat], [point.lng, point.lat]]
                         }
                       } : null;
-                    }).filter(Boolean),
-                  ...(project.extra_connections || []).map(conn => {
-                    const p1 = project.points.find(p => p.id === conn.fromId);
-                    const p2 = project.points.find(p => p.id === conn.toId);
-                    return p1 && p2 ? {
-                      type: 'Feature',
-                      geometry: {
-                        type: 'LineString',
-                        coordinates: [[p1.lng, p1.lat], [p2.lng, p2.lat]]
-                      }
-                    } : null;
-                  }).filter(Boolean)
+                    }).filter(Boolean)
                 ]
               }}
             >
               <Layer
-                id={`route-layer-${project.id}`}
-                type="line"
-                paint={{
-                  'line-color': project.color,
-                  'line-width': [
-                    'interpolate', ['linear'], ['zoom'],
-                    10, 1,
-                    15, 3,
-                    22, 6
-                  ],
-                  'line-opacity': 0.8
-                }}
-              />
+  id={`route-layer-${project.id}`}
+  type="line"
+  paint={{
+    'line-color': project.color,
+    // MESMA LÓGICA AQUI PARA CONSISTÊNCIA
+    'line-width': [
+      'interpolate', ['linear'], ['zoom'],
+      10, 1,
+      15, 3,
+      22, 6
+    ],
+    'line-opacity': 0.8
+  }}
+/>
             </Source>
           ))}
 
@@ -3444,8 +3318,8 @@ function App() {
             </React.Fragment>
           ))}
 
-          {/* CAMADA DE TRAÇADO COM VÃOS E CONEXÕES EXTRAS */}
-          {(manualPoints.length > 0 || extraConnections.length > 0) && (
+          {/* CAMADA DE TRAÇADO COM VÃOS */}
+          {manualPoints.length > 0 && (
             <Source id="segments-source" type="geojson" data={segmentsGeoJSON}>
               <Layer
                 id="segment-hit-area"
@@ -3457,23 +3331,24 @@ function App() {
               />
 
               <Layer
-                id="segment-line"
-                type="line"
-                layout={{
-                  'line-join': 'round',
-                  'line-cap': 'round'
-                }}
-                paint={{
-                  'line-color': ['get', 'color'],
-                  'line-width': [
-                    'interpolate', ['linear'], ['zoom'],
-                    10, 1,    // Zoom longe: linha bem fina
-                    15, 3,    // Zoom médio: linha normal
-                    22, 6     // Zoom perto: linha mais espessa para toque
-                  ],
-                  'line-opacity': 0.9
-                }}
-              />
+  id="segment-line"
+  type="line"
+  layout={{
+    'line-join': 'round',
+    'line-cap': 'round'
+  }}
+  paint={{
+    'line-color': ['get', 'color'],
+    // ALTERAÇÃO AQUI: Largura dinâmica baseada no zoom
+    'line-width': [
+      'interpolate', ['linear'], ['zoom'],
+      10, 1,    // Zoom longe: linha bem fina
+      15, 3,    // Zoom médio: linha normal
+      22, 6     // Zoom perto: linha mais espessa para toque
+    ],
+    'line-opacity': 0.9
+  }}
+/>
 
               <Layer
                 id="segment-badge-bg"
@@ -3509,22 +3384,10 @@ function App() {
               key={point.id}
               point={point}
               index={index + 1}
-              // Muda a cor se for o ponto de partida da conexão
-              color={
-                connectionMode && connectionStartPoint?.id === point.id 
-                  ? '#F59E0B' // Laranja (Origem selecionada)
-                  : '#1e3a8a' // Azul padrão
-              }
+              color="#1e3a8a"
               isActive={selectedStartPoint && selectedStartPoint.id === point.id}
               onClick={(e) => {
                 e.originalEvent.stopPropagation();
-                
-                // LÓGICA NOVA AQUI
-                if (connectionMode) {
-                  handleConnectionClick(point);
-                  return; // Para aqui, não abre popup
-                }
-
                 setPointPopupInfo({
                   point,
                   pointNumber: index + 1,
@@ -3673,88 +3536,60 @@ function App() {
             </Popup>
           )}
         </Map>
+        { /* === SELETOR DE ESTILO DE MAPA (CORRIGIDO) === */ }
+<div className="absolute top-24 right-4 z-[50] flex flex-col gap-2">
+  <div className="relative">
+    {/* Botão Principal */}
+    <Button
+      size="icon"
+      onClick={(e) => {
+        e.stopPropagation(); // Impede clique no mapa
+        setShowStyleMenu(!showStyleMenu); // Alterna abrir/fechar
+      }}
+      className={`
+        backdrop-blur-md border shadow-xl rounded-xl h-10 w-10 transition-all duration-200
+        ${showStyleMenu 
+          ? 'bg-cyan-500 text-white border-cyan-400' 
+          : 'bg-slate-900/90 text-cyan-400 border-white/10 hover:bg-slate-800'}
+      `}
+      title="Alterar camada do mapa"
+    >
+      <Globe className="w-6 h-6" />
+    </Button>
+    
+    {/* Menu Dropdown (Renderização Condicional Explícita) */}
+    {showStyleMenu && (
+      <div className="absolute right-0 top-12 w-40 py-2 bg-slate-900/95 backdrop-blur-xl border border-slate-700 rounded-xl shadow-2xl z-[60] animate-in fade-in zoom-in-95 duration-200">
         
-        {/* Botão de Modo Conexão (Loops) */}
-        {tracking && (
-          <div className="absolute left-4 top-32 z-20">
-            <Button
-              size="icon"
-              onClick={() => {
-                // Se estiver ligando, desliga e limpa a seleção
-                if (connectionMode) {
-                    setConnectionMode(false);
-                    setConnectionStartPoint(null);
-                    showFeedback('Modo Conexão', 'Desativado.', 'info');
-                } else {
-                    setConnectionMode(true);
-                    showFeedback('Modo Conexão', 'Selecione o 1º poste e depois o 2º poste.', 'info');
-                }
-              }}
-              className={`rounded-full shadow-xl w-12 h-12 border transition-all duration-300 ${
-                connectionMode 
-                  ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-400 ring-2 ring-amber-500/50' 
-                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-              }`}
-              title="Interligar postes (Loop)"
-            >
-              <LinkIcon className="w-6 h-6" />
-            </Button>
-          </div>
-        )}
-        
-        { /* === SELETOR DE ESTILO DE MAPA === */ }
-        <div className="absolute top-24 right-4 z-[50] flex flex-col gap-2">
-          <div className="relative">
-            {/* Botão Principal */}
-            <Button
-              size="icon"
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowStyleMenu(!showStyleMenu);
-              }}
-              className={`
-                backdrop-blur-md border shadow-xl rounded-xl h-10 w-10 transition-all duration-200
-                ${showStyleMenu 
-                  ? 'bg-cyan-500 text-white border-cyan-400' 
-                  : 'bg-slate-900/90 text-cyan-400 border-white/10 hover:bg-slate-800'}
-              `}
-              title="Alterar camada do mapa"
-            >
-              <Globe className="w-6 h-6" />
-            </Button>
-            
-            {/* Menu Dropdown */}
-            {showStyleMenu && (
-              <div className="absolute right-0 top-12 w-40 py-2 bg-slate-900/95 backdrop-blur-xl border border-slate-700 rounded-xl shadow-2xl z-[60] animate-in fade-in zoom-in-95 duration-200">
-                
-                <div className="px-3 pb-2 mb-1 text-[10px] uppercase text-slate-500 font-bold tracking-wider border-b border-white/5 flex justify-between items-center">
-                  <span>Visualização</span>
-                  <button onClick={() => setShowStyleMenu(false)}><X size={12}/></button>
-                </div>
-
-                {Object.entries(mapStyles).map(([key, style]) => (
-                  <button
-                    key={key}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setMapStyle(key);
-                      setShowStyleMenu(false);
-                    }}
-                    className={`w-full text-left px-4 py-2.5 text-xs font-medium transition-all flex items-center justify-between group
-                      ${mapStyle === key 
-                        ? 'bg-cyan-500/10 text-cyan-400 border-l-2 border-cyan-400' 
-                        : 'text-slate-300 hover:bg-white/5 hover:text-white border-l-2 border-transparent'}
-                    `}
-                  >
-                    {style.name}
-                    {mapStyle === key && <CheckCircle className="w-3 h-3 text-cyan-400" />}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+        <div className="px-3 pb-2 mb-1 text-[10px] uppercase text-slate-500 font-bold tracking-wider border-b border-white/5 flex justify-between items-center">
+          <span>Visualização</span>
+          <button onClick={() => setShowStyleMenu(false)}><X size={12}/></button>
         </div>
+
+        {Object.entries(mapStyles).map(([key, style]) => (
+          <button
+            key={key}
+            onClick={(e) => {
+              e.stopPropagation();
+              setMapStyle(key);
+              setShowStyleMenu(false); // Fecha ao selecionar
+            }}
+            className={`w-full text-left px-4 py-2.5 text-xs font-medium transition-all flex items-center justify-between group
+              ${mapStyle === key 
+                ? 'bg-cyan-500/10 text-cyan-400 border-l-2 border-cyan-400' 
+                : 'text-slate-300 hover:bg-white/5 hover:text-white border-l-2 border-transparent'}
+            `}
+          >
+            {style.name}
+            {mapStyle === key && <CheckCircle className="w-3 h-3 text-cyan-400" />}
+          </button>
+        ))}
       </div>
+    )}
+  </div>
+</div>
+      </div>
+      
 
       <div className="absolute top-4 left-4 right-4 z-10 flex items-center gap-2">
         <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
@@ -3898,9 +3733,6 @@ function App() {
             {selectedStartPoint && (
               <span className="text-xs text-purple-400 ml-2 bg-purple-500/20 px-2 py-0.5 rounded-full">Galho Ativo</span>
             )}
-            {connectionMode && (
-              <span className="text-xs text-amber-400 ml-2 bg-amber-500/20 px-2 py-0.5 rounded-full">Conexão</span>
-            )}
           </div>
         </div>
 
@@ -3976,24 +3808,24 @@ function App() {
       )}
 
       <ProjectManager
-        isOpen={showProjectsList}
-        onClose={() => setShowProjectsList(false)}
-        projects={projects}
-        currentUserId={user?.id}
-        onLoadProject={(p) => {
-          loadProject(p);
-          setShowProjectsList(false);
-        }}
-        onDeleteProject={deleteProject}
-        onExportProject={exportProjectAsKML}
-        onJoinProject={handleJoinProject}
-        onRenameProject={handleRenameProject}
-        onOpenReport={(project) => {
-          const img = getMapImage();
-          setReportData({ project, image: img });
-          setShowProjectsList(false);
-        }}
-      />
+  isOpen={showProjectsList}
+  onClose={() => setShowProjectsList(false)}
+  projects={projects}
+  currentUserId={user?.id}
+  onLoadProject={(p) => {
+    loadProject(p);
+    setShowProjectsList(false);
+  }}
+  onDeleteProject={deleteProject} // Supondo que você já tenha essa função
+  onExportProject={exportProjectAsKML}
+  onJoinProject={handleJoinProject}
+  onRenameProject={handleRenameProject} // <--- ADICIONE ESTA LINHA
+  onOpenReport={(project) => {
+    const img = getMapImage();
+    setReportData({ project, image: img });
+    setShowProjectsList(false);
+  }}
+/>
 
       <LoadedProjectsManager
         isOpen={showLoadedProjects}
