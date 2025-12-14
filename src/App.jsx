@@ -94,8 +94,7 @@ const DEFAULT_BAIRROS = [
 
 const mapStyles = {
   streets: { name: 'Ruas', url: 'mapbox://styles/mapbox/streets-v11' },
-  // O Híbrido é essencial para seu uso:
-  satellite: { name: 'Satélite', url: 'mapbox://styles/mapbox/satellite-streets-v11' },
+  satellite: { name: 'Satélite', url: 'mapbox://styles/mapbox/satellite-streets-v11' }, // Híbrido
   dark: { name: 'Escuro', url: 'mapbox://styles/mapbox/dark-v10' },
 };
 
@@ -646,7 +645,9 @@ function App() {
   const [newMarkerData, setNewMarkerData] = useState(null);
   const [snappingEnabled, setSnappingEnabled] = useState(true);
   const [snappingPoints, setSnappingPoints] = useState([]);
-  const [mapStyle, setMapStyle] = useState('streets');
+  // Adicione junto com os outros states
+const [showStyleMenu, setShowStyleMenu] = useState(false);
+const [mapStyle, setMapStyle] = useState('satellite'); // Começar com satélite ou streets
   
   const [loadedProjects, setLoadedProjects] = useState([]);
   const [showLoadedProjects, setShowLoadedProjects] = useState(false);
@@ -1215,9 +1216,11 @@ function App() {
         } else {
           await supabase.from('projetos').insert([project]);
         }
-        const updatedList = await loadProjectsFromSupabase();
-        setProjects(updatedList);
+        
+        // CORREÇÃO AQUI:
+        await loadProjects(); // Usa a função do hook
       } else {
+        // ... (código offline mantém igual)
         let updatedProjects;
         if (existingProject && shouldOverwrite) {
           updatedProjects = projects.map(p => p.id === existingProject.id ? project : p);
@@ -1859,13 +1862,19 @@ const handleRenameProject = async (projectId, newName) => {
     }
   };
   
-  const syncOfflineProjects = async () => {
-    if (!user || !isOnline) return;
+const syncOfflineProjects = async () => {
+  if (!user || !isOnline) return;
+  
+  try {
+    const offlineProjects = storage.loadProjects(user.id);
     
-    try {
-      const offlineProjects = storage.loadProjects(user.id);
-      
-      for (const project of offlineProjects) {
+    // Filtra apenas projetos criados offline (id começa com offline_) ou que não estão no supabase
+    // (Sua lógica original já fazia isso ao iterar, mantendo simples aqui)
+    
+    for (const project of offlineProjects) {
+      // Se o projeto tem ID numérico ou UUID válido e já está sincronizado, ignoramos
+      // Se for ID gerado offline (ex: offline_12345), sincronizamos
+      if (project.id.toString().startsWith('offline_')) {
         try {
           const { data, error } = await supabase
             .from('projetos')
@@ -1881,9 +1890,10 @@ const handleRenameProject = async (projectId, newName) => {
           
           if (error) throw error;
           
+          // Atualiza o ID local com o ID novo do banco
           const updatedProject = { ...project, id: data[0].id };
           const userProjects = storage.loadProjects(user.id);
-          const updatedUserProjects = userProjects.map(p => 
+          const updatedUserProjects = userProjects.map(p =>
             p.id === project.id ? updatedProject : p
           );
           storage.saveProjects(user.id, updatedUserProjects);
@@ -1894,14 +1904,15 @@ const handleRenameProject = async (projectId, newName) => {
           console.error('Erro ao sincronizar projeto offline:', projectError);
         }
       }
-      
-      const updatedList = await loadProjectsFromSupabase();
-      setProjects(updatedList);
-      
-    } catch (error) {
-      console.error('Erro na sincronização offline:', error);
     }
-  };
+    
+    // CORREÇÃO AQUI: Usar loadProjects() do hook em vez de loadProjectsFromSupabase()
+    await loadProjects();
+    
+  } catch (error) {
+    console.error('Erro na sincronização offline:', error);
+  }
+};
   
   // Efeito para carregar projetos
   useEffect(() => {
@@ -2202,35 +2213,37 @@ const handleRenameProject = async (projectId, newName) => {
   }
   
   const handleJoinProject = async (projectId) => {
-    if (!user || !isOnline) {
-      showFeedback('Erro', 'Você precisa estar online para importar projetos.', 'error');
-      return;
+  if (!user || !isOnline) {
+    showFeedback('Erro', 'Você precisa estar online para importar projetos.', 'error');
+    return;
+  }
+  
+  try {
+    const { data, error } = await supabase.rpc('join_project', {
+      p_id: projectId
+    });
+    
+    if (error) throw error;
+    
+    if (data.success) {
+      showFeedback('Sucesso', data.message, 'success');
+      
+      // CORREÇÃO AQUI:
+      await loadProjects(); // Usa a função do hook
+      
+    } else {
+      showFeedback('Erro', data.message, 'error');
     }
     
-    try {
-      const { data, error } = await supabase.rpc('join_project', {
-        p_id: projectId
-      });
-      
-      if (error) throw error;
-      
-      if (data.success) {
-        showFeedback('Sucesso', data.message, 'success');
-        const updatedList = await loadProjectsFromSupabase();
-        setProjects(updatedList);
-      } else {
-        showFeedback('Erro', data.message, 'error');
-      }
-      
-    } catch (error) {
-      console.error("Erro ao importar:", error);
-      if (error.code === '22P02') {
-        showFeedback('Erro', 'ID inválido. Certifique-se de copiar o código completo.', 'error');
-      } else {
-        showFeedback('Erro', 'Erro ao entrar no projeto.', 'error');
-      }
+  } catch (error) {
+    console.error("Erro ao importar:", error);
+    if (error.code === '22P02') {
+      showFeedback('Erro', 'ID inválido. Certifique-se de copiar o código completo.', 'error');
+    } else {
+      showFeedback('Erro', 'Erro ao entrar no projeto.', 'error');
     }
-  };
+  }
+};
   
   const handleFileImport = async (event) => {
     const file = event.target.files[0];
@@ -3597,40 +3610,60 @@ const handleRenameProject = async (projectId, newName) => {
             </Popup>
           )}
         </Map>
-      </div>
-      
-      {/* SELETOR DE ESTILO DE MAPA */}
-<div className="absolute top-20 right-4 z-10 flex flex-col gap-2">
-  <div className="group relative">
+        { /* === SELETOR DE ESTILO DE MAPA (CORRIGIDO) === */ }
+<div className="absolute top-24 right-4 z-[50] flex flex-col gap-2">
+  <div className="relative">
+    {/* Botão Principal */}
     <Button
       size="icon"
-      className="bg-slate-950/90 backdrop-blur border border-white/10 text-cyan-400 shadow-xl rounded-xl h-10 w-10 active:scale-90 transition-transform"
+      onClick={(e) => {
+        e.stopPropagation(); // Impede clique no mapa
+        setShowStyleMenu(!showStyleMenu); // Alterna abrir/fechar
+      }}
+      className={`
+        backdrop-blur-md border shadow-xl rounded-xl h-10 w-10 transition-all duration-200
+        ${showStyleMenu 
+          ? 'bg-cyan-500 text-white border-cyan-400' 
+          : 'bg-slate-900/90 text-cyan-400 border-white/10 hover:bg-slate-800'}
+      `}
+      title="Alterar camada do mapa"
     >
       <Globe className="w-6 h-6" />
     </Button>
     
-    {/* Menu Dropdown que aparece no Hover/Click */}
-    <div className="absolute right-0 top-0 mt-0 mr-12 w-32 py-1 bg-slate-900/95 backdrop-blur-xl border border-slate-700 rounded-xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 origin-top-right scale-95 group-hover:scale-100">
-      <div className="px-3 py-2 text-[10px] uppercase text-slate-500 font-bold tracking-wider border-b border-white/5">
-        Tipo de Mapa
+    {/* Menu Dropdown (Renderização Condicional Explícita) */}
+    {showStyleMenu && (
+      <div className="absolute right-0 top-12 w-40 py-2 bg-slate-900/95 backdrop-blur-xl border border-slate-700 rounded-xl shadow-2xl z-[60] animate-in fade-in zoom-in-95 duration-200">
+        
+        <div className="px-3 pb-2 mb-1 text-[10px] uppercase text-slate-500 font-bold tracking-wider border-b border-white/5 flex justify-between items-center">
+          <span>Visualização</span>
+          <button onClick={() => setShowStyleMenu(false)}><X size={12}/></button>
+        </div>
+
+        {Object.entries(mapStyles).map(([key, style]) => (
+          <button
+            key={key}
+            onClick={(e) => {
+              e.stopPropagation();
+              setMapStyle(key);
+              setShowStyleMenu(false); // Fecha ao selecionar
+            }}
+            className={`w-full text-left px-4 py-2.5 text-xs font-medium transition-all flex items-center justify-between group
+              ${mapStyle === key 
+                ? 'bg-cyan-500/10 text-cyan-400 border-l-2 border-cyan-400' 
+                : 'text-slate-300 hover:bg-white/5 hover:text-white border-l-2 border-transparent'}
+            `}
+          >
+            {style.name}
+            {mapStyle === key && <CheckCircle className="w-3 h-3 text-cyan-400" />}
+          </button>
+        ))}
       </div>
-      {Object.entries(mapStyles).map(([key, style]) => (
-        <button
-          key={key}
-          onClick={() => setMapStyle(key)}
-          className={`w-full text-left px-3 py-2 text-xs font-medium transition-colors flex items-center justify-between ${
-            mapStyle === key 
-              ? 'text-cyan-400 bg-cyan-950/30' 
-              : 'text-slate-300 hover:text-white hover:bg-white/5'
-          }`}
-        >
-          {style.name}
-          {mapStyle === key && <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_5px_currentColor]"></div>}
-        </button>
-      ))}
-    </div>
+    )}
   </div>
 </div>
+      </div>
+      
 
       <div className="absolute top-4 left-4 right-4 z-10 flex items-center gap-2">
         <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
