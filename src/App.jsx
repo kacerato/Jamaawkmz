@@ -3597,9 +3597,9 @@ const handleRenameProject = async (projectId, newName) => {
             </Popup>
           )}
         </Map>
-        
-        
-        {/* SELETOR DE ESTILO DE MAPA */}
+      </div>
+      
+      {/* SELETOR DE ESTILO DE MAPA */}
 <div className="absolute top-20 right-4 z-10 flex flex-col gap-2">
   <div className="group relative">
     <Button
@@ -3631,8 +3631,6 @@ const handleRenameProject = async (projectId, newName) => {
     </div>
   </div>
 </div>
-        
-      </div>
 
       <div className="absolute top-4 left-4 right-4 z-10 flex items-center gap-2">
         <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
