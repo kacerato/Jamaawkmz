@@ -37,6 +37,7 @@ import {
   Hash,
   ArrowRight,
   Trash2,
+  Globe,
   Lock,
   Unlock,
   AlertCircle
@@ -93,10 +94,9 @@ const DEFAULT_BAIRROS = [
 
 const mapStyles = {
   streets: { name: 'Ruas', url: 'mapbox://styles/mapbox/streets-v11' },
+  // O Híbrido é essencial para seu uso:
   satellite: { name: 'Satélite', url: 'mapbox://styles/mapbox/satellite-streets-v11' },
   dark: { name: 'Escuro', url: 'mapbox://styles/mapbox/dark-v10' },
-  light: { name: 'Claro', url: 'mapbox://styles/mapbox/light-v10' },
-  outdoors: { name: 'Ar Livre', url: 'mapbox://styles/mapbox/outdoors-v11' },
 };
 
 // Função para garantir lista única (remove duplicatas por ID)
@@ -3336,14 +3336,20 @@ const handleRenameProject = async (projectId, newName) => {
               }}
             >
               <Layer
-                id={`route-layer-${project.id}`}
-                type="line"
-                paint={{
-                  'line-color': project.color,
-                  'line-width': 4,
-                  'line-opacity': 0.8
-                }}
-              />
+  id={`route-layer-${project.id}`}
+  type="line"
+  paint={{
+    'line-color': project.color,
+    // MESMA LÓGICA AQUI PARA CONSISTÊNCIA
+    'line-width': [
+      'interpolate', ['linear'], ['zoom'],
+      10, 1,
+      15, 3,
+      22, 6
+    ],
+    'line-opacity': 0.8
+  }}
+/>
             </Source>
           ))}
 
@@ -3386,18 +3392,24 @@ const handleRenameProject = async (projectId, newName) => {
               />
 
               <Layer
-                id="segment-line"
-                type="line"
-                layout={{
-                  'line-join': 'round',
-                  'line-cap': 'round'
-                }}
-                paint={{
-                  'line-color': ['get', 'color'],
-                  'line-width': 4,
-                  'line-opacity': 0.9
-                }}
-              />
+  id="segment-line"
+  type="line"
+  layout={{
+    'line-join': 'round',
+    'line-cap': 'round'
+  }}
+  paint={{
+    'line-color': ['get', 'color'],
+    // ALTERAÇÃO AQUI: Largura dinâmica baseada no zoom
+    'line-width': [
+      'interpolate', ['linear'], ['zoom'],
+      10, 1,    // Zoom longe: linha bem fina
+      15, 3,    // Zoom médio: linha normal
+      22, 6     // Zoom perto: linha mais espessa para toque
+    ],
+    'line-opacity': 0.9
+  }}
+/>
 
               <Layer
                 id="segment-badge-bg"
@@ -3585,6 +3597,41 @@ const handleRenameProject = async (projectId, newName) => {
             </Popup>
           )}
         </Map>
+        
+        
+        {/* SELETOR DE ESTILO DE MAPA */}
+<div className="absolute top-20 right-4 z-10 flex flex-col gap-2">
+  <div className="group relative">
+    <Button
+      size="icon"
+      className="bg-slate-950/90 backdrop-blur border border-white/10 text-cyan-400 shadow-xl rounded-xl h-10 w-10 active:scale-90 transition-transform"
+    >
+      <Globe className="w-6 h-6" />
+    </Button>
+    
+    {/* Menu Dropdown que aparece no Hover/Click */}
+    <div className="absolute right-0 top-0 mt-0 mr-12 w-32 py-1 bg-slate-900/95 backdrop-blur-xl border border-slate-700 rounded-xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 origin-top-right scale-95 group-hover:scale-100">
+      <div className="px-3 py-2 text-[10px] uppercase text-slate-500 font-bold tracking-wider border-b border-white/5">
+        Tipo de Mapa
+      </div>
+      {Object.entries(mapStyles).map(([key, style]) => (
+        <button
+          key={key}
+          onClick={() => setMapStyle(key)}
+          className={`w-full text-left px-3 py-2 text-xs font-medium transition-colors flex items-center justify-between ${
+            mapStyle === key 
+              ? 'text-cyan-400 bg-cyan-950/30' 
+              : 'text-slate-300 hover:text-white hover:bg-white/5'
+          }`}
+        >
+          {style.name}
+          {mapStyle === key && <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_5px_currentColor]"></div>}
+        </button>
+      ))}
+    </div>
+  </div>
+</div>
+        
       </div>
 
       <div className="absolute top-4 left-4 right-4 z-10 flex items-center gap-2">
