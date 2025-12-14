@@ -1275,7 +1275,8 @@ const [mapStyle, setMapStyle] = useState('satellite'); // Começar com satélite
     }
   };
   
-  const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
+const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
+  try {
     let finalPoints = pointsToSave;
     
     if (editingProject && finalPoints.length === 0) {
@@ -1283,14 +1284,7 @@ const [mapStyle, setMapStyle] = useState('satellite'); // Começar com satélite
     }
     
     if (!finalPoints || finalPoints.length === 0) {
-      console.log('⚠️ Nenhum ponto para salvar');
-      if (!autoSave) {
-        showFeedback('Erro', 'Não há pontos para salvar no projeto.', 'error');
-      }
-      return;
-    }
-    
-    if (autoSave && finalPoints.length === 0) {
+      if (!autoSave) showFeedback('Erro', 'Não há pontos para salvar.', 'error');
       return;
     }
     
@@ -1300,25 +1294,21 @@ const [mapStyle, setMapStyle] = useState('satellite'); // Começar com satélite
     }
     
     let projectNameToUse = projectName;
+    if (editingProject && !projectName.trim()) projectNameToUse = editingProject.name;
+    else if (currentProject && !projectName.trim()) projectNameToUse = currentProject.name;
+    else if (autoSave && !projectName.trim()) projectNameToUse = `Rastreamento ${new Date().toLocaleString('pt-BR')}`;
     
-    if (editingProject && !projectName.trim()) {
-      projectNameToUse = editingProject.name;
-    } else if (currentProject && !projectName.trim()) {
-      projectNameToUse = currentProject.name;
-    } else if (autoSave && !projectName.trim() && !currentProject && !editingProject) {
-      projectNameToUse = `Rastreamento ${new Date().toLocaleString('pt-BR')}`;
-    }
-    
+    // Sanitização segura (sem usar new desnecessário)
     const sanitizedPoints = finalPoints.map(p => ({
       ...p,
-      id: typeof p.id === 'number' || !isNaN(p.id) ? generateUUID() : p.id,
-      connectedFrom: p.connectedFrom && (typeof p.connectedFrom === 'number' || !isNaN(p.connectedFrom)) ?
-        null
-        :
-        p.connectedFrom
+      id: (p.id && typeof p.id === 'string') ? p.id : generateUUID(),
+      connectedFrom: (p.connectedFrom && typeof p.connectedFrom === 'string') ? p.connectedFrom : null
     }));
     
     const calculatedTotalDistance = calculateTotalDistanceWithBranches(sanitizedPoints) || 0;
+    
+    // Cria a data de forma segura
+    const nowISO = new Date().toISOString();
     
     const projectData = {
       name: projectNameToUse.trim(),
@@ -1326,179 +1316,93 @@ const [mapStyle, setMapStyle] = useState('satellite'); // Começar com satélite
       total_distance: calculatedTotalDistance,
       bairro: selectedBairro !== 'todos' ? selectedBairro : 'Vários',
       tracking_mode: 'manual',
-      updated_at: new Date().toISOString()
+      updated_at: nowISO
     };
     
-    try {
-      let savedProject;
-      
-      if (editingProject) {
-        console.log('🔄 Atualizando projeto em edição:', editingProject.name);
-        
-        if (isOnline && user) {
-          const { data, error } = await supabase
-            .from('projetos')
-            .update(projectData)
-            .eq('id', editingProject.id)
-            .select();
-          
-          if (error) throw error;
-          
-          if (!data || data.length === 0) {
-            throw new Error("Permissão negada ou projeto não encontrado para atualização.");
-          }
-          
-          savedProject = data[0];
-        } else {
-          savedProject = { ...editingProject, ...projectData };
-        }
-        
-        const updatedProjects = projects.map(p =>
-          p.id === editingProject.id ? savedProject : p
-        );
-        setProjects(updatedProjects);
-        
-        // Salvar no localStorage
-        const userProjects = storage.loadProjects(user?.id);
-        const updatedUserProjects = userProjects.map(p => 
-          p.id === savedProject.id ? savedProject : p
-        );
-        storage.saveProjects(user?.id, updatedUserProjects);
-        
-        setLoadedProjects(prev => {
-          const exists = prev.find(p => p.id === savedProject.id);
-          if (exists) {
-            return prev.map(p =>
-              p.id === savedProject.id ?
-              { ...savedProject, color: p.color }
-              :
-              p
-            );
-          }
-          return prev;
-        });
-        
-        if (currentProject && currentProject.id === editingProject.id) {
-          setCurrentProject(savedProject);
-        }
-        
-        setEditingProject(null);
-        
-      } else if (currentProject) {
-        console.log('🔄 Atualizando projeto atual:', currentProject.name);
-        
-        if (isOnline && user) {
-          const { data, error } = await supabase
-            .from('projetos')
-            .update(projectData)
-            .eq('id', currentProject.id)
-            .select();
-          
-          if (error) throw error;
-          
-          if (!data || data.length === 0) {
-            throw new Error("Erro ao salvar: Retorno vazio do banco.");
-          }
-          
-          savedProject = data[0];
-        } else {
-          savedProject = { ...currentProject, ...projectData };
-        }
-        
-        const updatedProjects = projects.map(p =>
-          p.id === currentProject.id ? savedProject : p
-        );
-        setProjects(updatedProjects);
-        
-        // Salvar no localStorage
-        const userProjects = storage.loadProjects(user?.id);
-        const updatedUserProjects = userProjects.map(p => 
-          p.id === savedProject.id ? savedProject : p
-        );
-        storage.saveProjects(user?.id, updatedUserProjects);
-        
-        setLoadedProjects(prev => {
-          const exists = prev.find(p => p.id === savedProject.id);
-          if (exists) {
-            return prev.map(p =>
-              p.id === savedProject.id ?
-              { ...savedProject, color: p.color }
-              :
-              p
-            );
-          }
-          return prev;
-        });
-        
-        setCurrentProject(savedProject);
-        
+    let savedProject;
+    
+    if (editingProject) {
+      // ... Lógica de Edição ...
+      if (isOnline && user) {
+        const { data, error } = await supabase.from('projetos').update(projectData).eq('id', editingProject.id).select();
+        if (error) throw error;
+        savedProject = data[0];
       } else {
-        if (isOnline && user) {
-          const { data, error } = await supabase
-            .from('projetos')
-            .insert([{ ...projectData, user_id: user.id }])
-            .select();
-          
-          if (error) throw error;
-          savedProject = data[0];
-        } else {
-          savedProject = {
-            ...projectData,
-            id: `offline_${Date.now()}`,
-            created_at: new Date().toISOString(),
-            user_id: user?.id || 'offline'
-          };
-        }
-        
-        const updatedProjects = [...projects, savedProject];
-        setProjects(updatedProjects);
-        
-        // Salvar no localStorage
-        const userProjects = storage.loadProjects(user?.id);
-        const mergedProjects = [...userProjects, savedProject];
-        const uniqueProjects = deduplicateProjects(mergedProjects);
-        storage.saveProjects(user?.id, uniqueProjects);
+        savedProject = { ...editingProject, ...projectData };
       }
+      // ... Atualiza estados ...
+      setProjects(prev => prev.map(p => p.id === editingProject.id ? savedProject : p));
+      setEditingProject(null);
       
-      // Se for salvamento manual (não autoSave), libera o lock
-      if (!autoSave && currentProject && isOnline && user) {
-        await ProjectLockService.releaseLock(currentProject.id, user.id);
+    } else if (currentProject) {
+      // ... Lógica de Projeto Atual ...
+      if (isOnline && user) {
+        const { data, error } = await supabase.from('projetos').update(projectData).eq('id', currentProject.id).select();
+        if (error) throw error;
+        savedProject = data[0];
+      } else {
+        savedProject = { ...currentProject, ...projectData };
       }
-
-      if (!autoSave) {
-        if (editingProject) {
-          setCurrentProject(savedProject);
-        } else {
-          setCurrentProject(null);
-        }
-      }
-
-      if (!autoSave) {
-        setProjectName('');
-        setShowProjectDialog(false);
-        
-        if (!editingProject) {
-          setTracking(false);
-          setPaused(false);
-          setShowTrackingControls(false);
-          
-          setManualPoints([]);
-          setTotalDistance(0);
-          setSelectedStartPoint(null);
-          
-          setPositionHistory([]);
-        }
-        
-        showFeedback('Sucesso', editingProject ? 'Projeto atualizado!' : 'Projeto salvo e finalizado!', 'success');
-      }
+      // ... Atualiza estados ...
+      setProjects(prev => prev.map(p => p.id === currentProject.id ? savedProject : p));
+      setCurrentProject(savedProject);
       
-    } catch (error) {
-      console.error('Erro ao salvar projeto:', error);
-      if (!autoSave) {
-        showFeedback('Erro', 'Erro ao salvar projeto. Tente novamente.', 'error');
+    } else {
+      // ... Lógica de Novo Projeto ...
+      if (isOnline && user) {
+        const { data, error } = await supabase.from('projetos').insert([{ ...projectData, user_id: user.id }]).select();
+        if (error) throw error;
+        savedProject = data[0];
+      } else {
+        savedProject = {
+          ...projectData,
+          id: `offline_${Date.now()}`,
+          created_at: nowISO,
+          user_id: user?.id || 'offline'
+        };
+      }
+      setProjects(prev => [...prev, savedProject]);
+    }
+    
+    // Salva no LocalStorage
+    const userProjects = storage.loadProjects(user?.id);
+    // Remove versão antiga se existir e adiciona nova
+    const otherProjects = userProjects.filter(p => p.id !== savedProject.id);
+    storage.saveProjects(user?.id, [...otherProjects, savedProject]);
+    
+    // Tenta liberar o lock com segurança (try/catch interno para não quebrar o save se o lock falhar)
+    if (!autoSave && currentProject && isOnline && user) {
+      try {
+        // Verifique se ProjectLockService está importado corretamente no topo
+        if (ProjectLockService && typeof ProjectLockService.releaseLock === 'function') {
+          await ProjectLockService.releaseLock(currentProject.id, user.id);
+        }
+      } catch (lockError) {
+        console.warn("Erro ao liberar lock (não crítico):", lockError);
       }
     }
-  };
+    
+    if (!autoSave) {
+      setProjectName('');
+      setShowProjectDialog(false);
+      if (!editingProject) {
+        setTracking(false);
+        setPaused(false);
+        setShowTrackingControls(false);
+        setManualPoints([]);
+        setTotalDistance(0);
+        setSelectedStartPoint(null);
+      }
+      showFeedback('Sucesso', 'Projeto salvo com sucesso!', 'success');
+    }
+    
+  } catch (error) {
+    console.error('Erro CRÍTICO ao salvar projeto:', error);
+    if (!autoSave) {
+      showFeedback('Erro', 'Falha ao salvar. Verifique o console.', 'error');
+    }
+  }
+};
   
   // Função startTracking com sistema de lock
   const startTracking = async (mode = 'gps') => {
@@ -3227,64 +3131,86 @@ const syncOfflineProjects = async () => {
           cursor={tracking && trackingInputMode === 'touch' && !paused ? 'crosshair' : 'auto'}
           preserveDrawingBuffer={true}
           onClick={async (e) => {
-            const features = e.target.queryRenderedFeatures(e.point, {
-              layers: ['markers-hit-area', 'markers-layer']
-            });
-            
-            if (tracking && !paused) {
-                const segmentFeatures = e.target.queryRenderedFeatures(e.point, {
-                  layers: ['segment-hit-area', 'segment-badge-bg']
-                });
+    // 1. Verificação de segurança: O mapa está carregado?
+    if (!mapRef.current) return;
 
-                if (segmentFeatures.length > 0) {
-                  const feature = segmentFeatures[0];
-                  setSpanSelectorInfo({
-                    x: e.point.x,
-                    y: e.point.y,
-                    targetPointId: feature.properties.targetPointId,
-                    currentSpans: feature.properties.spans
-                  });
-                  return;
-                }
-            }
-            
-            setSpanSelectorInfo(null);
+    // 2. Tenta pegar features de marcadores (Markers)
+    // Filtramos apenas as camadas que realmente existem no mapa agora
+    const markerLayers = ['markers-hit-area', 'markers-layer'].filter(id => 
+      mapRef.current.getLayer(id)
+    );
+    
+    let features = [];
+    if (markerLayers.length > 0) {
+      features = e.target.queryRenderedFeatures(e.point, {
+        layers: markerLayers
+      });
+    }
+    
+    // Lógica do segmento (Traçado)
+    if (tracking && !paused) {
+      // 3. CORREÇÃO PRINCIPAL: Verifica se as camadas de segmento existem antes de consultar
+      const segmentLayers = ['segment-hit-area', 'segment-badge-bg'].filter(id => 
+        mapRef.current.getLayer(id)
+      );
 
-            if (features.length > 0) {
-              const feature = features[0];
-              const markerData = {
-                ...feature.properties,
-                lat: feature.geometry.coordinates[1],
-                lng: feature.geometry.coordinates[0]
-              };
-              
-              setPopupMarker(markerData);
-              return;
-            }
+      if (segmentLayers.length > 0) {
+        const segmentFeatures = e.target.queryRenderedFeatures(e.point, {
+          layers: segmentLayers
+        });
 
-            if (tracking && trackingInputMode === 'touch' && !paused) {
-              const { lat, lng } = e.lngLat;
-              
-              if (snappingEnabled) {
-                try {
-                  const snapped = await RoadSnappingService.snapToRoad(lat, lng);
-                  if (snapped.snapped) {
-                    addPoint({ lat: snapped.lat, lng: snapped.lng });
-                  } else {
-                    addPoint({ lat, lng });
-                  }
-                } catch (error) {
-                  console.warn('Erro no snapping de toque:', error);
-                  addPoint({ lat, lng });
-                }
-              } else {
-                addPoint({ lat, lng });
-              }
-              return;
-            }
+        if (segmentFeatures.length > 0) {
+          const feature = segmentFeatures[0];
+          setSpanSelectorInfo({
+            x: e.point.x,
+            y: e.point.y,
+            targetPointId: feature.properties.targetPointId,
+            currentSpans: feature.properties.spans
+          });
+          return;
+        }
+      }
+    }
+    
+    setSpanSelectorInfo(null);
 
-            setPopupMarker(null); 
-          }}
+    // Lógica de clique no Marcador
+    if (features.length > 0) {
+      const feature = features[0];
+      const markerData = {
+        ...feature.properties,
+        lat: feature.geometry.coordinates[1],
+        lng: feature.geometry.coordinates[0]
+      };
+      
+      setPopupMarker(markerData);
+      return;
+    }
+
+    // Lógica de adicionar ponto (Toque)
+    if (tracking && trackingInputMode === 'touch' && !paused) {
+      const { lat, lng } = e.lngLat;
+      
+      if (snappingEnabled) {
+        try {
+          const snapped = await RoadSnappingService.snapToRoad(lat, lng);
+          if (snapped.snapped) {
+            addPoint({ lat: snapped.lat, lng: snapped.lng });
+          } else {
+            addPoint({ lat, lng });
+          }
+        } catch (error) {
+          console.warn('Erro no snapping de toque:', error);
+          addPoint({ lat, lng });
+        }
+      } else {
+        addPoint({ lat, lng });
+      }
+      return;
+    }
+
+    setPopupMarker(null); 
+  }}
         >
           <NavigationControl position="top-right" />
 
