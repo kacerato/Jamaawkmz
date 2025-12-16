@@ -160,18 +160,52 @@ const ProjectManager = ({
                 </Button>
               </DialogHeader>
 
-              <div className="bg-slate-950/40 p-1 rounded-full flex relative mb-4 border border-white/5">
-                <button onClick={() => setActiveTab('mine')} className={`flex-1 py-2 text-xs font-bold rounded-full transition-all ${activeTab === 'mine' ? 'bg-slate-800 text-cyan-400 shadow-lg' : 'text-slate-500'}`}>MEUS</button>
-                <button onClick={() => setActiveTab('shared')} className={`flex-1 py-2 text-xs font-bold rounded-full transition-all ${activeTab === 'shared' ? 'bg-slate-800 text-purple-400 shadow-lg' : 'text-slate-500'}`}>COMPARTILHADOS</button>
-              </div>
+              {/* ... Cabeçalho e Abas acima ... */}
 
-              <div className="relative">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                <input 
-                  type="text" placeholder="Buscar projeto..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full bg-slate-950/30 border border-white/5 rounded-xl pl-10 pr-4 py-3 text-sm text-white focus:outline-none focus:border-cyan-500/30"
-                />
-              </div>
+<div className="bg-slate-950/40 p-1 rounded-full flex relative mb-4 border border-white/5">
+  <button onClick={() => setActiveTab('mine')} className={`flex-1 py-2 text-xs font-bold rounded-full transition-all ${activeTab === 'mine' ? 'bg-slate-800 text-cyan-400 shadow-lg' : 'text-slate-500'}`}>MEUS</button>
+  <button onClick={() => setActiveTab('shared')} className={`flex-1 py-2 text-xs font-bold rounded-full transition-all ${activeTab === 'shared' ? 'bg-slate-800 text-purple-400 shadow-lg' : 'text-slate-500'}`}>COMPARTILHADOS</button>
+</div>
+
+{/* CORREÇÃO: Campo de Adicionar Projeto (Visível apenas na aba 'shared') */}
+{activeTab === 'shared' && (
+  <div className="mb-4 animate-in slide-in-from-top-2">
+    <div className="flex gap-2">
+      <div className="relative flex-1">
+        <input 
+          value={joinId} 
+          onChange={(e) => setJoinId(e.target.value)} 
+          placeholder="Cole o ID do projeto aqui..." 
+          className="w-full bg-purple-900/10 border border-purple-500/30 rounded-xl pl-4 pr-4 py-3 text-sm text-white focus:border-purple-500 outline-none placeholder:text-slate-600" 
+        />
+      </div>
+      <Button 
+        size="icon" 
+        onClick={() => { if(joinId) onJoinProject(joinId); }} 
+        className="rounded-xl bg-purple-600 hover:bg-purple-500 text-white w-12 h-11 shadow-lg shadow-purple-900/20"
+        title="Adicionar Projeto"
+      >
+        <Plus size={20} />
+      </Button>
+    </div>
+    <p className="text-[10px] text-slate-500 mt-2 ml-1">
+      Peça o ID para o criador do projeto e cole acima para entrar.
+    </p>
+  </div>
+)}
+
+{/* Barra de Busca (Visível apenas na aba 'mine') */}
+{activeTab === 'mine' && (
+  <div className="relative mb-4">
+    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+    <input 
+      type="text" placeholder="Buscar meus projetos..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
+      className="w-full bg-slate-950/30 border border-white/5 rounded-xl pl-10 pr-4 py-3 text-sm text-white focus:outline-none focus:border-cyan-500/30"
+    />
+  </div>
+)}
+
+{/* ... Lista de Projetos abaixo ... */}
             </div>
 
             {/* Lista com Scroll */}

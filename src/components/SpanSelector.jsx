@@ -46,7 +46,7 @@ const SpanSelector = ({ currentSpans = 1, onSelect, onClose, style }) => {
                 borderColor: currentSpans === count ? SPAN_COLORS[count] : 'transparent'
               }}
             >
-              <span className="font-bold text-sm">{count}x</span>
+              <span className="font-bold text-sm">{count}AG</span>
             </button>
           ))}
         </div>
