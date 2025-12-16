@@ -6,8 +6,8 @@ const deduplicateProjects = (projectsList) => {
   const uniqueMap = new Map();
   // Ordena por data mais recente
   projectsList.sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
-  projectsList.forEach(p => {
-    if (!uniqueMap.has(p.id)) uniqueMap.set(p.id, p);
+  projectsList.forEach(p => { 
+    if (!uniqueMap.has(p.id)) uniqueMap.set(p.id, p); 
   });
   return Array.from(uniqueMap.values());
 };
@@ -27,7 +27,7 @@ export function useProjects(user, isOnline) {
       
       let cloudProjects = [];
       let sharedProjects = [];
-      
+
       if (isOnline) {
         // 2. BUSCA 1: Projetos que EU SOU O DONO
         const { data: myData, error: myError } = await supabase
@@ -36,7 +36,7 @@ export function useProjects(user, isOnline) {
           .eq('user_id', user.id); // <--- Apenas meus
         
         if (!myError && myData) cloudProjects = myData;
-        
+
         // 3. BUSCA 2: Projetos que SOU MEMBRO (Compartilhados)
         // Precisamos consultar a tabela de junção (provavelmente 'project_members')
         // Se você não tiver essa tabela mapeada diretamente, usamos uma técnica de "Busca por IDs"
@@ -47,7 +47,7 @@ export function useProjects(user, isOnline) {
             .from('project_members')
             .select('project_id')
             .eq('user_id', user.id);
-          
+
           if (!memberError && memberData && memberData.length > 0) {
             const projectIds = memberData.map(m => m.project_id);
             
@@ -56,7 +56,7 @@ export function useProjects(user, isOnline) {
               .from('projetos')
               .select('*')
               .in('id', projectIds); // <--- Busca projetos por lista de IDs
-            
+
             if (!sharedError && sharedData) {
               sharedProjects = sharedData;
             }
@@ -113,9 +113,9 @@ export function useProjects(user, isOnline) {
       const { error } = await supabase.from('projetos').delete().eq('id', projectId);
       
       if (error) {
-        // Se falhar (ex: erro de chave estrangeira ou permissão), talvez precise sair da tabela de membros
-        // Mas geralmente o 'cascade' ou a permissão de delete resolve
-        console.error("Erro ao deletar na nuvem:", error);
+          // Se falhar (ex: erro de chave estrangeira ou permissão), talvez precise sair da tabela de membros
+          // Mas geralmente o 'cascade' ou a permissão de delete resolve
+          console.error("Erro ao deletar na nuvem:", error);
       }
     }
   };
