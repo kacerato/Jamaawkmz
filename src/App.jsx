@@ -2411,7 +2411,7 @@ const syncOfflineProjects = async () => {
               type: 'badge',
               targetPointId: point.id,
               spans: spans,
-              label: `${spans}x`,
+              label: `${spans}AG`,
               color: color
             },
             geometry: {
