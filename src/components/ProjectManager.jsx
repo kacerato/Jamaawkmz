@@ -23,7 +23,7 @@ const ProjectManager = ({
   onDeleteProject, 
   onExportProject,
   onJoinProject,
-  onRenameProject, // <--- NOVA PROP RECEBIDA DO APP.JSX
+  onRenameProject, 
   onOpenReport 
 }) => {
   const [activeTab, setActiveTab] = useState('mine');
@@ -34,9 +34,11 @@ const ProjectManager = ({
   // Estado para controlar o Dialog de Renomear
   const [renameData, setRenameData] = useState(null); // { id: string, name: string }
 
+  // Filtra projetos (Meus vs Compartilhados)
   const myProjects = projects.filter(p => p.user_id === currentUserId);
   const sharedProjects = projects.filter(p => p.user_id !== currentUserId);
   
+  // Filtra pela busca
   const displayedProjects = (activeTab === 'mine' ? myProjects : sharedProjects)
     .filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
@@ -54,6 +56,7 @@ const ProjectManager = ({
     }
   };
 
+  // Componente interno do Card
   const ProjectCard = ({ project }) => {
     const isMine = project.user_id === currentUserId;
     const accentColor = isMine ? 'text-cyan-400' : 'text-purple-400';
@@ -78,17 +81,17 @@ const ProjectManager = ({
                 <h3 className="text-sm font-bold text-white truncate" title={project.name}>
                   {project.name}
                 </h3>
-                {/* Botão de Editar Nome (Só aparece no hover ou se for mobile) */}
+                {/* Botão de Editar Nome */}
                 {isMine && (
                   <button 
                     onClick={(e) => { 
                       e.stopPropagation(); 
                       setRenameData({ id: project.id, name: project.name }); 
                     }}
-                    className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-slate-500 hover:text-cyan-400 p-1"
+                    className="flex-shrink-0 text-slate-600 hover:text-cyan-400 p-1 transition-colors"
                     title="Renomear projeto"
                   >
-                    <Edit3 size={12} />
+                    <Edit3 size={14} />
                   </button>
                 )}
               </div>
@@ -160,52 +163,64 @@ const ProjectManager = ({
                 </Button>
               </DialogHeader>
 
-              {/* ... Cabeçalho e Abas acima ... */}
+              {/* Botões de Abas */}
+              <div className="bg-slate-950/40 p-1 rounded-full flex relative mb-4 border border-white/5">
+                <button 
+                  onClick={() => setActiveTab('mine')} 
+                  className={`flex-1 py-2 text-xs font-bold rounded-full transition-all ${activeTab === 'mine' ? 'bg-slate-800 text-cyan-400 shadow-lg' : 'text-slate-500'}`}
+                >
+                  MEUS
+                </button>
+                <button 
+                  onClick={() => setActiveTab('shared')} 
+                  className={`flex-1 py-2 text-xs font-bold rounded-full transition-all ${activeTab === 'shared' ? 'bg-slate-800 text-purple-400 shadow-lg' : 'text-slate-500'}`}
+                >
+                  COMPARTILHADOS
+                </button>
+              </div>
 
-<div className="bg-slate-950/40 p-1 rounded-full flex relative mb-4 border border-white/5">
-  <button onClick={() => setActiveTab('mine')} className={`flex-1 py-2 text-xs font-bold rounded-full transition-all ${activeTab === 'mine' ? 'bg-slate-800 text-cyan-400 shadow-lg' : 'text-slate-500'}`}>MEUS</button>
-  <button onClick={() => setActiveTab('shared')} className={`flex-1 py-2 text-xs font-bold rounded-full transition-all ${activeTab === 'shared' ? 'bg-slate-800 text-purple-400 shadow-lg' : 'text-slate-500'}`}>COMPARTILHADOS</button>
-</div>
+              {/* LÓGICA CONDICIONAL DE INPUTS */}
+              
+              {/* 1. Barra de Busca (Aparece apenas na aba MEUS) */}
+              {activeTab === 'mine' && (
+                <div className="relative animate-in fade-in zoom-in-95 duration-200">
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                  <input 
+                    type="text" 
+                    placeholder="Buscar meus projetos..." 
+                    value={searchTerm} 
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full bg-slate-950/30 border border-white/5 rounded-xl pl-10 pr-4 py-3 text-sm text-white focus:outline-none focus:border-cyan-500/30"
+                  />
+                </div>
+              )}
 
-{/* CORREÇÃO: Campo de Adicionar Projeto (Visível apenas na aba 'shared') */}
-{activeTab === 'shared' && (
-  <div className="mb-4 animate-in slide-in-from-top-2">
-    <div className="flex gap-2">
-      <div className="relative flex-1">
-        <input 
-          value={joinId} 
-          onChange={(e) => setJoinId(e.target.value)} 
-          placeholder="Cole o ID do projeto aqui..." 
-          className="w-full bg-purple-900/10 border border-purple-500/30 rounded-xl pl-4 pr-4 py-3 text-sm text-white focus:border-purple-500 outline-none placeholder:text-slate-600" 
-        />
-      </div>
-      <Button 
-        size="icon" 
-        onClick={() => { if(joinId) onJoinProject(joinId); }} 
-        className="rounded-xl bg-purple-600 hover:bg-purple-500 text-white w-12 h-11 shadow-lg shadow-purple-900/20"
-        title="Adicionar Projeto"
-      >
-        <Plus size={20} />
-      </Button>
-    </div>
-    <p className="text-[10px] text-slate-500 mt-2 ml-1">
-      Peça o ID para o criador do projeto e cole acima para entrar.
-    </p>
-  </div>
-)}
-
-{/* Barra de Busca (Visível apenas na aba 'mine') */}
-{activeTab === 'mine' && (
-  <div className="relative mb-4">
-    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-    <input 
-      type="text" placeholder="Buscar meus projetos..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
-      className="w-full bg-slate-950/30 border border-white/5 rounded-xl pl-10 pr-4 py-3 text-sm text-white focus:outline-none focus:border-cyan-500/30"
-    />
-  </div>
-)}
-
-{/* ... Lista de Projetos abaixo ... */}
+              {/* 2. Campo de Adicionar Projeto (Aparece apenas na aba COMPARTILHADOS) */}
+              {activeTab === 'shared' && (
+                <div className="mb-2 animate-in slide-in-from-top-2 duration-200">
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <input 
+                        value={joinId} 
+                        onChange={(e) => setJoinId(e.target.value)} 
+                        placeholder="Cole o ID do projeto aqui..." 
+                        className="w-full bg-purple-900/10 border border-purple-500/30 rounded-xl pl-4 pr-4 py-3 text-sm text-white focus:border-purple-500 outline-none placeholder:text-slate-600" 
+                      />
+                    </div>
+                    <Button 
+                      size="icon" 
+                      onClick={() => { if(joinId) onJoinProject(joinId); }} 
+                      className="rounded-xl bg-purple-600 hover:bg-purple-500 text-white w-12 h-11 shadow-lg shadow-purple-900/20 flex-shrink-0"
+                      title="Adicionar Projeto"
+                    >
+                      <Plus size={20} />
+                    </Button>
+                  </div>
+                  <p className="text-[10px] text-slate-500 mt-2 ml-1">
+                    Peça o ID para o criador do projeto e cole acima para entrar.
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Lista com Scroll */}
@@ -213,7 +228,9 @@ const ProjectManager = ({
               {displayedProjects.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-48 text-slate-500">
                   <FolderOpen size={32} className="opacity-20 mb-2" />
-                  <p className="text-sm font-medium opacity-50">Nenhum projeto encontrado</p>
+                  <p className="text-sm font-medium opacity-50">
+                    {activeTab === 'mine' ? 'Nenhum projeto encontrado' : 'Nenhum projeto compartilhado'}
+                  </p>
                 </div>
               ) : (
                 displayedProjects.map(project => <ProjectCard key={project.id} project={project} />)
@@ -223,7 +240,7 @@ const ProjectManager = ({
         </DialogContent>
       </Dialog>
 
-      {/* NOVO DIALOG DE RENOMEAR */}
+      {/* DIALOG DE RENOMEAR */}
       <Dialog open={!!renameData} onOpenChange={() => setRenameData(null)}>
         <DialogContent className="fixed z-[10010] left-[50%] top-[50%] translate-x-[-50%] translate-y-[-50%] bg-slate-900 border border-slate-700 text-white w-[90vw] max-w-sm rounded-2xl">
           <DialogHeader>
