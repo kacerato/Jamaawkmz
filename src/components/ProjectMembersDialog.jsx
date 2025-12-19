@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Users, Shield, UserX, Calendar, Crown, Mail } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { supabase } from '../supabase'; // IMPORTANTE: Verifique se o caminho do seu supabase.js está correto aqui
+import { supabase } from '../lib/supabase';
 
 const ProjectMembersDialog = ({ isOpen, onClose, projectId, currentUserId, isOwner }) => {
   const [members, setMembers] = useState([]);
