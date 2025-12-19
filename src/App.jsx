@@ -75,6 +75,23 @@ import BairroDetectionService from './components/BairroDetectionService'
 import ProjectLockService from './services/ProjectLockService'
 import { useProjects } from './hooks/useProjects';
 
+// 1. NOVOS IMPORTS (UTILITÁRIOS E SERVIÇOS)
+import { 
+  calculateDistance, 
+  generateUUID, 
+  generateRandomColor, 
+  safeToFixed, 
+  formatDistanceDetailed,
+  calculateTotalDistanceWithBranches,
+  KalmanFilter,
+  RoadSnappingService
+} from './utils/geoUtils';
+import { RoutingService } from './services/RoutingService';
+
+// 2. NOVOS COMPONENTES VISUAIS
+import MapControls from './components/MapControls';
+import ProjectMembersDialog from './components/ProjectMembersDialog';
+
 import 'mapbox-gl/dist/mapbox-gl.css'
 import './App.css'
 import ProjectReport from './components/ProjectReport';
@@ -94,7 +111,7 @@ const DEFAULT_BAIRROS = [
 
 const mapStyles = {
   streets: { name: 'Ruas', url: 'mapbox://styles/mapbox/streets-v11' },
-  satellite: { name: 'Satélite', url: 'mapbox://styles/mapbox/satellite-streets-v11' }, // Híbrido
+  satellite: { name: 'Satélite', url: 'mapbox://styles/mapbox/satellite-streets-v11' },
   dark: { name: 'Escuro', url: 'mapbox://styles/mapbox/dark-v10' },
 };
 
@@ -110,79 +127,6 @@ const deduplicateProjects = (projectsList) => {
   });
   return Array.from(uniqueMap.values());
 };
-
-// Função para gerar UUIDs
-const generateUUID = () => {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-    return crypto.randomUUID();
-  }
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-    var r = Math.random() * 16 | 0,
-      v = c == 'x' ? r : (r & 0x3 | 0x8);
-    return v.toString(16);
-  });
-};
-
-const generateRandomColor = () => {
-  const colors = [
-    '#1e3a8a', '#3730a3', '#5b21b6', '#7c2d12', '#831843',
-    '#0f766e', '#1e40af', '#334155', '#475569', '#6b21a8',
-    '#86198f', '#9d174d', '#be185d', '#7e22ce', '#6d28d9',
-    '#4338ca', '#374151', '#4b5563', '#1f2937', '#111827'
-  ];
-  return colors[Math.floor(Math.random() * colors.length)];
-};
-
-const safeToFixed = (value, decimals = 2) => {
-  if (value === undefined || value === null || isNaN(value)) {
-    return "0".padStart(decimals + 2, '0');
-  }
-  return Number(value).toFixed(decimals);
-};
-
-const formatDistanceDetailed = (distanceInMeters) => {
-  if (distanceInMeters === undefined || distanceInMeters === null || isNaN(distanceInMeters)) {
-    return "0 m";
-  }
-  
-  const distance = Number(distanceInMeters);
-  
-  if (distance < 1) {
-    return `${(distance * 100).toFixed(0)} cm`;
-  } else if (distance < 1000) {
-    return `${distance.toFixed(0)} m`;
-  } else if (distance < 10000) {
-    return `${(distance / 1000).toFixed(2)} km`;
-  } else {
-    return `${(distance / 1000).toFixed(1)} km`;
-  }
-};
-
-class KalmanFilter {
-  constructor(R = 1, Q = 1, A = 1, B = 0, C = 1) {
-    this.R = R;
-    this.Q = Q;
-    this.A = A;
-    this.B = B;
-    this.C = C;
-    this.cov = NaN;
-    this.x = NaN;
-  }
-  
-  filter(z, u = 0) {
-    if (isNaN(this.x)) {
-      this.x = (1 / this.C) * z;
-      this.cov = (1 / this.C) * this.Q * (1 / this.C);
-    } else {
-      const predX = (this.A * this.x) + (this.B * u);
-      const predCov = ((this.A * this.cov) * this.A) + this.Q;
-      const K = predCov * this.C * (1 / ((this.C * predCov * this.C) + this.R));
-      this.x = predX + K * (z - (this.C * predX));
-      this.cov = predCov - (K * this.C * predCov);
-    }
-    return this.x;
-  }
-}
 
 const isValidProject = (project) => {
   try {
@@ -208,50 +152,6 @@ const isValidProject = (project) => {
   }
 };
 
-class RoadSnappingService {
-  static async snapToRoad(lat, lng, radius = 50) {
-    try {
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
-      );
-      
-      const data = await response.json();
-      
-      if (data && data.lat && data.lon) {
-        return {
-          lat: parseFloat(data.lat),
-          lng: parseFloat(data.lon),
-          address: data.address,
-          snapped: true
-        };
-      }
-    } catch (error) {
-      console.warn('Erro no snapping de rua:', error);
-    }
-    
-    return { lat, lng, snapped: false };
-  }
-  
-  static async snapMultiplePoints(points) {
-    const snappedPoints = [];
-    
-    for (const point of points) {
-      const snapped = await this.snapToRoad(point.lat, point.lng);
-      snappedPoints.push({
-        ...point,
-        lat: snapped.lat,
-        lng: snapped.lng,
-        originalLat: point.lat,
-        originalLng: point.lng
-      });
-      
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
-    
-    return snappedPoints;
-  }
-}
-
 const getUniqueProjectName = (baseName, existingProjects) => {
   let newName = baseName;
   let counter = 1;
@@ -274,22 +174,6 @@ const calculateTotalDistanceAllProjects = (projects) => {
   
   return total;
 };
-
-// Função de Alta Precisão (WGS-84)
-const calculateDistance = (lat1, lon1, lat2, lon2) => {
-  const R = 6378137;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  
-  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  const d = R * c;
-  
-  return d;
-}
 
 // Funções de localStorage
 const storage = {
@@ -645,9 +529,8 @@ function App() {
   const [newMarkerData, setNewMarkerData] = useState(null);
   const [snappingEnabled, setSnappingEnabled] = useState(true);
   const [snappingPoints, setSnappingPoints] = useState([]);
-  // Adicione junto com os outros states
-const [showStyleMenu, setShowStyleMenu] = useState(false);
-const [mapStyle, setMapStyle] = useState('satellite'); // Começar com satélite ou streets
+  const [showStyleMenu, setShowStyleMenu] = useState(false);
+  const [mapStyle, setMapStyle] = useState('satellite');
   
   const [loadedProjects, setLoadedProjects] = useState([]);
   const [showLoadedProjects, setShowLoadedProjects] = useState(false);
@@ -684,6 +567,9 @@ const [mapStyle, setMapStyle] = useState('satellite'); // Começar com satélite
   const [trackingInputMode, setTrackingInputMode] = useState('gps');
   
   const [projectLock, setProjectLock] = useState(null);
+  
+  // 4. NOVO STATE PARA GESTÃO DE MEMBROS
+  const [showMembersDialog, setShowMembersDialog] = useState(false);
   
   // ... outros hooks ...
   const {
@@ -963,37 +849,6 @@ const [mapStyle, setMapStyle] = useState('satellite'); // Começar com satélite
     }
   };
   
-  const calculateTotalDistanceWithBranches = (points) => {
-    if (points.length < 2) return 0;
-    
-    let total = 0;
-    
-    const mainPathPoints = points.filter(point => point.connectedFrom === null);
-    for (let i = 0; i < mainPathPoints.length - 1; i++) {
-      total += calculateDistance(
-        mainPathPoints[i].lat,
-        mainPathPoints[i].lng,
-        mainPathPoints[i + 1].lat,
-        mainPathPoints[i + 1].lng
-      );
-    }
-    
-    const branchPoints = points.filter(point => point.connectedFrom !== null);
-    for (const branchPoint of branchPoints) {
-      const parentPoint = points.find(p => p.id === branchPoint.connectedFrom);
-      if (parentPoint) {
-        total += calculateDistance(
-          parentPoint.lat,
-          parentPoint.lng,
-          branchPoint.lat,
-          branchPoint.lng
-        );
-      }
-    }
-    
-    return total;
-  };
-  
   const handleLogout = async () => {
     try {
       if (currentProject && isOnline && user) {
@@ -1217,10 +1072,8 @@ const [mapStyle, setMapStyle] = useState('satellite'); // Começar com satélite
           await supabase.from('projetos').insert([project]);
         }
         
-        // CORREÇÃO AQUI:
-        await loadProjects(); // Usa a função do hook
+        await loadProjects();
       } else {
-        // ... (código offline mantém igual)
         let updatedProjects;
         if (existingProject && shouldOverwrite) {
           updatedProjects = projects.map(p => p.id === existingProject.id ? project : p);
@@ -1228,7 +1081,6 @@ const [mapStyle, setMapStyle] = useState('satellite'); // Começar com satélite
           updatedProjects = [...projects, project];
         }
         setProjects(updatedProjects);
-        // Salvar no localStorage
         const userProjects = storage.loadProjects(user?.id);
         const mergedProjects = [...userProjects, project];
         const uniqueProjects = deduplicateProjects(mergedProjects);
@@ -1298,7 +1150,6 @@ const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
     else if (currentProject && !projectName.trim()) projectNameToUse = currentProject.name;
     else if (autoSave && !projectName.trim()) projectNameToUse = `Rastreamento ${new Date().toLocaleString('pt-BR')}`;
     
-    // Sanitização segura (sem usar new desnecessário)
     const sanitizedPoints = finalPoints.map(p => ({
       ...p,
       id: (p.id && typeof p.id === 'string') ? p.id : generateUUID(),
@@ -1307,7 +1158,6 @@ const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
     
     const calculatedTotalDistance = calculateTotalDistanceWithBranches(sanitizedPoints) || 0;
     
-    // Cria a data de forma segura
     const nowISO = new Date().toISOString();
     
     const projectData = {
@@ -1322,7 +1172,6 @@ const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
     let savedProject;
     
     if (editingProject) {
-      // ... Lógica de Edição ...
       if (isOnline && user) {
         const { data, error } = await supabase.from('projetos').update(projectData).eq('id', editingProject.id).select();
         if (error) throw error;
@@ -1330,12 +1179,10 @@ const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
       } else {
         savedProject = { ...editingProject, ...projectData };
       }
-      // ... Atualiza estados ...
       setProjects(prev => prev.map(p => p.id === editingProject.id ? savedProject : p));
       setEditingProject(null);
       
     } else if (currentProject) {
-      // ... Lógica de Projeto Atual ...
       if (isOnline && user) {
         const { data, error } = await supabase.from('projetos').update(projectData).eq('id', currentProject.id).select();
         if (error) throw error;
@@ -1343,12 +1190,10 @@ const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
       } else {
         savedProject = { ...currentProject, ...projectData };
       }
-      // ... Atualiza estados ...
       setProjects(prev => prev.map(p => p.id === currentProject.id ? savedProject : p));
       setCurrentProject(savedProject);
       
     } else {
-      // ... Lógica de Novo Projeto ...
       if (isOnline && user) {
         const { data, error } = await supabase.from('projetos').insert([{ ...projectData, user_id: user.id }]).select();
         if (error) throw error;
@@ -1364,16 +1209,12 @@ const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
       setProjects(prev => [...prev, savedProject]);
     }
     
-    // Salva no LocalStorage
     const userProjects = storage.loadProjects(user?.id);
-    // Remove versão antiga se existir e adiciona nova
     const otherProjects = userProjects.filter(p => p.id !== savedProject.id);
     storage.saveProjects(user?.id, [...otherProjects, savedProject]);
     
-    // Tenta liberar o lock com segurança (try/catch interno para não quebrar o save se o lock falhar)
     if (!autoSave && currentProject && isOnline && user) {
       try {
-        // Verifique se ProjectLockService está importado corretamente no topo
         if (ProjectLockService && typeof ProjectLockService.releaseLock === 'function') {
           await ProjectLockService.releaseLock(currentProject.id, user.id);
         }
@@ -1729,13 +1570,9 @@ const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
     }
   };
   
-  // Adicione esta função dentro do componente App, junto com deleteProject, etc.
-  // Dentro do App.jsx (Substituindo a função antiga gigante)
 const handleRenameProject = async (projectId, newName) => {
-  // 1. Chama a lógica do hook (que lida com Supabase e LocalStorage)
   await renameProject(projectId, newName);
   
-  // 2. Atualiza apenas os estados visuais específicos do App.jsx que o hook não conhece
   if (currentProject && currentProject.id === projectId) {
     setCurrentProject(prev => ({ ...prev, name: newName }));
     setProjectName(newName);
@@ -1772,12 +1609,7 @@ const syncOfflineProjects = async () => {
   try {
     const offlineProjects = storage.loadProjects(user.id);
     
-    // Filtra apenas projetos criados offline (id começa com offline_) ou que não estão no supabase
-    // (Sua lógica original já fazia isso ao iterar, mantendo simples aqui)
-    
     for (const project of offlineProjects) {
-      // Se o projeto tem ID numérico ou UUID válido e já está sincronizado, ignoramos
-      // Se for ID gerado offline (ex: offline_12345), sincronizamos
       if (project.id.toString().startsWith('offline_')) {
         try {
           const { data, error } = await supabase
@@ -1794,7 +1626,6 @@ const syncOfflineProjects = async () => {
           
           if (error) throw error;
           
-          // Atualiza o ID local com o ID novo do banco
           const updatedProject = { ...project, id: data[0].id };
           const userProjects = storage.loadProjects(user.id);
           const updatedUserProjects = userProjects.map(p =>
@@ -1810,7 +1641,6 @@ const syncOfflineProjects = async () => {
       }
     }
     
-    // CORREÇÃO AQUI: Usar loadProjects() do hook em vez de loadProjectsFromSupabase()
     await loadProjects();
     
   } catch (error) {
@@ -2131,10 +1961,7 @@ const syncOfflineProjects = async () => {
     
     if (data.success) {
       showFeedback('Sucesso', data.message, 'success');
-      
-      // CORREÇÃO AQUI:
-      await loadProjects(); // Usa a função do hook
-      
+      await loadProjects();
     } else {
       showFeedback('Erro', data.message, 'error');
     }
@@ -2482,42 +2309,6 @@ const syncOfflineProjects = async () => {
     }
   };
   
-  const getRouteFromAPI = async (start, end) => {
-    try {
-      const response = await fetch(
-        `https://router.project-osrm.org/route/v1/driving/${start[0]},${start[1]};${end[0]},${end[1]}?overview=full&geometries=geojson`
-      )
-      const data = await response.json()
-      
-      if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
-        const coordinates = data.routes[0].geometry.coordinates
-        return coordinates.map(coord => [coord[1], coord[0]])
-      }
-      return null
-    } catch (error) {
-      console.error('Erro ao obter rota:', error)
-      return null
-    }
-  }
-  
-  const calculateDistanceMatrix = async (coordinates) => {
-    try {
-      const coordsString = coordinates.map(c => `${c[0]},${c[1]}`).join(';')
-      const response = await fetch(
-        `https://router.project-osrm.org/table/v1/driving/${coordsString}?annotations=distance`
-      )
-      const data = await response.json()
-      
-      if (data.code === 'Ok') {
-        return data.distances
-      }
-      return null
-    } catch (error) {
-      console.error('Erro ao calcular matriz de distâncias:', error)
-      return null
-    }
-  }
-  
   const handleCalculateDistance = async () => {
     if (selectedForDistance.length !== 2) {
       showFeedback('Erro', 'Selecione exatamente 2 marcadores', 'error');
@@ -2527,7 +2318,8 @@ const syncOfflineProjects = async () => {
     setCalculatingRoute(true)
     const [m1, m2] = selectedForDistance
     
-    const route = await getRouteFromAPI([m1.lng, m1.lat], [m2.lng, m2.lat])
+    // 3. ATUALIZAR CHAMADA PARA RoutingService
+    const route = await RoutingService.getRouteFromAPI([m1.lng, m1.lat], [m2.lng, m2.lat])
     
     if (route) {
       setRouteCoordinates(route)
@@ -2536,7 +2328,7 @@ const syncOfflineProjects = async () => {
         [m1.lng, m1.lat],
         [m2.lng, m2.lat]
       ]
-      const distanceMatrix = await calculateDistanceMatrix(coordinates)
+      const distanceMatrix = await RoutingService.calculateDistanceMatrix(coordinates)
       let distance
       
       if (distanceMatrix && distanceMatrix[0] && distanceMatrix[0][1]) {
@@ -2581,20 +2373,23 @@ const syncOfflineProjects = async () => {
     
     try {
       const coordsString = allCoordinates.map(c => `${c[0]},${c[1]}`).join(';')
-      const response = await fetch(
-        `https://router.project-osrm.org/route/v1/driving/${coordsString}?overview=full&geometries=geojson`
-      )
-      const data = await response.json()
       
-      if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
-        const coordinates = data.routes[0].geometry.coordinates
-        const routeCoords = coordinates.map(coord => [coord[1], coord[0]])
+      // 3. ATUALIZAR CHAMADA PARA RoutingService
+      const data = await RoutingService.getRouteFromAPI(allCoordinates[0], allCoordinates[allCoordinates.length - 1])
+      
+      if (data) {
+        const routeCoords = data.map(coord => [coord[1], coord[0]])
         setRouteCoordinates(routeCoords)
         
-        const distance = data.routes[0].distance
+        // Para simplicidade, usaremos a distância calculada manualmente
+        let totalDistance = 0
+        for (let i = 0; i < markers.length - 1; i++) {
+          totalDistance += calculateDistance(markers[i].lat, markers[i].lng, markers[i+1].lat, markers[i+1].lng)
+        }
+        
         setDistanceResult({
           type: 'todas',
-          distance: distance.toFixed(2),
+          distance: totalDistance.toFixed(2),
           count: markers.length,
           method: 'rota'
         })
@@ -2937,8 +2732,6 @@ const syncOfflineProjects = async () => {
     }
   };
   
-
-  
   const exportProjectAsKML = (project = currentProject) => {
     if (!project) return;
     
@@ -3135,7 +2928,6 @@ const syncOfflineProjects = async () => {
     if (!mapRef.current) return;
 
     // 2. Tenta pegar features de marcadores (Markers)
-    // Filtramos apenas as camadas que realmente existem no mapa agora
     const markerLayers = ['markers-hit-area', 'markers-layer'].filter(id => 
       mapRef.current.getLayer(id)
     );
@@ -3149,7 +2941,6 @@ const syncOfflineProjects = async () => {
     
     // Lógica do segmento (Traçado)
     if (tracking && !paused) {
-      // 3. CORREÇÃO PRINCIPAL: Verifica se as camadas de segmento existem antes de consultar
       const segmentLayers = ['segment-hit-area', 'segment-badge-bg'].filter(id => 
         mapRef.current.getLayer(id)
       );
@@ -3279,7 +3070,6 @@ const syncOfflineProjects = async () => {
   type="line"
   paint={{
     'line-color': project.color,
-    // MESMA LÓGICA AQUI PARA CONSISTÊNCIA
     'line-width': [
       'interpolate', ['linear'], ['zoom'],
       10, 1,
@@ -3339,12 +3129,11 @@ const syncOfflineProjects = async () => {
   }}
   paint={{
     'line-color': ['get', 'color'],
-    // ALTERAÇÃO AQUI: Largura dinâmica baseada no zoom
     'line-width': [
       'interpolate', ['linear'], ['zoom'],
-      10, 1,    // Zoom longe: linha bem fina
-      15, 3,    // Zoom médio: linha normal
-      22, 6     // Zoom perto: linha mais espessa para toque
+      10, 1,
+      15, 3,
+      22, 6
     ],
     'line-opacity': 0.9
   }}
@@ -3536,58 +3325,27 @@ const syncOfflineProjects = async () => {
             </Popup>
           )}
         </Map>
-        { /* === SELETOR DE ESTILO DE MAPA (CORRIGIDO) === */ }
-<div className="absolute top-24 right-4 z-[50] flex flex-col gap-2">
-  <div className="relative">
-    {/* Botão Principal */}
-    <Button
-      size="icon"
-      onClick={(e) => {
-        e.stopPropagation(); // Impede clique no mapa
-        setShowStyleMenu(!showStyleMenu); // Alterna abrir/fechar
-      }}
-      className={`
-        backdrop-blur-md border shadow-xl rounded-xl h-10 w-10 transition-all duration-200
-        ${showStyleMenu 
-          ? 'bg-cyan-500 text-white border-cyan-400' 
-          : 'bg-slate-900/90 text-cyan-400 border-white/10 hover:bg-slate-800'}
-      `}
-      title="Alterar camada do mapa"
-    >
-      <Globe className="w-6 h-6" />
-    </Button>
-    
-    {/* Menu Dropdown (Renderização Condicional Explícita) */}
-    {showStyleMenu && (
-      <div className="absolute right-0 top-12 w-40 py-2 bg-slate-900/95 backdrop-blur-xl border border-slate-700 rounded-xl shadow-2xl z-[60] animate-in fade-in zoom-in-95 duration-200">
         
-        <div className="px-3 pb-2 mb-1 text-[10px] uppercase text-slate-500 font-bold tracking-wider border-b border-white/5 flex justify-between items-center">
-          <span>Visualização</span>
-          <button onClick={() => setShowStyleMenu(false)}><X size={12}/></button>
-        </div>
-
-        {Object.entries(mapStyles).map(([key, style]) => (
-          <button
-            key={key}
-            onClick={(e) => {
-              e.stopPropagation();
-              setMapStyle(key);
-              setShowStyleMenu(false); // Fecha ao selecionar
-            }}
-            className={`w-full text-left px-4 py-2.5 text-xs font-medium transition-all flex items-center justify-between group
-              ${mapStyle === key 
-                ? 'bg-cyan-500/10 text-cyan-400 border-l-2 border-cyan-400' 
-                : 'text-slate-300 hover:bg-white/5 hover:text-white border-l-2 border-transparent'}
-            `}
-          >
-            {style.name}
-            {mapStyle === key && <CheckCircle className="w-3 h-3 text-cyan-400" />}
-          </button>
-        ))}
-      </div>
-    )}
-  </div>
-</div>
+        {/* 5. NOVO CONTROLE DE MAPA E GPS (Substitui os botões antigos) */}
+        <MapControls 
+          onCenterMap={centerMapOnUser}
+          currentMapStyle={mapStyle}
+          onChangeStyle={setMapStyle}
+          isTrackingActive={tracking}
+        />
+        
+        {/* 6. Botão de Equipe (Só aparece se tiver projeto carregado e online) */}
+        {currentProject && isOnline && (
+          <div className="absolute top-4 left-20 z-10">
+             <Button 
+               size="sm" 
+               onClick={() => setShowMembersDialog(true)}
+               className="bg-slate-900/80 backdrop-blur text-cyan-400 border border-white/10 shadow-xl"
+             >
+               <Users size={16} className="mr-2" /> Equipe
+             </Button>
+          </div>
+        )}
       </div>
       
 
@@ -3816,10 +3574,10 @@ const syncOfflineProjects = async () => {
     loadProject(p);
     setShowProjectsList(false);
   }}
-  onDeleteProject={deleteProject} // Supondo que você já tenha essa função
+  onDeleteProject={deleteProject}
   onExportProject={exportProjectAsKML}
   onJoinProject={handleJoinProject}
-  onRenameProject={handleRenameProject} // <--- ADICIONE ESTA LINHA
+  onRenameProject={handleRenameProject}
   onOpenReport={(project) => {
     const img = getMapImage();
     setReportData({ project, image: img });
@@ -4244,6 +4002,15 @@ const syncOfflineProjects = async () => {
         project={reportData?.project}
         mapImage={reportData?.image}
         currentUserEmail={user?.email}
+      />
+
+      {/* 5. NOVO PAINEL DE GESTÃO DE MEMBROS */}
+      <ProjectMembersDialog 
+        isOpen={showMembersDialog}
+        onClose={() => setShowMembersDialog(false)}
+        projectId={currentProject?.id}
+        currentUserId={user?.id}
+        isOwner={currentProject?.user_id === user?.id}
       />
 
       <input
