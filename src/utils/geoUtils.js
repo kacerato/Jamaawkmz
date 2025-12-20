@@ -3,10 +3,65 @@
 // --- CONSTANTES ---
 const R_EARTH = 6378137; // Raio da Terra em metros (WGS-84)
 
+// --- CLASSES UTILITÁRIAS (Necessárias para o GPS e Build) ---
+
+export class KalmanFilter {
+  constructor(R = 1, Q = 1, A = 1, B = 0, C = 1) {
+    this.R = R; // Ruído da medição
+    this.Q = Q; // Ruído do processo
+    this.A = A; // Estado
+    this.B = B; // Controle
+    this.C = C; // Medição
+    this.cov = NaN;
+    this.x = NaN; // Valor filtrado
+  }
+  
+  filter(z, u = 0) {
+    if (isNaN(this.x)) {
+      this.x = (1 / this.C) * z;
+      this.cov = (1 / this.C) * this.Q * (1 / this.C);
+    } else {
+      const predX = (this.A * this.x) + (this.B * u);
+      const predCov = ((this.A * this.cov) * this.A) + this.Q;
+      const K = predCov * this.C * (1 / ((this.C * predCov * this.C) + this.R));
+      this.x = predX + K * (z - (this.C * predX));
+      this.cov = predCov - (K * this.C * predCov);
+    }
+    return this.x;
+  }
+}
+
+export class RoadSnappingService {
+  static async snapToRoad(lat, lng) {
+    try {
+      // Usa Nominatim (OSM) para achar a rua mais próxima
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`, { headers: { 'User-Agent': 'JamaawApp/1.0' } }
+      );
+      
+      const data = await response.json();
+      
+      if (data && data.lat && data.lon) {
+        return {
+          lat: parseFloat(data.lat),
+          lng: parseFloat(data.lon),
+          address: data.address,
+          snapped: true
+        };
+      }
+    } catch (error) {
+      console.warn('Erro no snapping de rua:', error);
+    }
+    
+    // Fallback: retorna original se falhar
+    return { lat, lng, snapped: false };
+  }
+}
+
 // --- CÁLCULO GEODÉSICO DE ALTA PRECISÃO ---
 export const calculateDistance = (lat1, lon1, lat2, lon2) => {
   if (!lat1 || !lon1 || !lat2 || !lon2) return 0;
-
+  
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
   
@@ -19,24 +74,22 @@ export const calculateDistance = (lat1, lon1, lat2, lon2) => {
 }
 
 // --- A FUNÇÃO MESTRA DE METRAGEM ---
-// Esta é a ÚNICA função que deve ser usada em todo o app.
 export const calculateTotalProjectDistance = (points, connections = []) => {
   if (!points || points.length < 2) return 0;
   
   let totalDistance = 0;
-
+  
   // 1. Cria um Mapa de Hash para acesso instantâneo (Performance O(1))
-  // Isso faz o cálculo ser instantâneo mesmo com 10.000 pontos
   const pointMap = new Map();
   for (const p of points) {
     pointMap.set(p.id, p);
   }
-
+  
   // 2. Calcula Distância das Ramificações (Árvore Principal)
   for (let i = 0; i < points.length; i++) {
     const point = points[i];
     let parent = null;
-
+    
     if (point.connectedFrom) {
       // Se tem pai explícito (Ramificação)
       parent = pointMap.get(point.connectedFrom);
@@ -44,20 +97,20 @@ export const calculateTotalProjectDistance = (points, connections = []) => {
       // Fallback para lógica sequencial antiga (se necessário)
       parent = points[i - 1];
     }
-
+    
     if (parent) {
       const dist = calculateDistance(parent.lat, parent.lng, point.lat, point.lng);
       const spans = point.spans || 1; // Multiplicador AG
       totalDistance += (dist * spans);
     }
   }
-
+  
   // 3. Calcula Distância das Conexões Extras (Loops/Anéis)
   if (connections && connections.length > 0) {
     for (const conn of connections) {
       const p1 = pointMap.get(conn.fromId);
       const p2 = pointMap.get(conn.toId);
-
+      
       if (p1 && p2) {
         const dist = calculateDistance(p1.lat, p1.lng, p2.lat, p2.lng);
         const spans = conn.spans || 1; // Multiplicador AG
@@ -65,11 +118,24 @@ export const calculateTotalProjectDistance = (points, connections = []) => {
       }
     }
   }
-
+  
   return totalDistance;
 };
 
-// --- FORMATAÇÃO VISUAL ---
+// --- ALIAS PARA COMPATIBILIDADE ---
+// Isso evita que o build quebre se o App.jsx ainda estiver chamando o nome antigo
+export const calculateTotalDistanceWithBranches = calculateTotalProjectDistance;
+export const calculateTotalDistance = calculateTotalProjectDistance;
+
+// --- FORMATAÇÃO VISUAL E HELPERS ---
+
+export const safeToFixed = (value, decimals = 2) => {
+  if (value === undefined || value === null || isNaN(value)) {
+    return "0".padStart(decimals + 2, '0');
+  }
+  return Number(value).toFixed(decimals);
+};
+
 export const formatDistanceDetailed = (distanceInMeters) => {
   if (distanceInMeters === undefined || distanceInMeters === null || isNaN(distanceInMeters)) {
     return "0 m";
@@ -78,14 +144,14 @@ export const formatDistanceDetailed = (distanceInMeters) => {
   if (distance < 1) return `${(distance * 100).toFixed(0)} cm`;
   else if (distance < 1000) return `${distance.toFixed(0)} m`;
   else if (distance < 10000) return `${(distance / 1000).toFixed(2)} km`;
-  else return `${(distance / 1000).toFixed(3)} km`; // 3 casas decimais para precisão (ex: 12.345 km)
+  else return `${(distance / 1000).toFixed(3)} km`; // 3 casas decimais
 };
 
-// --- OUTROS UTILITÁRIOS ---
 export const generateUUID = () => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+    const r = Math.random() * 16 | 0,
+      v = c == 'x' ? r : (r & 0x3 | 0x8);
     return v.toString(16);
   });
 };
