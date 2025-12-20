@@ -76,13 +76,13 @@ import ProjectLockService from './services/ProjectLockService'
 import { useProjects } from './hooks/useProjects';
 
 // 1. NOVOS IMPORTS (UTILITÁRIOS E SERVIÇOS)
-import { 
-  calculateDistance, 
-  generateUUID, 
-  generateRandomColor, 
-  safeToFixed, 
+import {
+  calculateDistance,
+  generateUUID,
+  generateRandomColor,
+  safeToFixed,
   formatDistanceDetailed,
-  calculateTotalDistanceWithBranches,
+  calculateTotalProjectDistance,
   KalmanFilter,
   RoadSnappingService
 } from './utils/geoUtils';
@@ -185,7 +185,7 @@ const storage = {
     const data = localStorage.getItem(`jamaaw_projects_${userId}`);
     return data ? JSON.parse(data) : [];
   },
-
+  
   // Bairros
   saveBairros: (bairros) => {
     localStorage.setItem('jamaaw_bairros', JSON.stringify(bairros));
@@ -194,7 +194,7 @@ const storage = {
     const data = localStorage.getItem('jamaaw_bairros');
     return data ? JSON.parse(data) : null;
   },
-
+  
   // Favoritos
   saveFavorites: (userId, favorites) => {
     localStorage.setItem(`jamaaw_favorites_${userId}`, JSON.stringify(favorites));
@@ -203,7 +203,7 @@ const storage = {
     const data = localStorage.getItem(`jamaaw_favorites_${userId}`);
     return data ? JSON.parse(data) : null;
   },
-
+  
   // Marcadores
   saveMarkers: (userId, markers) => {
     localStorage.setItem(`jamaaw_markers_${userId}`, JSON.stringify(markers));
@@ -212,14 +212,14 @@ const storage = {
     const data = localStorage.getItem(`jamaaw_markers_${userId}`);
     return data ? JSON.parse(data) : null;
   },
-
+  
   // Remover projeto
   deleteProject: (userId, projectId) => {
     const projects = storage.loadProjects(userId);
     const updatedProjects = projects.filter(p => p.id !== projectId);
     storage.saveProjects(userId, updatedProjects);
   },
-
+  
   // Limpar dados do usuário
   clearUserData: (userId) => {
     localStorage.removeItem(`jamaaw_projects_${userId}`);
@@ -553,10 +553,10 @@ function App() {
   const [importSuccess, setImportSuccess] = useState(false);
   const [importError, setImportError] = useState(null);
   
-  const [selectedMarkers, setSelectedMarkers] = useState([]);
+  // REMOVIDO: const [selectedMarkers, setSelectedMarkers] = useState([]);
   const [showBatchBairroDialog, setShowBatchBairroDialog] = useState(false);
   const [selectedProjects, setSelectedProjects] = useState([]);
-  const [showMultipleSelection, setShowMultipleSelection] = useState(false);
+  // REMOVIDO: const [showMultipleSelection, setShowMultipleSelection] = useState(false);
   
   const [selectedStartPoint, setSelectedStartPoint] = useState(null);
   
@@ -567,6 +567,9 @@ function App() {
   const [trackingInputMode, setTrackingInputMode] = useState('gps');
   
   const [projectLock, setProjectLock] = useState(null);
+  
+  // NOVOS STATES
+  const [extraConnections, setExtraConnections] = useState([]);
   
   // 4. NOVO STATE PARA GESTÃO DE MEMBROS
   const [showMembersDialog, setShowMembersDialog] = useState(false);
@@ -590,23 +593,23 @@ function App() {
   const showFeedback = (title, message, type = 'success') => {
     setNotification({ title, message, type });
   };
-
+  
   // Função para atualizar ponto do projeto
   const handleUpdateProjectPoint = async (updatedPoint) => {
     const projectId = pointPopupInfo?.projectId;
     const projectToUpdate = loadedProjects.find(p => p.id === projectId) || currentProject;
-
+    
     if (!projectToUpdate) {
       console.error("Projeto não encontrado para atualização do ponto");
       return;
     }
-
-    const updatedPoints = projectToUpdate.points.map(p => 
+    
+    const updatedPoints = projectToUpdate.points.map(p =>
       p.id === updatedPoint.id ? updatedPoint : p
     );
-
+    
     const updatedProject = { ...projectToUpdate, points: updatedPoints };
-
+    
     setLoadedProjects(prev => prev.map(p => p.id === projectId ? updatedProject : p));
     if (currentProject && currentProject.id === projectId) {
       setCurrentProject(updatedProject);
@@ -614,17 +617,17 @@ function App() {
     }
     
     setPointPopupInfo(prev => ({ ...prev, point: updatedPoint }));
-
+    
     if (isOnline && user && !projectId.toString().startsWith('offline_')) {
       try {
         const { error } = await supabase
           .from('projetos')
-          .update({ 
+          .update({
             points: updatedPoints,
             updated_at: new Date().toISOString()
           })
           .eq('id', projectId);
-
+        
         if (error) throw error;
         console.log("Foto salva no projeto com sucesso!");
       } catch (err) {
@@ -634,7 +637,7 @@ function App() {
     } else {
       // Salva localmente no localStorage
       const userProjects = storage.loadProjects(user?.id);
-      const updatedUserProjects = userProjects.map(p => 
+      const updatedUserProjects = userProjects.map(p =>
         p.id === updatedProject.id ? updatedProject : p
       );
       storage.saveProjects(user?.id, updatedUserProjects);
@@ -667,7 +670,7 @@ function App() {
         name: marker.name,
         bairro: marker.bairro,
         descricao: marker.descricao,
-        color: marker.color || '#ef4444' 
+        color: marker.color || '#ef4444'
       }
     }))
   }), [filteredMarkers]);
@@ -687,7 +690,7 @@ function App() {
   }, [tracking, currentProject, isOnline, user]);
   
   // Carregar projetos do Supabase
- 
+  
   
   // Atualizar bairros dos projetos
   const refreshProjectNeighborhoods = async () => {
@@ -778,7 +781,7 @@ function App() {
       supabase.removeChannel(channel);
     };
   }, [currentProject?.id, isOnline]);
-
+  
   useEffect(() => {
     if (showProjectsList) {
       refreshProjectNeighborhoods();
@@ -875,7 +878,6 @@ function App() {
       setProjects([]);
       setManualPoints([]);
       setCurrentProject(null);
-      setSelectedMarkers([]);
       setSelectedStartPoint(null);
       
     } catch (error) {
@@ -883,7 +885,6 @@ function App() {
       setUser(null);
       setMarkers([]);
       setProjects([]);
-      setSelectedMarkers([]);
       setSelectedStartPoint(null);
     }
   };
@@ -935,7 +936,7 @@ function App() {
       supabase.removeChannel(channel);
     };
   }, [currentProject?.id, isOnline]);
-
+  
   // Importar arquivos KML/KMZ
   const handleProjectImport = async (event) => {
     const file = event.target.files[0];
@@ -1051,12 +1052,13 @@ function App() {
       
       updateImportProgress(90, 5, 'Finalizando importação...');
       
-      const totalDistanceVal = calculateTotalDistance(points);
+      const totalDistanceVal = calculateTotalProjectDistance(points, extraConnections);
       
       const project = {
         id: existingProject && shouldOverwrite ? existingProject.id : generateUUID(),
         name: projectName,
         points: points,
+        extra_connections: extraConnections,
         total_distance: totalDistanceVal,
         totalDistance: totalDistanceVal,
         bairro: 'Importado',
@@ -1127,124 +1129,126 @@ function App() {
     }
   };
   
-const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
-  try {
-    let finalPoints = pointsToSave;
-    
-    if (editingProject && finalPoints.length === 0) {
-      finalPoints = editingProject.points;
-    }
-    
-    if (!finalPoints || finalPoints.length === 0) {
-      if (!autoSave) showFeedback('Erro', 'Não há pontos para salvar.', 'error');
-      return;
-    }
-    
-    if (!projectName.trim() && !autoSave && !editingProject && !currentProject) {
-      showFeedback('Erro', 'Digite um nome para o projeto.', 'error');
-      return;
-    }
-    
-    let projectNameToUse = projectName;
-    if (editingProject && !projectName.trim()) projectNameToUse = editingProject.name;
-    else if (currentProject && !projectName.trim()) projectNameToUse = currentProject.name;
-    else if (autoSave && !projectName.trim()) projectNameToUse = `Rastreamento ${new Date().toLocaleString('pt-BR')}`;
-    
-    const sanitizedPoints = finalPoints.map(p => ({
-      ...p,
-      id: (p.id && typeof p.id === 'string') ? p.id : generateUUID(),
-      connectedFrom: (p.connectedFrom && typeof p.connectedFrom === 'string') ? p.connectedFrom : null
-    }));
-    
-    const calculatedTotalDistance = calculateTotalDistanceWithBranches(sanitizedPoints) || 0;
-    
-    const nowISO = new Date().toISOString();
-    
-    const projectData = {
-      name: projectNameToUse.trim(),
-      points: sanitizedPoints,
-      total_distance: calculatedTotalDistance,
-      bairro: selectedBairro !== 'todos' ? selectedBairro : 'Vários',
-      tracking_mode: 'manual',
-      updated_at: nowISO
-    };
-    
-    let savedProject;
-    
-    if (editingProject) {
-      if (isOnline && user) {
-        const { data, error } = await supabase.from('projetos').update(projectData).eq('id', editingProject.id).select();
-        if (error) throw error;
-        savedProject = data[0];
-      } else {
-        savedProject = { ...editingProject, ...projectData };
-      }
-      setProjects(prev => prev.map(p => p.id === editingProject.id ? savedProject : p));
-      setEditingProject(null);
+  const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
+    try {
+      let finalPoints = pointsToSave;
       
-    } else if (currentProject) {
-      if (isOnline && user) {
-        const { data, error } = await supabase.from('projetos').update(projectData).eq('id', currentProject.id).select();
-        if (error) throw error;
-        savedProject = data[0];
-      } else {
-        savedProject = { ...currentProject, ...projectData };
+      if (editingProject && finalPoints.length === 0) {
+        finalPoints = editingProject.points;
       }
-      setProjects(prev => prev.map(p => p.id === currentProject.id ? savedProject : p));
-      setCurrentProject(savedProject);
       
-    } else {
-      if (isOnline && user) {
-        const { data, error } = await supabase.from('projetos').insert([{ ...projectData, user_id: user.id }]).select();
-        if (error) throw error;
-        savedProject = data[0];
-      } else {
-        savedProject = {
-          ...projectData,
-          id: `offline_${Date.now()}`,
-          created_at: nowISO,
-          user_id: user?.id || 'offline'
-        };
+      if (!finalPoints || finalPoints.length === 0) {
+        if (!autoSave) showFeedback('Erro', 'Não há pontos para salvar.', 'error');
+        return;
       }
-      setProjects(prev => [...prev, savedProject]);
-    }
-    
-    const userProjects = storage.loadProjects(user?.id);
-    const otherProjects = userProjects.filter(p => p.id !== savedProject.id);
-    storage.saveProjects(user?.id, [...otherProjects, savedProject]);
-    
-    if (!autoSave && currentProject && isOnline && user) {
-      try {
-        if (ProjectLockService && typeof ProjectLockService.releaseLock === 'function') {
-          await ProjectLockService.releaseLock(currentProject.id, user.id);
+      
+      if (!projectName.trim() && !autoSave && !editingProject && !currentProject) {
+        showFeedback('Erro', 'Digite um nome para o projeto.', 'error');
+        return;
+      }
+      
+      let projectNameToUse = projectName;
+      if (editingProject && !projectName.trim()) projectNameToUse = editingProject.name;
+      else if (currentProject && !projectName.trim()) projectNameToUse = currentProject.name;
+      else if (autoSave && !projectName.trim()) projectNameToUse = `Rastreamento ${new Date().toLocaleString('pt-BR')}`;
+      
+      const sanitizedPoints = finalPoints.map(p => ({
+        ...p,
+        id: (p.id && typeof p.id === 'string') ? p.id : generateUUID(),
+        connectedFrom: (p.connectedFrom && typeof p.connectedFrom === 'string') ? p.connectedFrom : null
+      }));
+      
+      const calculatedTotalDistance = calculateTotalProjectDistance(sanitizedPoints, extraConnections);
+      
+      const nowISO = new Date().toISOString();
+      
+      const projectData = {
+        name: projectNameToUse.trim(),
+        points: sanitizedPoints,
+        extra_connections: extraConnections,
+        total_distance: calculatedTotalDistance,
+        bairro: selectedBairro !== 'todos' ? selectedBairro : 'Vários',
+        tracking_mode: 'manual',
+        updated_at: nowISO
+      };
+      
+      let savedProject;
+      
+      if (editingProject) {
+        if (isOnline && user) {
+          const { data, error } = await supabase.from('projetos').update(projectData).eq('id', editingProject.id).select();
+          if (error) throw error;
+          savedProject = data[0];
+        } else {
+          savedProject = { ...editingProject, ...projectData };
         }
-      } catch (lockError) {
-        console.warn("Erro ao liberar lock (não crítico):", lockError);
+        setProjects(prev => prev.map(p => p.id === editingProject.id ? savedProject : p));
+        setEditingProject(null);
+        
+      } else if (currentProject) {
+        if (isOnline && user) {
+          const { data, error } = await supabase.from('projetos').update(projectData).eq('id', currentProject.id).select();
+          if (error) throw error;
+          savedProject = data[0];
+        } else {
+          savedProject = { ...currentProject, ...projectData };
+        }
+        setProjects(prev => prev.map(p => p.id === currentProject.id ? savedProject : p));
+        setCurrentProject(savedProject);
+        
+      } else {
+        if (isOnline && user) {
+          const { data, error } = await supabase.from('projetos').insert([{ ...projectData, user_id: user.id }]).select();
+          if (error) throw error;
+          savedProject = data[0];
+        } else {
+          savedProject = {
+            ...projectData,
+            id: `offline_${Date.now()}`,
+            created_at: nowISO,
+            user_id: user?.id || 'offline'
+          };
+        }
+        setProjects(prev => [...prev, savedProject]);
+      }
+      
+      const userProjects = storage.loadProjects(user?.id);
+      const otherProjects = userProjects.filter(p => p.id !== savedProject.id);
+      storage.saveProjects(user?.id, [...otherProjects, savedProject]);
+      
+      if (!autoSave && currentProject && isOnline && user) {
+        try {
+          if (ProjectLockService && typeof ProjectLockService.releaseLock === 'function') {
+            await ProjectLockService.releaseLock(currentProject.id, user.id);
+          }
+        } catch (lockError) {
+          console.warn("Erro ao liberar lock (não crítico):", lockError);
+        }
+      }
+      
+      if (!autoSave) {
+        setProjectName('');
+        setShowProjectDialog(false);
+        if (!editingProject) {
+          setTracking(false);
+          setPaused(false);
+          setShowTrackingControls(false);
+          setManualPoints([]);
+          setTotalDistance(0);
+          setSelectedStartPoint(null);
+        }
+        showFeedback('Sucesso', 'Projeto salvo com sucesso!', 'success');
+      }
+      
+    } catch (error) {
+      console.error('Erro CRÍTICO ao salvar projeto:', error);
+      if (!autoSave) {
+        showFeedback('Erro', 'Falha ao salvar. Verifique o console.', 'error');
       }
     }
-    
-    if (!autoSave) {
-      setProjectName('');
-      setShowProjectDialog(false);
-      if (!editingProject) {
-        setTracking(false);
-        setPaused(false);
-        setShowTrackingControls(false);
-        setManualPoints([]);
-        setTotalDistance(0);
-        setSelectedStartPoint(null);
-      }
-      showFeedback('Sucesso', 'Projeto salvo com sucesso!', 'success');
-    }
-    
-  } catch (error) {
-    console.error('Erro CRÍTICO ao salvar projeto:', error);
-    if (!autoSave) {
-      showFeedback('Erro', 'Falha ao salvar. Verifique o console.', 'error');
-    }
-  }
-};
+  };
   
+  // Função startTracking com sistema de lock
   // Função startTracking com sistema de lock
   const startTracking = async (mode = 'gps') => {
     if (loadedProjects.length > 1) {
@@ -1300,7 +1304,7 @@ const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
     if (currentProject && isOnline && user) {
       await ProjectLockService.releaseLock(currentProject.id, user.id);
     }
-
+    
     if (tracking && !paused) {
       showFeedback('Atenção', 'Pare o rastreamento atual antes de carregar um projeto.', 'warning');
       return;
@@ -1320,6 +1324,7 @@ const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
     
     requestAnimationFrame(async () => {
       setManualPoints([]);
+      setExtraConnections([]);
       setTotalDistance(0);
       setSelectedStartPoint(null);
       setTracking(false);
@@ -1443,6 +1448,7 @@ const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
     setCurrentProject(null);
     setProjectName('');
     setManualPoints([]);
+    setExtraConnections([]);
     setTotalDistance(0);
     setSelectedStartPoint(null);
     setShowProjectDetails(false);
@@ -1506,7 +1512,6 @@ const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
           setMarkers([])
           setProjects([])
           setLoadedProjects([])
-          setSelectedMarkers([])
           setSelectedStartPoint(null)
         }
       } else if (event === 'SIGNED_IN') {
@@ -1535,6 +1540,7 @@ const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
       const projectData = {
         name: project.name,
         points: project.points,
+        extra_connections: project.extra_connections || [],
         total_distance: project.totalDistance || project.total_distance,
         bairro: project.bairro,
         tracking_mode: 'manual',
@@ -1570,20 +1576,20 @@ const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
     }
   };
   
-const handleRenameProject = async (projectId, newName) => {
-  await renameProject(projectId, newName);
-  
-  if (currentProject && currentProject.id === projectId) {
-    setCurrentProject(prev => ({ ...prev, name: newName }));
-    setProjectName(newName);
-  }
-  
-  setLoadedProjects(prev => prev.map(p =>
-    p.id === projectId ? { ...p, name: newName } : p
-  ));
-  
-  showFeedback('Sucesso', 'Projeto renomeado', 'success');
-};
+  const handleRenameProject = async (projectId, newName) => {
+    await renameProject(projectId, newName);
+    
+    if (currentProject && currentProject.id === projectId) {
+      setCurrentProject(prev => ({ ...prev, name: newName }));
+      setProjectName(newName);
+    }
+    
+    setLoadedProjects(prev => prev.map(p =>
+      p.id === projectId ? { ...p, name: newName } : p
+    ));
+    
+    showFeedback('Sucesso', 'Projeto renomeado', 'success');
+  };
   
   const deleteProjectFromSupabase = async (projectId) => {
     if (!user) return false;
@@ -1603,57 +1609,58 @@ const handleRenameProject = async (projectId, newName) => {
     }
   };
   
-const syncOfflineProjects = async () => {
-  if (!user || !isOnline) return;
-  
-  try {
-    const offlineProjects = storage.loadProjects(user.id);
+  const syncOfflineProjects = async () => {
+    if (!user || !isOnline) return;
     
-    for (const project of offlineProjects) {
-      if (project.id.toString().startsWith('offline_')) {
-        try {
-          const { data, error } = await supabase
-            .from('projetos')
-            .insert([{
-              name: project.name,
-              points: project.points,
-              total_distance: project.totalDistance || project.total_distance,
-              bairro: project.bairro,
-              tracking_mode: 'manual',
-              user_id: user.id
-            }])
-            .select();
-          
-          if (error) throw error;
-          
-          const updatedProject = { ...project, id: data[0].id };
-          const userProjects = storage.loadProjects(user.id);
-          const updatedUserProjects = userProjects.map(p =>
-            p.id === project.id ? updatedProject : p
-          );
-          storage.saveProjects(user.id, updatedUserProjects);
-          
-          console.log('Projeto offline sincronizado:', project.name);
-          
-        } catch (projectError) {
-          console.error('Erro ao sincronizar projeto offline:', projectError);
+    try {
+      const offlineProjects = storage.loadProjects(user.id);
+      
+      for (const project of offlineProjects) {
+        if (project.id.toString().startsWith('offline_')) {
+          try {
+            const { data, error } = await supabase
+              .from('projetos')
+              .insert([{
+                name: project.name,
+                points: project.points,
+                extra_connections: project.extra_connections || [],
+                total_distance: project.totalDistance || project.total_distance,
+                bairro: project.bairro,
+                tracking_mode: 'manual',
+                user_id: user.id
+              }])
+              .select();
+            
+            if (error) throw error;
+            
+            const updatedProject = { ...project, id: data[0].id };
+            const userProjects = storage.loadProjects(user.id);
+            const updatedUserProjects = userProjects.map(p =>
+              p.id === project.id ? updatedProject : p
+            );
+            storage.saveProjects(user.id, updatedUserProjects);
+            
+            console.log('Projeto offline sincronizado:', project.name);
+            
+          } catch (projectError) {
+            console.error('Erro ao sincronizar projeto offline:', projectError);
+          }
         }
       }
+      
+      await loadProjects();
+      
+    } catch (error) {
+      console.error('Erro na sincronização offline:', error);
     }
-    
-    await loadProjects();
-    
-  } catch (error) {
-    console.error('Erro na sincronização offline:', error);
-  }
-};
+  };
   
   // Efeito para carregar projetos
   useEffect(() => {
-  if (user) {
-    loadProjects();
-  }
-}, [user, isOnline]);
+    if (user) {
+      loadProjects();
+    }
+  }, [user, isOnline]);
   
   useEffect(() => {
     if (isOnline && user) {
@@ -1779,8 +1786,7 @@ const syncOfflineProjects = async () => {
   
   const toggleFavorite = async (markerId) => {
     const newFavorites = favorites.includes(markerId) ?
-      favorites.filter(id => id !== markerId) :
-      [...favorites, markerId];
+      favorites.filter(id => id !== markerId) : [...favorites, markerId];
     
     setFavorites(newFavorites);
     if (user) {
@@ -1947,48 +1953,48 @@ const syncOfflineProjects = async () => {
   }
   
   const handleJoinProject = async (projectId) => {
-  if (!user || !isOnline) {
-    showFeedback('Erro', 'Você precisa estar online para importar projetos.', 'error');
-    return;
-  }
-  
-  try {
-    const { data, error } = await supabase.rpc('join_project', {
-      p_id: projectId
-    });
-    
-    if (error) throw error;
-    
-    if (data.success) {
-      showFeedback('Sucesso', data.message, 'success');
-      await loadProjects();
-    } else {
-      showFeedback('Erro', data.message, 'error');
+    if (!user || !isOnline) {
+      showFeedback('Erro', 'Você precisa estar online para importar projetos.', 'error');
+      return;
     }
     
-  } catch (error) {
-    console.error("Erro ao importar:", error);
-    if (error.code === '22P02') {
-      showFeedback('Erro', 'ID inválido. Certifique-se de copiar o código completo.', 'error');
-    } else {
-      showFeedback('Erro', 'Erro ao entrar no projeto.', 'error');
+    try {
+      const { data, error } = await supabase.rpc('join_project', {
+        p_id: projectId
+      });
+      
+      if (error) throw error;
+      
+      if (data.success) {
+        showFeedback('Sucesso', data.message, 'success');
+        await loadProjects();
+      } else {
+        showFeedback('Erro', data.message, 'error');
+      }
+      
+    } catch (error) {
+      console.error("Erro ao importar:", error);
+      if (error.code === '22P02') {
+        showFeedback('Erro', 'ID inválido. Certifique-se de copiar o código completo.', 'error');
+      } else {
+        showFeedback('Erro', 'Erro ao entrar no projeto.', 'error');
+      }
     }
-  }
-};
+  };
   
   const handleFileImport = async (event) => {
     const file = event.target.files[0];
     if (!file) return;
-
+    
     setImportProgress(0);
     setShowImportProgress(true);
     setImportCurrentAction('Processando arquivo...');
     setUploading(true);
-
+    
     try {
       let kmlText;
       if (file.name.endsWith('.kmz')) {
-        const zip = new (JSZip.default || JSZip)();
+        const zip = new(JSZip.default || JSZip)();
         const contents = await zip.loadAsync(file);
         const kmlFile = Object.keys(contents.files).find(name => name.endsWith('.kml'));
         if (!kmlFile) throw new Error('KML não encontrado no KMZ');
@@ -1996,18 +2002,18 @@ const syncOfflineProjects = async () => {
       } else {
         kmlText = await file.text();
       }
-
+      
       const parser = new DOMParser();
       const xmlDoc = parser.parseFromString(kmlText, 'text/xml');
       const placemarks = Array.from(xmlDoc.getElementsByTagName('Placemark'));
-
+      
       const newMarkers = placemarks.map((placemark, i) => {
         const coordsText = placemark.getElementsByTagName('coordinates')[0]?.textContent?.trim();
         if (!coordsText) return null;
-
+        
         const [lng, lat] = coordsText.split(',').map(Number);
         if (isNaN(lat) || isNaN(lng)) return null;
-
+        
         return {
           id: generateUUID(),
           name: placemark.getElementsByTagName('name')[0]?.textContent || `Ponto ${i + 1}`,
@@ -2019,13 +2025,13 @@ const syncOfflineProjects = async () => {
           user_id: user?.id
         };
       }).filter(Boolean);
-
+      
       setMarkers(prev => [...prev, ...newMarkers]);
       
       if (user) {
         storage.saveMarkers(user.id, newMarkers);
       }
-
+      
       if (isOnline && user && newMarkers.length > 0) {
         setImportCurrentAction('Sincronizando com a nuvem...');
         const batchSize = 50;
@@ -2034,12 +2040,12 @@ const syncOfflineProjects = async () => {
           await supabase.from('marcacoes').insert(batch);
         }
       }
-
+      
       setImportProgress(100);
       setImportSuccess(true);
       
       setTimeout(() => setShowImportProgress(false), 1500);
-
+      
     } catch (error) {
       console.error('Erro na importação:', error);
       setImportError('Falha ao ler o arquivo.');
@@ -2163,7 +2169,7 @@ const syncOfflineProjects = async () => {
   const calculateTotalDistanceWithMultiplier = (points) => {
     if (!points || points.length < 2) return 0;
     let total = 0;
-
+    
     points.forEach((point, index) => {
       let parent = null;
       if (point.connectedFrom) {
@@ -2171,35 +2177,35 @@ const syncOfflineProjects = async () => {
       } else if (index > 0) {
         parent = points[index - 1];
       }
-
+      
       if (parent) {
         const linearDist = calculateDistance(parent.lat, parent.lng, point.lat, point.lng);
-        const spans = point.spans || 1; 
+        const spans = point.spans || 1;
         total += (linearDist * spans);
       }
     });
-
+    
     return total;
   };
-
+  
   const handleSpanChange = (count) => {
     if (!spanSelectorInfo) return;
-
+    
     const updatedPoints = manualPoints.map(p => {
       if (p.id === spanSelectorInfo.targetPointId) {
         return { ...p, spans: count };
       }
       return p;
     });
-
+    
     setManualPoints(updatedPoints);
     
-    const newTotal = calculateTotalDistanceWithMultiplier(updatedPoints);
+    const newTotal = calculateTotalProjectDistance(updatedPoints, extraConnections);
     setTotalDistance(newTotal);
-
+    
     setSpanSelectorInfo(null);
   };
-
+  
   const segmentsGeoJSON = useMemo(() => {
     const features = [];
     if (manualPoints.length > 0) {
@@ -2210,11 +2216,11 @@ const syncOfflineProjects = async () => {
         } else if (index > 0) {
           parent = manualPoints[index - 1];
         }
-
+        
         if (parent) {
           const spans = point.spans || 1;
           const color = SPAN_COLORS[spans];
-
+          
           features.push({
             type: 'Feature',
             properties: {
@@ -2225,13 +2231,16 @@ const syncOfflineProjects = async () => {
             },
             geometry: {
               type: 'LineString',
-              coordinates: [[parent.lng, parent.lat], [point.lng, point.lat]]
+              coordinates: [
+                [parent.lng, parent.lat],
+                [point.lng, point.lat]
+              ]
             }
           });
-
+          
           const midLng = (parent.lng + point.lng) / 2;
           const midLat = (parent.lat + point.lat) / 2;
-
+          
           features.push({
             type: 'Feature',
             properties: {
@@ -2384,7 +2393,7 @@ const syncOfflineProjects = async () => {
         // Para simplicidade, usaremos a distância calculada manualmente
         let totalDistance = 0
         for (let i = 0; i < markers.length - 1; i++) {
-          totalDistance += calculateDistance(markers[i].lat, markers[i].lng, markers[i+1].lat, markers[i+1].lng)
+          totalDistance += calculateDistance(markers[i].lat, markers[i].lng, markers[i + 1].lat, markers[i + 1].lng)
         }
         
         setDistanceResult({
@@ -2430,55 +2439,11 @@ const syncOfflineProjects = async () => {
   }
   
   const toggleMarkerSelection = (marker) => {
-    if (marker === 'all') {
-      if (selectedMarkers.length === markers.length) {
-        setSelectedMarkers([]);
-      } else {
-        setSelectedMarkers([...markers]);
-      }
-      return;
-    }
-    
-    setSelectedMarkers(prev => {
-      const exists = prev.find(m => m.id === marker.id)
-      if (exists) {
-        return prev.filter(m => m.id !== marker.id)
-      } else {
-        return [...prev, marker]
-      }
-    })
-  }
+    // Removida função de seleção múltipla
+  };
   
   const handleBatchBairroUpdate = async (bairro) => {
-    if (!bairro || selectedMarkers.length === 0) return;
-    
-    try {
-      const updatedMarkers = markers.map(marker =>
-        selectedMarkers.some(selected => selected.id === marker.id) ?
-        { ...marker, bairro } :
-        marker
-      );
-      
-      setMarkers(updatedMarkers);
-      
-      if (isOnline && user) {
-        for (const marker of selectedMarkers) {
-          await updateMarkerInSupabase({ ...marker, bairro });
-        }
-      }
-      
-      setSelectedMarkers([]);
-      setShowBatchBairroDialog(false);
-      setShowMultipleSelection(false);
-      showFeedback(
-        'Sucesso',
-        `${selectedMarkers.length} marcadores atualizados para o bairro ${bairro}`,
-        'success'
-      );
-    } catch (error) {
-      console.error('Erro ao atualizar marcadores em massa:', error);
-      showFeedback('Erro', 'Erro ao atualizar marcadores', 'error');
-    }
+    // Removida função de atualização em massa
   };
   
   const toggleProjectSelection = (project) => {
@@ -2496,9 +2461,9 @@ const syncOfflineProjects = async () => {
     if (currentProject && currentProject.id === projectId && isOnline && user) {
       ProjectLockService.releaseLock(currentProject.id, user.id);
     }
-
+    
     setLoadedProjects(prev => prev.filter(p => p.id !== projectId));
-
+    
     if (currentProject && currentProject.id === projectId) {
       setCurrentProject(null);
       setManualPoints([]);
@@ -2629,7 +2594,7 @@ const syncOfflineProjects = async () => {
     
     setManualPoints(prev => {
       const updatedPoints = [...prev, newPoint]
-      const newTotalDistance = calculateTotalDistanceWithBranches(updatedPoints);
+      const newTotalDistance = calculateTotalProjectDistance(updatedPoints, extraConnections);
       setTotalDistance(newTotalDistance);
       return updatedPoints
     })
@@ -2646,7 +2611,7 @@ const syncOfflineProjects = async () => {
       const newPoints = manualPoints.slice(0, -1);
       
       setManualPoints(newPoints);
-      const newTotalDistance = calculateTotalDistanceWithBranches(newPoints);
+      const newTotalDistance = calculateTotalProjectDistance(newPoints, extraConnections);
       setTotalDistance(newTotalDistance);
       
       if (selectedStartPoint && selectedStartPoint.id === pointToRemove.id) {
@@ -2685,7 +2650,7 @@ const syncOfflineProjects = async () => {
     if (currentProject && isOnline && user) {
       await ProjectLockService.releaseLock(currentProject.id, user.id);
     }
-
+    
     try {
       if (manualPoints.length > 0 && !showProjectDialog) {
         let projectNameToUse = projectName;
@@ -2706,6 +2671,7 @@ const syncOfflineProjects = async () => {
       setPaused(false);
       setShowTrackingControls(false);
       setManualPoints([]);
+      setExtraConnections([]);
       setTotalDistance(0);
       setSelectedStartPoint(null);
       setPositionHistory([]);
@@ -3521,26 +3487,9 @@ const syncOfflineProjects = async () => {
         </Button>
       </div>
 
-      <div className="absolute bottom-40 right-4 z-10">
-        <Button
-          size="icon"
-          className="bg-white/80 backdrop-blur-sm hover:bg-white text-slate-900 shadow-xl border border-slate-200/50 transition-all-smooth hover-lift rounded-full w-12 h-12"
-          onClick={() => setShowMultipleSelection(true)}
-          title="Seleção Múltipla"
-        >
-          <Layers className="w-6 h-6" />
-        </Button>
-      </div>
+      {/* REMOVIDO: Botão de seleção múltipla */}
 
-      <MultipleSelectionPopup
-        isOpen={showMultipleSelection}
-        onClose={() => setShowMultipleSelection(false)}
-        markers={markers}
-        selectedMarkers={selectedMarkers}
-        onToggleMarker={toggleMarkerSelection}
-        onBatchBairroUpdate={handleBatchBairroUpdate}
-        bairros={bairros}
-      />
+      {/* REMOVIDO: MultipleSelectionPopup */}
 
       {showProjectDetails && currentProject && (
         <div className="absolute bottom-20 right-4 z-50 animate-scale-in">
@@ -3634,16 +3583,7 @@ const syncOfflineProjects = async () => {
         </DialogContent>
       </Dialog>
 
-      <div className="absolute bottom-24 right-4 z-10">
-        <Button
-          size="icon"
-          className="bg-white/80 backdrop-blur-sm hover:bg-white text-slate-900 shadow-xl border border-slate-200/50 transition-all-smooth hover-lift rounded-full w-12 h-12"
-          onClick={centerMapOnUser}
-          title="Centralizar no Local Atual"
-        >
-          <LocateFixed className="w-6 h-6" />
-        </Button>
-      </div>
+      {/* REMOVIDO: Botão antigo de localização */}
 
       {distanceResult && (
         <div className="absolute bottom-4 left-4 right-4 z-10 bg-gradient-to-r from-slate-800 to-slate-700 backdrop-blur-sm rounded-xl p-4 shadow-2xl text-white border border-slate-600/50 animate-slide-in-bottom">
@@ -3944,8 +3884,6 @@ const syncOfflineProjects = async () => {
           speed={speed}
           handleRemovePoints={handleRemovePoints}
           showProjectDialog={showProjectDialog}
-          selectedMarkers={selectedMarkers}
-          setSelectedMarkers={setSelectedMarkers}
           formatDistanceDetailed={formatDistanceDetailed}
           undoLastPoint={undoLastPoint}
           selectedStartPoint={selectedStartPoint}
