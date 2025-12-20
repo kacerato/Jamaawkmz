@@ -480,7 +480,7 @@ const TrackingPointPopupContent = ({ pointInfo, onClose, onSelectStart, selected
 
 function App() {
   
-  const mapboxToken = 'pk.eyJ1Ijoia2FjZXJhdG8iLCJhIjoiY21oZG1nNnViMDRybjJub2VvZHV1aHh3aiJ9.l7tCaIPEYqcqDI8_aScm7Q';
+  const mapboxToken = 'pk.eyJ1Ijoia2FjZXJhdG8iLCJhIjoiY21oZG1nNnViMDRybjJub2V2dHV1aHh3aiJ9.l7tCaIPEYqcqDI8_aScm7Q';
   const mapRef = useRef();
   const fileInputRef = useRef(null);
   const projectInputRef = useRef(null);
@@ -573,6 +573,15 @@ function App() {
   
   // NOVO STATE PARA PROJETO EM INSPEÇÃO
   const [inspectingProject, setInspectingProject] = useState(null);
+
+  // NOVO STATE PARA VIEWSTATE DO MAPA (com inclinação 3D)
+  const [currentViewState, setCurrentViewState] = useState({
+    longitude: -35.7353,
+    latitude: -9.6658,
+    zoom: 13,
+    bearing: 0,
+    pitch: 60 // INCLINAÇÃO PARA VER O 3D
+  });
   
   // ... outros hooks ...
   const {
@@ -1692,6 +1701,7 @@ function App() {
     }
   }, [user])
   
+  // ATUALIZADO: Geolocation com filtros de precisão
   useEffect(() => {
     let watchId = null
     
@@ -1699,6 +1709,12 @@ function App() {
       watchId = navigator.geolocation.watchPosition(
         (position) => {
           const { latitude, longitude, accuracy, speed } = position.coords
+          
+          // FILTRO DE PRECISÃO: ignora leituras com accuracy > 30m
+          if (accuracy > 30) {
+            console.warn(`Precisão GPS baixa (${accuracy}m), ignorando leitura.`);
+            return;
+          }
           
           const smoothedLat = kalmanLatRef.current.filter(latitude);
           const smoothedLng = kalmanLngRef.current.filter(longitude);
@@ -2554,9 +2570,21 @@ function App() {
     return markers.filter(m => m.bairro === bairro).length
   }
   
+  // ATUALIZADO: addManualPoint com threshold de movimento
   const addManualPoint = async () => {
     if (!currentPosition || !tracking || paused) {
       return;
+    }
+    
+    // THRESHOLD DE MOVIMENTO: Só move se a distância for > 2m
+    if (manualPoints.length > 0) {
+      const lastPoint = manualPoints[manualPoints.length - 1];
+      const dist = calculateDistance(lastPoint.lat, lastPoint.lng, currentPosition.lat, currentPosition.lng);
+      
+      if (dist <= 2) {
+        showFeedback('Aviso', 'Movimento insuficiente (menos de 2m). Ponto não adicionado.', 'warning');
+        return;
+      }
     }
     
     let finalPosition = currentPosition;
@@ -2573,7 +2601,7 @@ function App() {
     }
     
     addPoint(finalPosition);
-  }
+  };
   
   const addPoint = (position) => {
     const newPoint = {
@@ -2596,7 +2624,7 @@ function App() {
     if (selectedStartPoint) {
       setSelectedStartPoint(newPoint);
     }
-  }
+  };
   
   const undoLastPoint = () => {
     if (manualPoints.length > 0) {
@@ -2837,57 +2865,34 @@ function App() {
     }
   };
   
-  useEffect(() => {
-    const handleBodyClick = (event) => {
-      if (event.target.closest('button')?.textContent.includes('Exportar') ||
-        event.target.closest('button')?.textContent.includes('Download') ||
-        event.target.closest('button')?.querySelector('svg[data-icon="download"]')) {
-        document.body.classList.add('download-requested')
+  // NOVA FUNÇÃO: handleMapClick com bloqueio de seleção durante rastreamento
+  const handleMapClick = async (e) => {
+    // 1. SEGURANÇA: Se estiver rastreando, NÃO permite clicar em marcadores existentes
+    if (tracking && !paused) {
+      // Apenas lógica de adicionar ponto manual (se for modo toque)
+      if (trackingInputMode === 'touch') {
+        const { lat, lng } = e.lngLat;
+        
+        if (snappingEnabled) {
+          try {
+            const snapped = await RoadSnappingService.snapToRoad(lat, lng);
+            if (snapped.snapped) {
+              addPoint({ lat: snapped.lat, lng: snapped.lng });
+            } else {
+              addPoint({ lat, lng });
+            }
+          } catch (error) {
+            console.warn('Erro no snapping de toque:', error);
+            addPoint({ lat, lng });
+          }
+        } else {
+          addPoint({ lat, lng });
+        }
       }
+      return; // PARE AQUI. Não seleciona marcadores.
     }
-    
-    document.body.addEventListener('click', handleBodyClick)
-    
-    return () => {
-      document.body.removeEventListener('click', handleBodyClick)
-    }
-  }, [])
-  
-  if (authLoading) {
-    return (
-      <div className="flex items-center justify-center h-screen bg-gradient-to-br from-slate-900 via-cyan-900 to-slate-900">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-cyan-400 mx-auto mb-4"></div>
-          <p className="text-cyan-400 font-semibold text-lg">Carregando Jamaaw App...</p>
-        </div>
-      </div>
-    )
-  }
-  
-  if (!user) {
-    return <Auth onAuthSuccess={(user) => setUser(user)} />
-  }
-  
-  return (
-    <div className="relative h-screen w-screen overflow-hidden bg-slate-900">
-      <div className="absolute inset-0 z-0">
-        <Map
-          ref={mapRef}
-          initialViewState={{
-            longitude: -35.7353,
-            latitude: -9.6658,
-            zoom: 13
-          }}
-          style={{ width: '100%', height: '100%', position: 'relative' }}
-          mapStyle={mapStyles[mapStyle].url}
-          mapboxAccessToken={mapboxToken}
-          cursor={tracking && trackingInputMode === 'touch' && !paused ? 'crosshair' : 'auto'}
-          preserveDrawingBuffer={true}
-          onClick={async (e) => {
-    // 1. Verificação de segurança: O mapa está carregado?
-    if (!mapRef.current) return;
 
-    // 2. Tenta pegar features de marcadores (Markers)
+    // 2. Lógica normal (fora de rastreamento)
     const markerLayers = ['markers-hit-area', 'markers-layer'].filter(id => 
       mapRef.current.getLayer(id)
     );
@@ -2938,32 +2943,79 @@ function App() {
       return;
     }
 
-    // Lógica de adicionar ponto (Toque)
-    if (tracking && trackingInputMode === 'touch' && !paused) {
-      const { lat, lng } = e.lngLat;
-      
-      if (snappingEnabled) {
-        try {
-          const snapped = await RoadSnappingService.snapToRoad(lat, lng);
-          if (snapped.snapped) {
-            addPoint({ lat: snapped.lat, lng: snapped.lng });
-          } else {
-            addPoint({ lat, lng });
-          }
-        } catch (error) {
-          console.warn('Erro no snapping de toque:', error);
-          addPoint({ lat, lng });
-        }
-      } else {
-        addPoint({ lat, lng });
-      }
-      return;
-    }
-
+    // Se clicou no vazio, fecha o popup
     setPopupMarker(null); 
-  }}
+  };
+  
+  useEffect(() => {
+    const handleBodyClick = (event) => {
+      if (event.target.closest('button')?.textContent.includes('Exportar') ||
+        event.target.closest('button')?.textContent.includes('Download') ||
+        event.target.closest('button')?.querySelector('svg[data-icon="download"]')) {
+        document.body.classList.add('download-requested')
+      }
+    }
+    
+    document.body.addEventListener('click', handleBodyClick)
+    
+    return () => {
+      document.body.removeEventListener('click', handleBodyClick)
+    }
+  }, [])
+  
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-gradient-to-br from-slate-900 via-cyan-900 to-slate-900">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-cyan-400 mx-auto mb-4"></div>
+          <p className="text-cyan-400 font-semibold text-lg">Carregando Jamaaw App...</p>
+        </div>
+      </div>
+    )
+  }
+  
+  if (!user) {
+    return <Auth onAuthSuccess={(user) => setUser(user)} />
+  }
+  
+  return (
+    <div className="relative h-screen w-screen overflow-hidden bg-slate-900">
+      <div className="absolute inset-0 z-0">
+        <Map
+          ref={mapRef}
+          initialViewState={currentViewState}
+          onMove={evt => setCurrentViewState(evt.viewState)}
+          maxZoom={24}
+          maxPitch={85}
+          style={{ width: '100%', height: '100%', position: 'relative' }}
+          mapStyle={mapStyles[mapStyle].url}
+          terrain={{ source: 'mapbox-dem', exaggeration: 1.5 }}
+          mapboxAccessToken={mapboxToken}
+          cursor={tracking && trackingInputMode === 'touch' && !paused ? 'crosshair' : 'auto'}
+          preserveDrawingBuffer={true}
+          onClick={handleMapClick}
         >
           <NavigationControl position="top-right" />
+
+          {/* FONTE DE RELEVO 3D */}
+          <Source
+            id="mapbox-dem"
+            type="raster-dem"
+            url="mapbox://mapbox.mapbox-terrain-dem-v1"
+            tileSize={512}
+            maxzoom={14}
+          />
+          
+          {/* CAMADA DE CÉU (ATMOSFERA REALISTA) */}
+          <Layer
+            id="sky"
+            type="sky"
+            paint={{
+              'sky-type': 'atmosphere',
+              'sky-atmosphere-sun': [0.0, 0.0],
+              'sky-atmosphere-sun-intensity': 15
+            }}
+          />
 
           {/* CAMADA DE MARCADORES OTIMIZADA */}
           <Source id="markers-source" type="geojson" data={markersGeoJSON}>
