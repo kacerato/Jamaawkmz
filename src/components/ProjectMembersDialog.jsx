@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Users, Shield, UserX, Calendar, Crown, Mail, Activity, MapPin, TrendingUp, BarChart3 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { supabase } from '../supabase'; // Verifique o caminho
+import { supabase } from '../lib/supabase';
 import { calculateTotalProjectDistance } from '../utils/geoUtils'; // Importe a função mestra
 
 const ProjectMembersDialog = ({ isOpen, onClose, project, currentUserId }) => {
