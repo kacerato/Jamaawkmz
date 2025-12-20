@@ -554,7 +554,7 @@ function App() {
   const [importError, setImportError] = useState(null);
   
   // REMOVIDO: const [selectedMarkers, setSelectedMarkers] = useState([]);
-  const [showBatchBairroDialog, setShowBatchBairroDialog] = useState(false);
+  
   const [selectedProjects, setSelectedProjects] = useState([]);
   // REMOVIDO: const [showMultipleSelection, setShowMultipleSelection] = useState(false);
   
@@ -2438,13 +2438,7 @@ function App() {
     setSelectedForDistance([])
   }
   
-  const toggleMarkerSelection = (marker) => {
-    // Removida função de seleção múltipla
-  };
-  
-  const handleBatchBairroUpdate = async (bairro) => {
-    // Removida função de atualização em massa
-  };
+ 
   
   const toggleProjectSelection = (project) => {
     setSelectedProjects(prev => {
@@ -3547,41 +3541,7 @@ function App() {
         totalDistanceAll={totalDistanceAllProjects}
       />
 
-      <Dialog open={showBatchBairroDialog} onOpenChange={setShowBatchBairroDialog}>
-        <DialogContent className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white border-slate-700/50 max-w-md mx-auto shadow-2xl">
-          <DialogHeader>
-            <DialogTitle className="text-cyan-400 text-xl font-bold">
-              Definir Bairro para {selectedMarkers.length} Marcadores
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <Select onValueChange={handleBatchBairroUpdate}>
-              <SelectTrigger className="bg-slate-800/50 border-slate-700 text-white">
-                <SelectValue placeholder="Selecione um bairro" />
-              </SelectTrigger>
-              <SelectContent className="bg-slate-800 border-slate-700 text-white z-[10000]">
-                {bairros.map(bairro => (
-                  <SelectItem key={bairro} value={bairro}>{bairro}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <div className="flex gap-2">
-              <Button
-                onClick={() => setShowBatchBairroDialog(false)}
-                className="flex-1 bg-gradient-to-r from-gray-500 to-slate-600 hover:from-gray-600 hover:to-slate-700"
-              >
-                Cancelar
-              </Button>
-              <Button
-                onClick={() => handleBatchBairroUpdate(selectedBairro !== 'todos' ? selectedBairro : bairros[0])}
-                className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600"
-              >
-                Aplicar
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+     
 
       {/* REMOVIDO: Botão antigo de localização */}
 
