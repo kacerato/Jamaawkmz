@@ -118,7 +118,7 @@ const mapStyles = {
 // Função para garantir lista única (remove duplicatas por ID)
 const deduplicateProjects = (projectsList) => {
   const uniqueMap = new Map();
-  projectsList.sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
+  projectsList.sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || b.created_at));
   
   projectsList.forEach(p => {
     if (!uniqueMap.has(p.id)) {
@@ -553,10 +553,7 @@ function App() {
   const [importSuccess, setImportSuccess] = useState(false);
   const [importError, setImportError] = useState(null);
   
-  // REMOVIDO: const [selectedMarkers, setSelectedMarkers] = useState([]);
-  
   const [selectedProjects, setSelectedProjects] = useState([]);
-  // REMOVIDO: const [showMultipleSelection, setShowMultipleSelection] = useState(false);
   
   const [selectedStartPoint, setSelectedStartPoint] = useState(null);
   
@@ -573,6 +570,9 @@ function App() {
   
   // 4. NOVO STATE PARA GESTÃO DE MEMBROS
   const [showMembersDialog, setShowMembersDialog] = useState(false);
+  
+  // NOVO STATE PARA PROJETO EM INSPEÇÃO
+  const [inspectingProject, setInspectingProject] = useState(null);
   
   // ... outros hooks ...
   const {
@@ -879,6 +879,7 @@ function App() {
       setManualPoints([]);
       setCurrentProject(null);
       setSelectedStartPoint(null);
+      setInspectingProject(null);
       
     } catch (error) {
       console.error('Erro durante logout:', error);
@@ -886,6 +887,7 @@ function App() {
       setMarkers([]);
       setProjects([]);
       setSelectedStartPoint(null);
+      setInspectingProject(null);
     }
   };
   
@@ -1249,7 +1251,6 @@ function App() {
   };
   
   // Função startTracking com sistema de lock
-  // Função startTracking com sistema de lock
   const startTracking = async (mode = 'gps') => {
     if (loadedProjects.length > 1) {
       showFeedback('Bloqueado', 'Múltiplos projetos ativos. Deixe apenas UM projeto no mapa para continuar o traçado.', 'error');
@@ -1513,6 +1514,7 @@ function App() {
           setProjects([])
           setLoadedProjects([])
           setSelectedStartPoint(null)
+          setInspectingProject(null)
         }
       } else if (event === 'SIGNED_IN') {
         setUser(session.user)
@@ -2437,8 +2439,6 @@ function App() {
     setDistanceResult(null)
     setSelectedForDistance([])
   }
-  
- 
   
   const toggleProjectSelection = (project) => {
     setSelectedProjects(prev => {
@@ -3481,10 +3481,6 @@ function App() {
         </Button>
       </div>
 
-      {/* REMOVIDO: Botão de seleção múltipla */}
-
-      {/* REMOVIDO: MultipleSelectionPopup */}
-
       {showProjectDetails && currentProject && (
         <div className="absolute bottom-20 right-4 z-50 animate-scale-in">
           <Card className="bg-gradient-to-br from-slate-800/95 to-slate-700/95 backdrop-blur-sm border-slate-600/50 shadow-2xl text-white w-64">
@@ -3526,6 +3522,12 @@ function App() {
     setReportData({ project, image: img });
     setShowProjectsList(false);
   }}
+  
+  // CONEXÃO NOVA:
+  onOpenMembers={(project) => {
+    setInspectingProject(project); 
+    setShowMembersDialog(true);
+  }} 
 />
 
       <LoadedProjectsManager
@@ -3542,8 +3544,6 @@ function App() {
       />
 
      
-
-      {/* REMOVIDO: Botão antigo de localização */}
 
       {distanceResult && (
         <div className="absolute bottom-4 left-4 right-4 z-10 bg-gradient-to-r from-slate-800 to-slate-700 backdrop-blur-sm rounded-xl p-4 shadow-2xl text-white border border-slate-600/50 animate-slide-in-bottom">
@@ -3905,10 +3905,13 @@ function App() {
       {/* 5. NOVO PAINEL DE GESTÃO DE MEMBROS */}
       <ProjectMembersDialog 
         isOpen={showMembersDialog}
-        onClose={() => setShowMembersDialog(false)}
-        projectId={currentProject?.id}
+        onClose={() => {
+          setShowMembersDialog(false);
+          setInspectingProject(null);
+        }}
+        project={inspectingProject || currentProject}
         currentUserId={user?.id}
-        isOwner={currentProject?.user_id === user?.id}
+        isOwner={(inspectingProject || currentProject)?.user_id === user?.id}
       />
 
       <input

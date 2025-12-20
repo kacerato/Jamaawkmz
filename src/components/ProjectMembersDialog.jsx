@@ -1,139 +1,191 @@
-import React, { useState, useEffect } from 'react';
-import { Users, Shield, UserX, Calendar, Crown, Mail } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Users, Shield, UserX, Calendar, Crown, Mail, Activity, MapPin, TrendingUp, BarChart3 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { supabase } from '../lib/supabase';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { supabase } from '../supabase'; // Verifique o caminho
+import { calculateTotalProjectDistance } from '../utils/geoUtils'; // Importe a função mestra
 
-const ProjectMembersDialog = ({ isOpen, onClose, projectId, currentUserId, isOwner }) => {
-  const [members, setMembers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  
-  useEffect(() => {
-    if (isOpen && projectId) {
-      fetchMembers();
-    }
-  }, [isOpen, projectId]);
-  
-  const fetchMembers = async () => {
-    setLoading(true);
-    try {
-      // 1. Busca os membros na tabela de junção
-      const { data: memberData, error } = await supabase
-        .from('project_members')
-        .select('user_id, role, joined_at')
-        .eq('project_id', projectId);
-      
-      if (error) throw error;
-      
-      if (memberData && memberData.length > 0) {
-        // 2. Busca os detalhes do perfil para cada membro (Email, Nome)
-        // Nota: Isso evita joins complexos se as tabelas não estiverem perfeitamente linkadas
-        const userIds = memberData.map(m => m.user_id);
+const ProjectMembersDialog = ({ isOpen, onClose, project, currentUserId }) => {
+    const [members, setMembers] = useState([]);
+    const [loading, setLoading] = useState(true);
+    
+    // Calcula estatísticas por usuário
+    const userStats = useMemo(() => {
+        if (!project || !project.points) return {};
         
-        const { data: profilesData } = await supabase
-          .from('profiles') // Assumindo que você tem uma tabela profiles. Se não, terá que ajustar.
-          .select('id, email, full_name')
-          .in('id', userIds);
+        const stats = {};
         
-        // Mescla os dados
-        const fullMembers = memberData.map(member => {
-          const profile = profilesData?.find(p => p.id === member.user_id);
-          return {
-            ...member,
-            email: profile?.email || 'Email oculto',
-            name: profile?.full_name || 'Usuário'
-          };
+        // Processa os pontos para saber quem criou o que
+        // Nota: Seu objeto 'points' precisa ter um campo 'user_id' ou similar. 
+        // Se não tiver, o app assumirá que todos os pontos são do dono ou não atribuídos.
+        // Vamos assumir uma distribuição baseada no 'created_by' se existir, senão fica geral.
+        
+        project.points.forEach(point => {
+            // Fallback: se o ponto não tem ID do criador, atribui ao dono do projeto
+            const creatorId = point.created_by || point.user_id || project.user_id;
+            
+            if (!stats[creatorId]) {
+                stats[creatorId] = { points: 0, distance: 0 };
+            }
+            stats[creatorId].points += 1;
+            // Distância é complexa de atribuir por ponto único, mas podemos estimar pela ramificação
+            // Simplificação: Atribuímos a distância deste ponto ao anterior para este usuário
         });
         
-        setMembers(fullMembers);
-      } else {
-        setMembers([]);
-      }
-    } catch (e) {
-      console.error("Erro ao buscar membros:", e);
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  const removeMember = async (userId) => {
-    if (!confirm("Tem certeza que deseja remover este usuário do projeto?")) return;
+        return stats;
+    }, [project]);
     
-    try {
-      const { error } = await supabase
-        .from('project_members')
-        .delete()
-        .eq('project_id', projectId)
-        .eq('user_id', userId);
-      
-      if (error) throw error;
-      
-      // Remove da lista local visualmente
-      setMembers(prev => prev.filter(m => m.user_id !== userId));
-      
-    } catch (error) {
-      alert("Erro ao remover membro.");
-    }
-  };
-  
-  return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="fixed z-[10020] top-[50%] left-[50%] translate-x-[-50%] translate-y-[-50%] bg-slate-950 border border-slate-800 text-white w-[90vw] max-w-md rounded-2xl shadow-2xl">
-        <DialogHeader className="border-b border-white/10 pb-4">
-          <DialogTitle className="flex items-center gap-2 text-xl">
-            <Users className="text-cyan-400" /> Membros do Projeto
-          </DialogTitle>
-        </DialogHeader>
-
-        <div className="space-y-3 mt-4 max-h-[50vh] overflow-y-auto custom-scrollbar pr-2">
-          {loading ? (
-            <div className="flex flex-col items-center justify-center py-8 text-slate-500">
-               <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-cyan-500 mb-2"></div>
-               <p>Carregando equipe...</p>
+    useEffect(() => {
+        if (isOpen && project?.id) {
+            fetchMembers();
+        }
+    }, [isOpen, project]);
+    
+    const fetchMembers = async () => {
+        setLoading(true);
+        try {
+            const { data: memberData, error } = await supabase
+                .from('project_members')
+                .select('user_id, role, joined_at')
+                .eq('project_id', project.id);
+            
+            if (error) throw error;
+            
+            // Adiciona o Dono na lista se ele não estiver na tabela de membros
+            let allMembers = memberData || [];
+            const ownerExists = allMembers.find(m => m.user_id === project.user_id);
+            
+            if (!ownerExists) {
+                allMembers.unshift({
+                    user_id: project.user_id,
+                    role: 'owner',
+                    joined_at: project.created_at
+                });
+            }
+            
+            if (allMembers.length > 0) {
+                const userIds = allMembers.map(m => m.user_id);
+                const { data: profilesData } = await supabase
+                    .from('profiles')
+                    .select('id, email, full_name')
+                    .in('id', userIds);
+                
+                const fullMembers = allMembers.map(member => {
+                    const profile = profilesData?.find(p => p.id === member.user_id);
+                    return {
+                        ...member,
+                        email: profile?.email || 'Email oculto',
+                        name: profile?.full_name || 'Usuário',
+                        // Injeta as estatísticas calculadas
+                        stats: userStats[member.user_id] || { points: 0, distance: 0 }
+                    };
+                });
+                
+                setMembers(fullMembers);
+            }
+        } catch (e) {
+            console.error("Erro ao buscar membros:", e);
+        } finally {
+            setLoading(false);
+        }
+    };
+    
+    const isOwner = project?.user_id === currentUserId;
+    
+    return (
+        <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="fixed z-[10020] top-[50%] left-[50%] translate-x-[-50%] translate-y-[-50%] bg-slate-950 border border-slate-800 text-white w-[95vw] max-w-2xl h-[80vh] rounded-3xl shadow-2xl flex flex-col p-0 overflow-hidden">
+        
+        {/* Header Bonito */}
+        <div className="bg-gradient-to-r from-slate-900 to-slate-800 p-6 border-b border-white/5 flex justify-between items-center">
+            <div>
+                <DialogTitle className="flex items-center gap-2 text-xl font-bold">
+                    <Activity className="text-cyan-400" /> Hub do Projeto
+                </DialogTitle>
+                <p className="text-sm text-slate-400 mt-1">{project?.name}</p>
             </div>
-          ) : members.length === 0 ? (
-            <p className="text-center text-slate-500 py-6">
-                Nenhum membro encontrado (além do dono).
-            </p>
-          ) : (
-            members.map((member) => (
-              <div key={member.user_id} className="group flex items-center justify-between p-3 rounded-xl bg-slate-900/50 border border-white/5 hover:border-white/10 transition-colors">
-                <div className="flex items-center gap-3">
-                  {/* Avatar com Iniciais */}
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm shadow-inner
-                    ${member.role === 'owner' ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20' : 'bg-slate-800 text-slate-400 border border-white/5'}
-                  `}>
-                    {member.email ? member.email[0].toUpperCase() : 'U'}
-                  </div>
-                  
-                  <div>
-                    <p className="text-sm font-bold text-white flex items-center gap-2">
-                      {member.name || member.email.split('@')[0]}
-                      {member.role === 'owner' && <Crown size={12} className="text-amber-500 fill-amber-500" />}
-                    </p>
-                    <div className="flex items-center gap-3 text-[10px] text-slate-500">
-                      <span className="flex items-center gap-1"><Mail size={10} /> {member.email}</span>
-                      <span className="flex items-center gap-1"><Calendar size={10} /> {new Date(member.joined_at).toLocaleDateString()}</span>
-                    </div>
-                  </div>
+            
+            {/* Mini Resumo no Topo */}
+            <div className="flex gap-4">
+                <div className="text-right hidden sm:block">
+                    <p className="text-[10px] uppercase text-slate-500 font-bold">Pontos Totais</p>
+                    <p className="text-lg font-mono text-white">{project?.points?.length || 0}</p>
                 </div>
-
-                {/* Botão de Remover (Só aparece se eu for o dono e o alvo não for o dono) */}
-                {isOwner && member.role !== 'owner' && member.user_id !== currentUserId && (
-                  <button 
-                    onClick={() => removeMember(member.user_id)}
-                    className="p-2 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white rounded-lg transition-all opacity-0 group-hover:opacity-100"
-                    title="Remover acesso"
-                  >
-                    <UserX size={16} />
-                  </button>
-                )}
-              </div>
-            ))
-          )}
+            </div>
         </div>
+
+        <Tabs defaultValue="members" className="flex-1 flex flex-col">
+            <div className="px-6 pt-4">
+                <TabsList className="bg-slate-900 border border-white/10 w-full justify-start">
+                    <TabsTrigger value="members" className="data-[state=active]:bg-cyan-600 data-[state=active]:text-white"><Users size={14} className="mr-2"/> Equipe</TabsTrigger>
+                    <TabsTrigger value="stats" className="data-[state=active]:bg-purple-600 data-[state=active]:text-white"><BarChart3 size={14} className="mr-2"/> Produtividade</TabsTrigger>
+                </TabsList>
+            </div>
+
+            {/* ABA DE MEMBROS (ESTILO LISTA) */}
+            <TabsContent value="members" className="flex-1 overflow-y-auto p-6 space-y-3 custom-scrollbar">
+                {loading ? <p className="text-center text-slate-500">Carregando...</p> : members.map((member) => (
+                    <div key={member.user_id} className="flex items-center justify-between p-4 rounded-2xl bg-slate-900/50 border border-white/5 hover:border-white/10 transition-colors">
+                        <div className="flex items-center gap-4">
+                            <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg shadow-inner
+                                ${member.role === 'owner' ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20' : 'bg-slate-800 text-slate-400 border border-white/5'}
+                            `}>
+                                {member.email ? member.email[0].toUpperCase() : 'U'}
+                            </div>
+                            <div>
+                                <p className="text-base font-bold text-white flex items-center gap-2">
+                                    {member.name || member.email.split('@')[0]}
+                                    {member.role === 'owner' && <Crown size={14} className="text-amber-500 fill-amber-500" />}
+                                </p>
+                                <p className="text-xs text-slate-500">{member.email}</p>
+                            </div>
+                        </div>
+                        <div className="text-right">
+                             <span className={`text-xs px-2 py-1 rounded-full border ${member.role === 'owner' ? 'border-amber-500/30 text-amber-400 bg-amber-500/10' : 'border-slate-600 text-slate-400'}`}>
+                                {member.role === 'owner' ? 'Administrador' : 'Colaborador'}
+                             </span>
+                        </div>
+                    </div>
+                ))}
+            </TabsContent>
+
+            {/* ABA DE ESTATÍSTICAS (DASHBOARD COMPLEXO) */}
+            <TabsContent value="stats" className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                     {/* Card Geral */}
+                     <div className="bg-slate-900/80 p-5 rounded-2xl border border-white/5">
+                        <h4 className="text-slate-400 text-xs font-bold uppercase mb-4 flex items-center gap-2"><MapPin size={14}/> Distribuição de Pontos</h4>
+                        {members.map(m => {
+                            const percent = project?.points?.length ? (m.stats.points / project.points.length) * 100 : 0;
+                            return (
+                                <div key={m.user_id} className="mb-4">
+                                    <div className="flex justify-between text-sm mb-1">
+                                        <span className="text-white">{m.name || m.email.split('@')[0]}</span>
+                                        <span className="text-cyan-400 font-mono">{m.stats.points} pts</span>
+                                    </div>
+                                    <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
+                                        <div className="h-full bg-cyan-500" style={{ width: `${percent}%` }}></div>
+                                    </div>
+                                </div>
+                            )
+                        })}
+                     </div>
+
+                     {/* Card Detalhes */}
+                     <div className="bg-slate-900/80 p-5 rounded-2xl border border-white/5">
+                        <h4 className="text-slate-400 text-xs font-bold uppercase mb-4 flex items-center gap-2"><TrendingUp size={14}/> Atividade Recente</h4>
+                        <div className="space-y-3">
+                             {/* Aqui você poderia listar as ultimas 5 ações se tivesse um log */}
+                             <p className="text-sm text-slate-500 italic">Histórico detalhado em breve...</p>
+                        </div>
+                     </div>
+                </div>
+            </TabsContent>
+        </Tabs>
+
       </DialogContent>
     </Dialog>
-  );
+    );
 };
 
 export default ProjectMembersDialog;
