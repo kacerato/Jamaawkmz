@@ -480,7 +480,7 @@ const TrackingPointPopupContent = ({ pointInfo, onClose, onSelectStart, selected
 
 function App() {
   
-  const mapboxToken = 'pk.eyJ1Ijoia2FjZXJhdG8iLCJhIjoiY21oZG1nNnViMDRybjJub2V2dHV1aHh3aiJ9.l7tCaIPEYqcqDI8_aScm7Q';
+  const mapboxToken = 'sk.eyJ1Ijoia2FjZXJhdG8iLCJhIjoiY21qZjc0aWZrMHBhZDNjb3IyaGEwOWxiMyJ9.JhECwLvdOPwESQhm_liVyw';
   const mapRef = useRef();
   const fileInputRef = useRef(null);
   const projectInputRef = useRef(null);
@@ -2989,23 +2989,31 @@ function App() {
           maxPitch={85}
           style={{ width: '100%', height: '100%', position: 'relative' }}
           mapStyle={mapStyles[mapStyle].url}
-          terrain={{ source: 'mapbox-dem', exaggeration: 1.5 }}
           mapboxAccessToken={mapboxToken}
           cursor={tracking && trackingInputMode === 'touch' && !paused ? 'crosshair' : 'auto'}
           preserveDrawingBuffer={true}
           onClick={handleMapClick}
+          onStyleLoad={(e) => {
+            const map = e.target;
+            // Tenta adicionar o terreno de forma segura
+            if (!map.getSource('mapbox-dem')) {
+                map.addSource('mapbox-dem', {
+                    'type': 'raster-dem',
+                    'url': 'mapbox://mapbox.mapbox-terrain-dem-v1',
+                    'tileSize': 512,
+                    'maxzoom': 14
+                });
+            }
+            // Aplica o terreno apenas se a fonte estiver ok
+            try {
+                map.setTerrain({ 'source': 'mapbox-dem', 'exaggeration': 1.5 });
+            } catch (err) {
+                console.warn("Falha ao carregar 3D (verifique o billing do Mapbox):", err);
+            }
+          }}
         >
           <NavigationControl position="top-right" />
 
-          {/* FONTE DE RELEVO 3D */}
-          <Source
-            id="mapbox-dem"
-            type="raster-dem"
-            url="mapbox://mapbox.mapbox-terrain-dem-v1"
-            tileSize={512}
-            maxzoom={14}
-          />
-          
           {/* CAMADA DE CÉU (ATMOSFERA REALISTA) */}
           <Layer
             id="sky"
