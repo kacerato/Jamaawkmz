@@ -547,6 +547,8 @@ function App() {
   
   const [importProgress, setImportProgress] = useState(0);
   const [showImportProgress, setShowImportProgress] = useState(false);
+ 
+const [inspectingProject, setInspectingProject] = useState(null);
   const [importCurrentStep, setImportCurrentStep] = useState(1);
   const [importTotalSteps, setImportTotalSteps] = useState(5);
   const [importCurrentAction, setImportCurrentAction] = useState('');
@@ -3523,11 +3525,16 @@ function App() {
   onDeleteProject={deleteProject}
   onExportProject={exportProjectAsKML}
   onJoinProject={handleJoinProject}
-  onRenameProject={handleRenameProject}
+  // --- CORREÇÃO DO RELATÓRIO ---
   onOpenReport={(project) => {
-    const img = getMapImage();
-    setReportData({ project, image: img });
-    setShowProjectsList(false);
+      const img = getMapImage(); 
+      setReportData({ project, image: img }); 
+      setShowProjectsList(false); 
+  }}
+  // --- CORREÇÃO DA EQUIPE (O QUE FALTAVA) ---
+  onOpenMembers={(project) => {
+      setInspectingProject(project);
+      setShowMembersDialog(true);
   }}
 />
 
@@ -3905,14 +3912,16 @@ function App() {
         currentUserEmail={user?.email}
       />
 
-      {/* 5. NOVO PAINEL DE GESTÃO DE MEMBROS */}
-      <ProjectMembersDialog 
-        isOpen={showMembersDialog}
-        onClose={() => setShowMembersDialog(false)}
-        projectId={currentProject?.id}
-        currentUserId={user?.id}
-        isOwner={currentProject?.user_id === user?.id}
-      />
+    <ProjectMembersDialog 
+    isOpen={showMembersDialog}
+    onClose={() => { 
+        setShowMembersDialog(false); 
+        setInspectingProject(null); 
+    }}
+    // Se estiver inspecionando um da lista, usa ele. Se não, usa o atual carregado.
+    project={inspectingProject || currentProject}
+    currentUserId={user?.id}
+/>
 
       <input
         ref={fileInputRef}
