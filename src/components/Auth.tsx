@@ -1,13 +1,17 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { MapPinned, User, Mail, Lock, Eye, EyeOff, ArrowRight, Chrome, Zap } from 'lucide-react';
+import { MapPinned, Mail, Lock, Eye, EyeOff, ArrowRight, Chrome, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Capacitor } from '@capacitor/core';
 import { GoogleAuth } from '@codetrix-studio/capacitor-google-auth';
 
-export default function Auth({ onAuthSuccess }) {
+interface AuthProps {
+  onAuthSuccess: (user: any) => void;
+}
+
+export default function Auth({ onAuthSuccess }: AuthProps) {
   const [loading, setLoading] = useState(false);
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
@@ -59,7 +63,7 @@ export default function Auth({ onAuthSuccess }) {
     if (error) setFeedback({ msg: error.message, type: 'error' });
   };
   
-  const handleEmailAuth = async (e) => {
+  const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setFeedback({ msg: '', type: '' });
@@ -70,12 +74,12 @@ export default function Auth({ onAuthSuccess }) {
         if (error) throw error;
         onAuthSuccess(data.user);
       } else {
-        const { data, error } = await supabase.auth.signUp({ email, password });
+        const { error } = await supabase.auth.signUp({ email, password });
         if (error) throw error;
         setFeedback({ msg: 'Conta criada! Verifique seu email.', type: 'success' });
         setTimeout(() => setIsLogin(true), 2000);
       }
-    } catch (error) {
+    } catch (error: any) {
       setFeedback({ msg: error.message, type: 'error' });
     } finally {
       setLoading(false);
@@ -142,7 +146,7 @@ export default function Auth({ onAuthSuccess }) {
                   <Input 
                     type="email" 
                     value={email}
-                    onChange={e => setEmail(e.target.value)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
                     required
                     className="pl-10 h-11 bg-slate-950/50 border-white/10 text-white rounded-xl focus:border-cyan-500/50 focus:ring-cyan-500/20" 
                     placeholder="nome@empresa.com"
@@ -157,7 +161,7 @@ export default function Auth({ onAuthSuccess }) {
                   <Input 
                     type={showPassword ? "text" : "password"} 
                     value={password}
-                    onChange={e => setPassword(e.target.value)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
                     required
                     className="pl-10 h-11 bg-slate-950/50 border-white/10 text-white rounded-xl focus:border-cyan-500/50 focus:ring-cyan-500/20" 
                     placeholder="••••••••"

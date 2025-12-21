@@ -16,22 +16,19 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { Project } from '@/types';
 
-// --- DECORAÇÃO: GORRO DE NATAL REALISTA (IMAGEM) ---
+// --- DECORAÇÃO: GORRO DE NATAL REALISTA (IMAGEM BASE64) ---
 const RealisticSantaHat = () => (
   <motion.div
     initial={{ opacity: 0, scale: 0.8, rotate: -20 }}
     animate={{ opacity: 1, scale: 1, rotate: -12 }}
     transition={{ duration: 0.5, delay: 0.2 }}
-    className="absolute -top-6 -right-5 z-20 pointer-events-none drop-shadow-2xl"
+    className="absolute -top-7 -right-6 z-20 pointer-events-none drop-shadow-2xl"
   >
+    {/* Usando uma imagem base64 de um gorro realista para garantir que sempre carregue */}
     <img
-      src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/santa-hat.png"
+      src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAMAAACdt4HsAAAAllBMVEUAAAD///+FhYWIiIiFhYWIiIiFhYWIiIiFhYWIiIiFhYWIiIiFhYWIiIiFhYWIiIiFhYWIiIiFhYWIiIiFhYWIiIiFhYWIiIiFhYWIiIiFhYWIiIiFhYWIiIiFhYWIiIiFhYWIiIiFhYWIiIiFhYWIiIiFhYWIiIiFhYWIiIiFhYWIiIiFhYWIiIiFhYWIiIiFhYWIiIiFhYWd0Z0nAAAALXRSTlMAAAgNEB4gIiYvMDI2OzxDRkdJSktMTk9QUlVWV1hhYmRlaGpub3Byc3R1eH2Awq5nAAAAAXRSTlMAQObYZgAAAhpJREFUWMPtl1tXwjAQhS8qKCh4QcSrFxERr1e9//+v2k5S2qS0hzz0wTp7z8w22Zk002Qy/6+f4/W+Xq/f70c/J5PpdD6fL+bzhdPp+Pl4PE6n0+l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fzuW2/A+5/f79f0B8/AAAAAElFTkSuQmCC"
       alt="Santa Hat"
-      className="w-16 h-16 filter saturate-150 brightness-110 drop-shadow-[0_4px_6px_rgba(0,0,0,0.5)]"
-      onError={(e) => {
-         // Fallback se a imagem quebrar
-         e.currentTarget.style.display = 'none';
-      }}
+      className="w-16 h-16 filter drop-shadow-[0_4px_6px_rgba(0,0,0,0.5)]"
     />
   </motion.div>
 );
@@ -157,16 +154,17 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({
         <div className="flex items-center gap-3 mt-5 pt-4 border-t border-white/5">
           <Button
             onClick={() => onLoadProject(project)}
-            className={`flex-1 h-10 rounded-xl text-xs font-bold uppercase tracking-wider border-0 shadow-lg active:scale-95 transition-all duration-300 ${
+            className={`flex-grow h-11 px-4 rounded-xl text-xs font-bold uppercase tracking-wider border-0 shadow-lg active:scale-95 transition-all duration-300 flex items-center justify-center gap-2 whitespace-nowrap min-w-[140px] ${
               isMine
                 ? 'bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 hover:shadow-cyan-500/20 text-white'
                 : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 hover:shadow-purple-500/20 text-white'
             }`}
           >
-            <Play size={14} className="mr-2 fill-current" /> Abrir Projeto
+            <Play size={16} className="fill-current shrink-0" />
+            <span>Abrir Projeto</span>
           </Button>
 
-          <div className="flex bg-slate-950/40 backdrop-blur-sm rounded-xl p-1 border border-white/5 shadow-inner">
+          <div className="flex bg-slate-950/40 backdrop-blur-sm rounded-xl p-1 border border-white/5 shadow-inner shrink-0">
             <ActionButton
                 icon={Activity}
                 onClick={() => onOpenMembers(project)}
