@@ -480,7 +480,7 @@ const TrackingPointPopupContent = ({ pointInfo, onClose, onSelectStart, selected
 
 function App() {
   
-  const mapboxToken = 'sk.eyJ1Ijoia2FjZXJhdG8iLCJhIjoiY21qZjc0aWZrMHBhZDNjb3IyaGEwOWxiMyJ9.JhECwLvdOPwESQhm_liVyw';
+  const mapboxToken = 'pk.eyJ1Ijoia2FjZXJhdG8iLCJhIjoiY21oZG1nNnViMDRybjJub2VvZHV1aHh3aiJ9.l7tCaIPEYqcqDI8_aScm7Q';
   const mapRef = useRef();
   const fileInputRef = useRef(null);
   const projectInputRef = useRef(null);
