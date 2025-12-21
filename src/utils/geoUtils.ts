@@ -1,4 +1,5 @@
-// src/utils/geoUtils.js
+// src/utils/geoUtils.ts
+import { Point, Connection } from '../types';
 
 // --- CONSTANTES ---
 const R_EARTH = 6378137; // Raio da Terra em metros (WGS-84)
@@ -6,17 +7,25 @@ const R_EARTH = 6378137; // Raio da Terra em metros (WGS-84)
 // --- CLASSES UTILITÁRIAS (Necessárias para o GPS e Build) ---
 
 export class KalmanFilter {
+  R: number; // Ruído da medição
+  Q: number; // Ruído do processo
+  A: number; // Estado
+  B: number; // Controle
+  C: number; // Medição
+  cov: number;
+  x: number; // Valor filtrado
+
   constructor(R = 1, Q = 1, A = 1, B = 0, C = 1) {
-    this.R = R; // Ruído da medição
-    this.Q = Q; // Ruído do processo
-    this.A = A; // Estado
-    this.B = B; // Controle
-    this.C = C; // Medição
+    this.R = R;
+    this.Q = Q;
+    this.A = A;
+    this.B = B;
+    this.C = C;
     this.cov = NaN;
-    this.x = NaN; // Valor filtrado
+    this.x = NaN;
   }
   
-  filter(z, u = 0) {
+  filter(z: number, u = 0): number {
     if (isNaN(this.x)) {
       this.x = (1 / this.C) * z;
       this.cov = (1 / this.C) * this.Q * (1 / this.C);
@@ -31,8 +40,15 @@ export class KalmanFilter {
   }
 }
 
+interface SnappedLocation {
+    lat: number;
+    lng: number;
+    address?: any;
+    snapped: boolean;
+}
+
 export class RoadSnappingService {
-  static async snapToRoad(lat, lng) {
+  static async snapToRoad(lat: number, lng: number): Promise<SnappedLocation> {
     try {
       // Usa Nominatim (OSM) para achar a rua mais próxima
       const response = await fetch(
@@ -59,7 +75,7 @@ export class RoadSnappingService {
 }
 
 // --- CÁLCULO GEODÉSICO DE ALTA PRECISÃO ---
-export const calculateDistance = (lat1, lon1, lat2, lon2) => {
+export const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
   if (!lat1 || !lon1 || !lat2 || !lon2) return 0;
   
   const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -74,13 +90,13 @@ export const calculateDistance = (lat1, lon1, lat2, lon2) => {
 }
 
 // --- A FUNÇÃO MESTRA DE METRAGEM ---
-export const calculateTotalProjectDistance = (points, connections = []) => {
+export const calculateTotalProjectDistance = (points: Point[] | null, connections: Connection[] = []): number => {
   if (!points || points.length < 2) return 0;
   
   let totalDistance = 0;
   
   // 1. Cria um Mapa de Hash para acesso instantâneo (Performance O(1))
-  const pointMap = new Map();
+  const pointMap = new Map<string, Point>();
   for (const p of points) {
     pointMap.set(p.id, p);
   }
@@ -88,7 +104,7 @@ export const calculateTotalProjectDistance = (points, connections = []) => {
   // 2. Calcula Distância das Ramificações (Árvore Principal)
   for (let i = 0; i < points.length; i++) {
     const point = points[i];
-    let parent = null;
+    let parent: Point | undefined | null = null;
     
     if (point.connectedFrom) {
       // Se tem pai explícito (Ramificação)
@@ -129,15 +145,15 @@ export const calculateTotalDistance = calculateTotalProjectDistance;
 
 // --- FORMATAÇÃO VISUAL E HELPERS ---
 
-export const safeToFixed = (value, decimals = 2) => {
-  if (value === undefined || value === null || isNaN(value)) {
+export const safeToFixed = (value: number | string | null | undefined, decimals = 2): string => {
+  if (value === undefined || value === null || (typeof value === 'number' && isNaN(value))) {
     return "0".padStart(decimals + 2, '0');
   }
   return Number(value).toFixed(decimals);
 };
 
-export const formatDistanceDetailed = (distanceInMeters) => {
-  if (distanceInMeters === undefined || distanceInMeters === null || isNaN(distanceInMeters)) {
+export const formatDistanceDetailed = (distanceInMeters: number | string | null | undefined): string => {
+  if (distanceInMeters === undefined || distanceInMeters === null || (typeof distanceInMeters === 'number' && isNaN(distanceInMeters))) {
     return "0 m";
   }
   const distance = Number(distanceInMeters);
@@ -147,7 +163,7 @@ export const formatDistanceDetailed = (distanceInMeters) => {
   else return `${(distance / 1000).toFixed(3)} km`; // 3 casas decimais
 };
 
-export const generateUUID = () => {
+export const generateUUID = (): string => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
     const r = Math.random() * 16 | 0,
@@ -156,7 +172,7 @@ export const generateUUID = () => {
   });
 };
 
-export const generateRandomColor = () => {
+export const generateRandomColor = (): string => {
   const colors = ['#1e3a8a', '#3730a3', '#5b21b6', '#7c2d12', '#0f766e', '#b91c1c'];
   return colors[Math.floor(Math.random() * colors.length)];
 };
