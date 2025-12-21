@@ -153,16 +153,21 @@ function App() {
     }
   };
 
-  const handleImportKML = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    
-    const newProject = await projectManager.importProjectFromKML(file);
-    if (newProject) {
-        handleLoadProject(newProject);
-        showFeedback('Importado', 'Projeto carregado do KML.', 'success');
-    }
-  };
+  // No App.jsx
+const handleImportKML = async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  
+  // NÃO passe extraConnections aqui se não tiver, o hook já tem valor padrão []
+  const newProject = await projectManager.importProjectFromKML(file);
+  
+  if (newProject) {
+    handleLoadProject(newProject);
+    showFeedback('Importado', 'Projeto carregado do KML.', 'success');
+  }
+  // Reseta o input para permitir importar o mesmo arquivo de novo se quisers
+  e.target.value = '';
+};
 
   const handleMapClick = async (e) => {
     // 1. Evita clique se estiver clicando em controles
