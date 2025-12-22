@@ -1251,55 +1251,55 @@ function App() {
   // Função startTracking com sistema de lock
   // Função startTracking com sistema de lock
   const startTracking = async (mode = 'gps') => {
-    if (loadedProjects.length > 1) {
-      showFeedback('Bloqueado', 'Múltiplos projetos ativos. Deixe apenas UM projeto no mapa para continuar o traçado.', 'error');
-      return;
-    }
+  if (loadedProjects.length > 1) {
+    showFeedback('Bloqueado', 'Múltiplos projetos ativos. Deixe apenas UM projeto no mapa para continuar o traçado.', 'error');
+    return;
+  }
+  
+  if (loadedProjects.length === 1) {
+    const project = loadedProjects[0];
     
-    if (loadedProjects.length === 1) {
-      const project = loadedProjects[0];
-      
-      if (isOnline && user) {
-        const hasLock = await ProjectLockService.acquireLock(project.id, user.id);
-        if (!hasLock) {
-          const status = await ProjectLockService.checkLockStatus(project.id, user.id);
-          if (status.isLocked) {
-            showFeedback('Projeto Travado', `Este projeto está sendo editado por ${status.lockedBy}. Modo leitura ativado.`, 'error');
-            return;
-          }
+    if (isOnline && user) {
+      const hasLock = await ProjectLockService.acquireLock(project.id, user.id);
+      if (!hasLock) {
+        const status = await ProjectLockService.checkLockStatus(project.id, user.id);
+        if (status.isLocked) {
+          showFeedback('Projeto Travado', `Este projeto está sendo editado por ${status.lockedBy}. Modo leitura ativado.`, 'error');
+          return;
         }
       }
-      
-      setCurrentProject(project);
-      setManualPoints(project.points);
-      setTotalDistance(project.totalDistance || project.total_distance || 0);
-      setProjectName(project.name);
-      
-      if (project.points && project.points.length > 0) {
-        const lastPoint = project.points[project.points.length - 1];
-        setSelectedStartPoint(lastPoint);
-        
-        showFeedback('Conectado', `Rastreamento continuado a partir do Ponto ${project.points.length}`, 'success');
-      }
-    }
-    else if (!currentProject) {
-      setManualPoints([]);
-      setTotalDistance(0);
-      setProjectName('');
-      setSelectedStartPoint(null);
     }
     
-    setTrackingInputMode(mode);
-    setTracking(true);
-    setPaused(false);
-    setShowTrackingControls(true);
-    setShowRulerPopup(false);
+    setCurrentProject(project);
+    setManualPoints(project.points);
+    setTotalDistance(project.totalDistance || project.total_distance || 0);
+    setProjectName(project.name);
     
-    kalmanLatRef.current = new KalmanFilter(0.1, 0.1);
-    kalmanLngRef.current = new KalmanFilter(0.1, 0.1);
-  };
+    if (project.points && project.points.length > 0) {
+      const lastPoint = project.points[project.points.length - 1];
+      setSelectedStartPoint(lastPoint);
+      
+      showFeedback('Conectado', `Rastreamento continuado a partir do Ponto ${project.points.length}`, 'success');
+    }
+  }
+  else if (!currentProject) {
+    setManualPoints([]);
+    setTotalDistance(0);
+    setProjectName('');
+    setSelectedStartPoint(null);
+  }
   
-  // Função loadProject com sistema de lock
+  setTrackingInputMode(mode);
+  setTracking(true);
+  setPaused(false);
+  setShowTrackingControls(true);
+  setShowRulerPopup(false);
+  
+  kalmanLatRef.current = new KalmanFilter(0.1, 0.1);
+  kalmanLngRef.current = new KalmanFilter(0.1, 0.1);
+};
+  
+  // Função loadProject com sistema de lock E RECÁLCULO DE DISTÂNCIA
   const loadProject = async (project) => {
     if (currentProject && isOnline && user) {
       await ProjectLockService.releaseLock(currentProject.id, user.id);
@@ -1323,14 +1323,30 @@ function App() {
     setShowProjectsList(false);
     
     requestAnimationFrame(async () => {
+      // 1. Garante que extra_connections exista (correção para legado)
+      const safeConnections = project.extra_connections || [];
+      
       setManualPoints([]);
-      setExtraConnections([]);
-      setTotalDistance(0);
+      setExtraConnections(safeConnections); // Atualiza estado
+      
+      // 2. RECÁLCULO FORÇADO: Usa a nova lógica imediatamente ao carregar
+      // Isso corrige a distância de projetos antigos na hora que abre
+      const recalculatedDistance = calculateTotalProjectDistance(project.points, safeConnections);
+      
+      setTotalDistance(recalculatedDistance); // Atualiza visual
       setSelectedStartPoint(null);
       setTracking(false);
       setPaused(false);
       
-      setCurrentProject(project);
+      // Atualiza o objeto currentProject com a distância corrigida
+      const projectWithFixes = {
+          ...project,
+          total_distance: recalculatedDistance,
+          totalDistance: recalculatedDistance,
+          extra_connections: safeConnections
+      };
+
+      setCurrentProject(projectWithFixes);
       
       const exists = loadedProjects.find(p => p.id === project.id);
       
@@ -1345,7 +1361,7 @@ function App() {
         }
         
         const projectWithColor = {
-          ...project,
+          ...projectWithFixes, // Usa o projeto com as correções
           bairro: bairroDetectado || 'Vários',
           color: project.color || generateRandomColor(),
           points: project.points
@@ -1453,21 +1469,6 @@ function App() {
     setSelectedStartPoint(null);
     setShowProjectDetails(false);
     setShowRulerPopup(false);
-  };
-  
-  const calculateTotalDistance = (points) => {
-    if (points.length < 2) return 0;
-    
-    let total = 0;
-    for (let i = 0; i < points.length - 1; i++) {
-      total += calculateDistance(
-        points[i].lat,
-        points[i].lng,
-        points[i + 1].lat,
-        points[i + 1].lng
-      );
-    }
-    return total;
   };
   
   useEffect(() => {
@@ -2166,28 +2167,6 @@ function App() {
     })
   }
   
-  const calculateTotalDistanceWithMultiplier = (points) => {
-    if (!points || points.length < 2) return 0;
-    let total = 0;
-    
-    points.forEach((point, index) => {
-      let parent = null;
-      if (point.connectedFrom) {
-        parent = points.find(p => p.id === point.connectedFrom);
-      } else if (index > 0) {
-        parent = points[index - 1];
-      }
-      
-      if (parent) {
-        const linearDist = calculateDistance(parent.lat, parent.lng, point.lat, point.lng);
-        const spans = point.spans || 1;
-        total += (linearDist * spans);
-      }
-    });
-    
-    return total;
-  };
-  
   const handleSpanChange = (count) => {
     if (!spanSelectorInfo) return;
     
@@ -2200,6 +2179,7 @@ function App() {
     
     setManualPoints(updatedPoints);
     
+    // Agora usa a ÚNICA função correta, passando as conexões extras do estado
     const newTotal = calculateTotalProjectDistance(updatedPoints, extraConnections);
     setTotalDistance(newTotal);
     
