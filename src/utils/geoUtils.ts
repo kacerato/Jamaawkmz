@@ -89,47 +89,65 @@ export const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2
   return R_EARTH * c;
 }
 
-// --- A FUNÇÃO MESTRA DE METRAGEM ---
+// --- A FUNÇÃO MESTRA DE METRAGEM (BRUTALMENTE OTIMIZADA) ---
 export const calculateTotalProjectDistance = (points: Point[] | null, connections: Connection[] = []): number => {
-  if (!points || points.length < 2) return 0;
+  if (!points || !Array.isArray(points) || points.length < 2) return 0;
   
   let totalDistance = 0;
   
-  // 1. Cria um Mapa de Hash para acesso instantâneo (Performance O(1))
+  // 1. Mapa de Hash para acesso O(1)
   const pointMap = new Map<string, Point>();
   for (const p of points) {
-    pointMap.set(p.id, p);
+    if (p && p.id) {
+        pointMap.set(p.id, p);
+    }
   }
   
   // 2. Calcula Distância das Ramificações (Árvore Principal)
   for (let i = 0; i < points.length; i++) {
     const point = points[i];
+    if (!point) continue;
+
     let parent: Point | undefined | null = null;
     
-    if (point.connectedFrom) {
-      // Se tem pai explícito (Ramificação)
+    // Prioridade: connectedFrom explícito > Sequencial (se não for gap e não for o primeiro)
+    if (point.connectedFrom && pointMap.has(point.connectedFrom)) {
       parent = pointMap.get(point.connectedFrom);
-    } else if (i > 0 && !point.isGap) {
-      // Fallback para lógica sequencial antiga (se necessário)
+    } else if (i > 0 && !point.isGap && !point.connectedFrom) {
+      // Fallback legado: sequencial apenas se não tiver connectedFrom definido
       parent = points[i - 1];
     }
     
     if (parent) {
       const dist = calculateDistance(parent.lat, parent.lng, point.lat, point.lng);
-      const spans = point.spans || 1; // Multiplicador AG
+
+      // PARSE INT EXPLICITO PARA EVITAR ERROS DE STRING/JSON
+      let spans = 1;
+      if (point.spans !== undefined && point.spans !== null) {
+          spans = typeof point.spans === 'string' ? parseInt(point.spans, 10) : point.spans;
+      }
+      if (isNaN(spans) || spans < 1) spans = 1;
+
       totalDistance += (dist * spans);
     }
   }
   
   // 3. Calcula Distância das Conexões Extras (Loops/Anéis)
-  if (connections && connections.length > 0) {
+  if (connections && Array.isArray(connections) && connections.length > 0) {
     for (const conn of connections) {
       const p1 = pointMap.get(conn.fromId);
       const p2 = pointMap.get(conn.toId);
       
       if (p1 && p2) {
         const dist = calculateDistance(p1.lat, p1.lng, p2.lat, p2.lng);
-        const spans = conn.spans || 1; // Multiplicador AG
+
+        // PARSE INT TAMBÉM NAS CONEXÕES
+        let spans = 1;
+        if (conn.spans !== undefined && conn.spans !== null) {
+            spans = typeof conn.spans === 'string' ? parseInt(conn.spans, 10) : conn.spans;
+        }
+        if (isNaN(spans) || spans < 1) spans = 1;
+
         totalDistance += (dist * spans);
       }
     }
@@ -139,7 +157,6 @@ export const calculateTotalProjectDistance = (points: Point[] | null, connection
 };
 
 // --- ALIAS PARA COMPATIBILIDADE ---
-// Isso evita que o build quebre se o App.jsx ainda estiver chamando o nome antigo
 export const calculateTotalDistanceWithBranches = calculateTotalProjectDistance;
 export const calculateTotalDistance = calculateTotalProjectDistance;
 
@@ -160,7 +177,7 @@ export const formatDistanceDetailed = (distanceInMeters: number | string | null 
   if (distance < 1) return `${(distance * 100).toFixed(0)} cm`;
   else if (distance < 1000) return `${distance.toFixed(0)} m`;
   else if (distance < 10000) return `${(distance / 1000).toFixed(2)} km`;
-  else return `${(distance / 1000).toFixed(3)} km`; // 3 casas decimais
+  else return `${(distance / 1000).toFixed(3)} km`;
 };
 
 export const generateUUID = (): string => {
