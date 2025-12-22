@@ -83,6 +83,8 @@ import {
   safeToFixed,
   formatDistanceDetailed,
   calculateTotalProjectDistance,
+  embedConnectionsInPoints,
+  extractConnectionsFromPoints,
   KalmanFilter,
   RoadSnappingService
 } from './utils/geoUtils';
@@ -1160,12 +1162,15 @@ function App() {
       
       const calculatedTotalDistance = calculateTotalProjectDistance(sanitizedPoints, extraConnections);
       
+      // EMBED EXTRA CONNECTIONS TO SAVE IN POINTS COLUMN
+      const pointsWithConnections = embedConnectionsInPoints(sanitizedPoints, extraConnections);
+
       const nowISO = new Date().toISOString();
       
       const projectData = {
         name: projectNameToUse.trim(),
-        points: sanitizedPoints,
-        extra_connections: extraConnections,
+        points: pointsWithConnections,
+        // extra_connections removed to avoid Supabase error
         total_distance: calculatedTotalDistance,
         bairro: selectedBairro !== 'todos' ? selectedBairro : 'Vários',
         tracking_mode: 'manual',
@@ -1323,17 +1328,21 @@ function App() {
     setShowProjectsList(false);
     
     requestAnimationFrame(async () => {
-      // 1. Garante que extra_connections exista (correção para legado)
-      const safeConnections = project.extra_connections || [];
+      // 1. Recover extra connections (from embedded points OR legacy column)
+      let safeConnections = project.extra_connections || [];
+      const extractedConnections = extractConnectionsFromPoints(project.points);
       
+      if (extractedConnections.length > 0) {
+        safeConnections = extractedConnections;
+      }
+
       setManualPoints([]);
-      setExtraConnections(safeConnections); // Atualiza estado
+      setExtraConnections(safeConnections); // Updates state
       
-      // 2. RECÁLCULO FORÇADO: Usa a nova lógica imediatamente ao carregar
-      // Isso corrige a distância de projetos antigos na hora que abre
+      // 2. FORCED RECALCULATION: Uses the new rigorous logic immediately on load
       const recalculatedDistance = calculateTotalProjectDistance(project.points, safeConnections);
       
-      setTotalDistance(recalculatedDistance); // Atualiza visual
+      setTotalDistance(recalculatedDistance); // Updates visual
       setSelectedStartPoint(null);
       setTracking(false);
       setPaused(false);
@@ -1538,10 +1547,14 @@ function App() {
     if (!user) return null;
     
     try {
+      // Embed connections before saving to ensure persistence
+      const extraConns = project.extra_connections || [];
+      const pointsWithEmbedded = embedConnectionsInPoints(project.points, extraConns);
+
       const projectData = {
         name: project.name,
-        points: project.points,
-        extra_connections: project.extra_connections || [],
+        points: pointsWithEmbedded,
+        // extra_connections removed to fix PGRST204 error
         total_distance: project.totalDistance || project.total_distance,
         bairro: project.bairro,
         tracking_mode: 'manual',
