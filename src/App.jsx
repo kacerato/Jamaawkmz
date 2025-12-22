@@ -547,8 +547,6 @@ function App() {
   
   const [importProgress, setImportProgress] = useState(0);
   const [showImportProgress, setShowImportProgress] = useState(false);
- 
-const [inspectingProject, setInspectingProject] = useState(null);
   const [importCurrentStep, setImportCurrentStep] = useState(1);
   const [importTotalSteps, setImportTotalSteps] = useState(5);
   const [importCurrentAction, setImportCurrentAction] = useState('');
@@ -1457,6 +1455,20 @@ const [inspectingProject, setInspectingProject] = useState(null);
     setShowRulerPopup(false);
   };
   
+  const calculateTotalDistance = (points) => {
+    if (points.length < 2) return 0;
+    
+    let total = 0;
+    for (let i = 0; i < points.length - 1; i++) {
+      total += calculateDistance(
+        points[i].lat,
+        points[i].lng,
+        points[i + 1].lat,
+        points[i + 1].lng
+      );
+    }
+    return total;
+  };
   
   useEffect(() => {
     const checkAuth = async () => {
@@ -2154,6 +2166,27 @@ const [inspectingProject, setInspectingProject] = useState(null);
     })
   }
   
+  const calculateTotalDistanceWithMultiplier = (points) => {
+    if (!points || points.length < 2) return 0;
+    let total = 0;
+    
+    points.forEach((point, index) => {
+      let parent = null;
+      if (point.connectedFrom) {
+        parent = points.find(p => p.id === point.connectedFrom);
+      } else if (index > 0) {
+        parent = points[index - 1];
+      }
+      
+      if (parent) {
+        const linearDist = calculateDistance(parent.lat, parent.lng, point.lat, point.lng);
+        const spans = point.spans || 1;
+        total += (linearDist * spans);
+      }
+    });
+    
+    return total;
+  };
   
   const handleSpanChange = (count) => {
     if (!spanSelectorInfo) return;
@@ -3490,16 +3523,11 @@ const [inspectingProject, setInspectingProject] = useState(null);
   onDeleteProject={deleteProject}
   onExportProject={exportProjectAsKML}
   onJoinProject={handleJoinProject}
-  // --- CORREÇÃO DO RELATÓRIO ---
+  onRenameProject={handleRenameProject}
   onOpenReport={(project) => {
-      const img = getMapImage(); 
-      setReportData({ project, image: img }); 
-      setShowProjectsList(false); 
-  }}
-  // --- CORREÇÃO DA EQUIPE (O QUE FALTAVA) ---
-  onOpenMembers={(project) => {
-      setInspectingProject(project);
-      setShowMembersDialog(true);
+    const img = getMapImage();
+    setReportData({ project, image: img });
+    setShowProjectsList(false);
   }}
 />
 
@@ -3877,16 +3905,14 @@ const [inspectingProject, setInspectingProject] = useState(null);
         currentUserEmail={user?.email}
       />
 
-    <ProjectMembersDialog 
-    isOpen={showMembersDialog}
-    onClose={() => { 
-        setShowMembersDialog(false); 
-        setInspectingProject(null); 
-    }}
-    // Se estiver inspecionando um da lista, usa ele. Se não, usa o atual carregado.
-    project={inspectingProject || currentProject}
-    currentUserId={user?.id}
-/>
+      {/* 5. NOVO PAINEL DE GESTÃO DE MEMBROS */}
+      <ProjectMembersDialog 
+        isOpen={showMembersDialog}
+        onClose={() => setShowMembersDialog(false)}
+        projectId={currentProject?.id}
+        currentUserId={user?.id}
+        isOwner={currentProject?.user_id === user?.id}
+      />
 
       <input
         ref={fileInputRef}
