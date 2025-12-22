@@ -1457,20 +1457,6 @@ const [inspectingProject, setInspectingProject] = useState(null);
     setShowRulerPopup(false);
   };
   
-  const calculateTotalDistance = (points) => {
-    if (points.length < 2) return 0;
-    
-    let total = 0;
-    for (let i = 0; i < points.length - 1; i++) {
-      total += calculateDistance(
-        points[i].lat,
-        points[i].lng,
-        points[i + 1].lat,
-        points[i + 1].lng
-      );
-    }
-    return total;
-  };
   
   useEffect(() => {
     const checkAuth = async () => {
@@ -2168,27 +2154,6 @@ const [inspectingProject, setInspectingProject] = useState(null);
     })
   }
   
-  const calculateTotalDistanceWithMultiplier = (points) => {
-    if (!points || points.length < 2) return 0;
-    let total = 0;
-    
-    points.forEach((point, index) => {
-      let parent = null;
-      if (point.connectedFrom) {
-        parent = points.find(p => p.id === point.connectedFrom);
-      } else if (index > 0) {
-        parent = points[index - 1];
-      }
-      
-      if (parent) {
-        const linearDist = calculateDistance(parent.lat, parent.lng, point.lat, point.lng);
-        const spans = point.spans || 1;
-        total += (linearDist * spans);
-      }
-    });
-    
-    return total;
-  };
   
   const handleSpanChange = (count) => {
     if (!spanSelectorInfo) return;

@@ -16,22 +16,6 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { Project } from '@/types';
 
-// --- DECORAÇÃO: GORRO DE NATAL REALISTA (IMAGEM BASE64) ---
-const RealisticSantaHat = () => (
-  <motion.div
-    initial={{ opacity: 0, scale: 0.8, rotate: -20 }}
-    animate={{ opacity: 1, scale: 1, rotate: -12 }}
-    transition={{ duration: 0.5, delay: 0.2 }}
-    className="absolute -top-7 -right-6 z-20 pointer-events-none drop-shadow-2xl"
-  >
-    {/* Usando uma imagem base64 de um gorro realista para garantir que sempre carregue */}
-    <img
-      src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAMAAACdt4HsAAAAllBMVEUAAAD///+FhYWIiIiFhYWIiIiFhYWIiIiFhYWIiIiFhYWIiIiFhYWIiIiFhYWIiIiFhYWIiIiFhYWIiIiFhYWIiIiFhYWIiIiFhYWIiIiFhYWIiIiFhYWIiIiFhYWIiIiFhYWIiIiFhYWIiIiFhYWIiIiFhYWIiIiFhYWIiIiFhYWIiIiFhYWIiIiFhYWIiIiFhYWIiIiFhYWd0Z0nAAAALXRSTlMAAAgNEB4gIiYvMDI2OzxDRkdJSktMTk9QUlVWV1hhYmRlaGpub3Byc3R1eH2Awq5nAAAAAXRSTlMAQObYZgAAAhpJREFUWMPtl1tXwjAQhS8qKCh4QcSrFxERr1e9//+v2k5S2qS0hzz0wTp7z8w22Zk002Qy/6+f4/W+Xq/f70c/J5PpdD6fL+bzhdPp+Pl4PE6n0+l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fz+Xw+n8/n8/l8Pp/P5/P5fD6fz+fzuW2/A+5/f79f0B8/AAAAAElFTkSuQmCC"
-      alt="Santa Hat"
-      className="w-16 h-16 filter drop-shadow-[0_4px_6px_rgba(0,0,0,0.5)]"
-    />
-  </motion.div>
-);
 
 interface ProjectManagerProps {
   isOpen: boolean;
@@ -97,9 +81,6 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({
         transition={{ delay: index * 0.05 }}
         className={`group relative backdrop-blur-xl rounded-3xl p-5 mb-4 transition-all duration-300 border ${containerClasses} hover:scale-[1.01] overflow-visible`}
       >
-
-        {/* Decoração apenas no primeiro item */}
-        {index === 0 && <RealisticSantaHat />}
 
         <div className="flex justify-between items-start relative z-10 gap-4">
           {/* Ícone Container com efeito "Gummy/Liquid" */}

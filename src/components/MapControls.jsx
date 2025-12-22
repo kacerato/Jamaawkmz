@@ -17,19 +17,29 @@ const MapControls = ({
     { id: 'light', name: 'Claro', icon: Sun, color: 'text-yellow-400', desc: 'Alto contraste' },
   ];
   
-  // Posições Calculadas
-  const centerMapPosition = isTrackingActive
-    ? 'top-[90px] right-4' // Tracking: Topo Direita (Abaixo do menu hambúrguer)
-    : 'bottom-10 left-[calc(50%+40px)] sm:left-[calc(50%+50px)]'; // Default: Direita do Dock (Centro + Offset)
+  // LÓGICA DE POSICIONAMENTO SIMPLIFICADA E ROBUSTA
+  // Usando translate-x para garantir centralização relativa ao meio da tela
 
-  const layerMapPosition = isTrackingActive
-    ? 'top-[146px] right-4' // Tracking: Abaixo do botão de centralizar
-    : 'bottom-10 right-[calc(50%+40px)] sm:right-[calc(50%+50px)]'; // Default: Esquerda do Dock
+  // RASTREAMENTO ATIVO: Topo Direita
+  const trackingContainerClass = 'top-[90px] right-4 flex-col gap-3 items-end';
+
+  // DEFAULT: Rodapé, ao lado do Dock
+  // Dock ~280px wide. Centro = 50%.
+  // Layer (Esq): right-1/2 translate-x-[-160px] -> Move para esquerda do centro
+  // Center (Dir): left-1/2 translate-x-[160px] -> Move para direita do centro
+
+  const centerBtnClass = isTrackingActive
+    ? 'fixed top-[90px] right-4 z-50'
+    : 'fixed bottom-10 left-1/2 ml-[140px] z-50 transform transition-all duration-300';
+
+  const layerBtnClass = isTrackingActive
+    ? 'fixed top-[146px] right-4 z-50'
+    : 'fixed bottom-10 left-1/2 -ml-[190px] z-50 transform transition-all duration-300';
 
   return (
     <>
-      {/* Botão de Centralizar (Direita do Dock / Topo Direita) */}
-      <div className={`absolute z-20 transition-all duration-500 ease-in-out ${centerMapPosition}`}>
+      {/* Botão de Centralizar (Direita) */}
+      <div className={centerBtnClass}>
         <Button
           size="icon"
           onClick={onCenterMap}
@@ -39,14 +49,14 @@ const MapControls = ({
         </Button>
       </div>
 
-      {/* Botão de Camadas (Esquerda do Dock / Topo Direita) */}
-      <div className={`absolute z-20 transition-all duration-500 ease-in-out flex flex-col items-end ${layerMapPosition}`}>
+      {/* Botão de Camadas (Esquerda) */}
+      <div className={`${layerBtnClass} flex flex-col items-end`}>
         
-        {/* Menu Dropdown (Direção dinâmica) */}
+        {/* Menu Dropdown */}
         <div className={`
-          absolute flex flex-col gap-2 transition-all duration-300 origin-bottom
+          absolute flex flex-col gap-2 transition-all duration-300
           ${isTrackingActive ? 'right-14 top-0 origin-top-right' : 'bottom-14 left-0 origin-bottom-left'}
-          ${showStyleMenu ? 'opacity-100 scale-100' : 'opacity-0 scale-90 pointer-events-none'}
+          ${showStyleMenu ? 'opacity-100 scale-100 pointer-events-auto' : 'opacity-0 scale-90 pointer-events-none'}
         `}>
           {styles.map((style) => (
             <button
