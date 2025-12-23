@@ -1136,18 +1136,18 @@ function App() {
   // --- SUBSTITUA A FUNÇÃO saveProject POR ESTA ---
 // --- SUBSTITUA NO SEU App.jsx ---
 
+// --- FUNÇÃO saveProject CORRIGIDA (SEM O ERRO PGRST204) ---
 const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
   try {
     let finalPoints = pointsToSave;
     
-    // Validação de segurança
+    // Validações
     if (editingProject && finalPoints.length === 0) finalPoints = editingProject.points;
     if (!finalPoints || finalPoints.length === 0) {
       if (!autoSave) showFeedback('Erro', 'Não há pontos para salvar.', 'error');
       return;
     }
     
-    // Definição do Nome
     let projectNameToUse = projectName;
     if (editingProject && !projectName.trim()) projectNameToUse = editingProject.name;
     else if (currentProject && !projectName.trim()) projectNameToUse = currentProject.name;
@@ -1158,22 +1158,20 @@ const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
       return;
     }
     
-    // --- AQUI ESTÁ A CORREÇÃO CRÍTICA ---
-    // Forçamos o recálculo usando a função do geoUtils que agora TEM a lógica de spans
-    // Isso garante que o valor que vai pro banco (total_distance) seja o valor COM multiplicador.
+    // 1. Calcula a distância correta antes de salvar
     const calculatedTotalDistance = calculateTotalProjectDistance(finalPoints, extraConnections);
-    
-    // Atualiza o estado local para refletir na UI imediatamente
-    setTotalDistance(calculatedTotalDistance);
+    setTotalDistance(calculatedTotalDistance); // Atualiza UI
     
     const nowISO = new Date().toISOString();
     
+    // 2. PREPARA DADOS PARA O SUPABASE
+    // IMPORTANTE: Aqui só enviamos colunas que REALMENTE existem no banco (snake_case)
     const projectData = {
       name: projectNameToUse.trim(),
       points: finalPoints,
-      extra_connections: extraConnections, // Garante que loops sejam salvos
-      total_distance: calculatedTotalDistance, // SALVA O VALOR CORRETO NO BANCO
-      totalDistance: calculatedTotalDistance, // Fallback para legado
+      extra_connections: extraConnections,
+      total_distance: calculatedTotalDistance, // <--- CORRETO (Nome da coluna no banco)
+      // totalDistance: calculatedTotalDistance, <--- REMOVIDO (Causava o erro 400)
       bairro: selectedBairro !== 'todos' ? selectedBairro : 'Vários',
       tracking_mode: 'manual',
       updated_at: nowISO,
@@ -1181,11 +1179,9 @@ const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
     };
     
     let savedProject;
-    let isUpdate = false;
     
-    // Lógica de Supabase (Update ou Insert)
+    // Lógica de Envio (Update ou Insert)
     if (currentProject || editingProject) {
-      isUpdate = true;
       const targetId = currentProject?.id || editingProject.id;
       
       if (isOnline && user && !targetId.toString().startsWith('offline_')) {
@@ -1214,33 +1210,41 @@ const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
       }
     }
     
-    // Atualiza as listas para você ver a mudança sem recarregar a página
+    // 3. ATUALIZAÇÃO LOCAL (Compatibilidade)
+    // O banco retorna 'total_distance', mas se alguma parte velha do app busca 'totalDistance',
+    // garantimos que o objeto local tenha as duas propriedades para não quebrar nada visualmente.
+    const localProjectObj = {
+      ...savedProject,
+      totalDistance: savedProject.total_distance // Garante compatibilidade visual imediata
+    };
+    
+    // Atualiza Listas e Estado
     setProjects(prev => {
-      const filtered = prev.filter(p => p.id !== savedProject.id);
-      return [savedProject, ...filtered];
+      const filtered = prev.filter(p => p.id !== localProjectObj.id);
+      return [localProjectObj, ...filtered];
     });
     
-    setLoadedProjects(prev => prev.map(p => p.id === savedProject.id ? savedProject : p));
+    setLoadedProjects(prev => prev.map(p => p.id === localProjectObj.id ? localProjectObj : p));
     
-    if (currentProject && currentProject.id === savedProject.id) {
-      setCurrentProject(savedProject);
+    if (currentProject && currentProject.id === localProjectObj.id) {
+      setCurrentProject(localProjectObj);
     }
     
-    // Salva no cache
+    // Salva no Cache
     const userProjects = storage.loadProjects(user?.id);
-    const otherProjects = userProjects.filter(p => p.id !== savedProject.id);
-    storage.saveProjects(user?.id, [savedProject, ...otherProjects]);
+    const otherProjects = userProjects.filter(p => p.id !== localProjectObj.id);
+    storage.saveProjects(user?.id, [localProjectObj, ...otherProjects]);
     
     if (!autoSave) {
       setShowProjectDialog(false);
       setEditingProject(null);
       setProjectName('');
-      showFeedback('Sucesso', `Projeto salvo! Distância total: ${formatDistanceDetailed(calculatedTotalDistance)}`, 'success');
+      showFeedback('Sucesso', `Projeto salvo! Distância: ${formatDistanceDetailed(calculatedTotalDistance)}`, 'success');
     }
     
   } catch (error) {
     console.error('Erro ao salvar:', error);
-    if (!autoSave) showFeedback('Erro', 'Falha ao salvar. Tente novamente.', 'error');
+    if (!autoSave) showFeedback('Erro', `Erro ao salvar: ${error.message}`, 'error');
   }
 };
   
