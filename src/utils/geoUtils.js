@@ -5,21 +5,18 @@ const R_EARTH = 6378137; // Raio da Terra em metros (WGS-84)
 
 // --- FILTRO AVANÇADO DE GPS ---
 export class GPSFilter {
-  constructor(minAccuracy = 25, minDistance = 0.5) {
-    this.minAccuracy = minAccuracy; // Ignora pontos com precisão pior que X metros
-    this.minDistance = minDistance; // Ignora movimentos menores que X metros (jitter)
+  constructor(minAccuracy = 30, minDistance = 0.5) {
+    this.minAccuracy = minAccuracy;
+    this.minDistance = minDistance;
     this.lastValidPoint = null;
   }
 
   isValid(newPoint) {
-    // 1. Rejeita se a precisão for ruim (ex: > 25m de erro)
-    // Se a internet cair, a precisão ("accuracy") geralmente sobe para 50m+. Isso filtra esses pontos.
+    // 1. Rejeita precisão ruim
     if (newPoint.accuracy && newPoint.accuracy > this.minAccuracy) {
-      console.warn(`GPS: Ponto ignorado (Precisão baixa: ${newPoint.accuracy}m)`);
       return false;
     }
-
-    // 2. Rejeita se não houver movimento significativo (evita o boneco "tremendo" parado)
+    // 2. Rejeita jitter (movimento minúsculo)
     if (this.lastValidPoint) {
       const dist = calculateDistance(
         this.lastValidPoint.lat, this.lastValidPoint.lng,
@@ -29,22 +26,21 @@ export class GPSFilter {
         return false;
       }
     }
-
     this.lastValidPoint = newPoint;
     return true;
   }
 }
 
-// --- KALMAN FILTER (Mantido e Ajustado) ---
+// --- KALMAN FILTER ---
 export class KalmanFilter {
   constructor(R = 1, Q = 1, A = 1, B = 0, C = 1) {
-    this.R = R; // Ruído da medição (Aumente se o GPS for instável)
-    this.Q = Q; // Ruído do processo
-    this.A = A; 
-    this.B = B; 
-    this.C = C; 
+    this.R = R;
+    this.Q = Q;
+    this.A = A;
+    this.B = B;
+    this.C = C;
     this.cov = NaN;
-    this.x = NaN; 
+    this.x = NaN;
   }
   
   filter(z, u = 0) {
@@ -65,9 +61,8 @@ export class KalmanFilter {
 export class RoadSnappingService {
   static async snapToRoad(lat, lng) {
     try {
-      // Adicionado timeout para não travar se a internet estiver ruim
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2000); // 2 segundos max
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
 
       const response = await fetch(
         `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`, 
@@ -77,7 +72,6 @@ export class RoadSnappingService {
         }
       );
       clearTimeout(timeoutId);
-      
       const data = await response.json();
       
       if (data && data.lat && data.lon) {
@@ -89,14 +83,13 @@ export class RoadSnappingService {
         };
       }
     } catch (error) {
-      // Silencioso, pois falhar aqui é normal offline
+      // Falha silenciosa
     }
-    
     return { lat, lng, snapped: false };
   }
 }
 
-// --- CÁLCULO GEODÉSICO (Referência Única) ---
+// --- CÁLCULO GEODÉSICO ---
 export const calculateDistance = (lat1, lon1, lat2, lon2) => {
   if (!lat1 || !lon1 || !lat2 || !lon2) return 0;
   
@@ -111,6 +104,7 @@ export const calculateDistance = (lat1, lon1, lat2, lon2) => {
   return R_EARTH * c;
 }
 
+// --- A FUNÇÃO CRÍTICA DE CÁLCULO TOTAL (CORRIGIDA) ---
 export const calculateTotalProjectDistance = (points, connections = []) => {
   if (!points || points.length < 2) return 0;
   
@@ -118,7 +112,7 @@ export const calculateTotalProjectDistance = (points, connections = []) => {
   const pointMap = new Map();
   for (const p of points) pointMap.set(p.id, p);
   
-  // Distância Linear
+  // 1. Distância Sequencial / Ramificações
   for (let i = 0; i < points.length; i++) {
     const point = points[i];
     let parent = null;
@@ -128,12 +122,16 @@ export const calculateTotalProjectDistance = (points, connections = []) => {
     
     if (parent) {
       const dist = calculateDistance(parent.lat, parent.lng, point.lat, point.lng);
-      const spans = point.spans || 1;
+      
+      // AQUI ESTÁ O SEGREDO: Multiplicador de Vãos (Spans)
+      // Se spans for undefined ou null, assume 1 (padrão)
+      const spans = point.spans || 1; 
+      
       totalDistance += (dist * spans);
     }
   }
   
-  // Distância Conexões Extras (Loops)
+  // 2. Distância de Conexões Extras (Loops)
   if (connections && connections.length > 0) {
     for (const conn of connections) {
       const p1 = pointMap.get(conn.fromId);
@@ -141,7 +139,7 @@ export const calculateTotalProjectDistance = (points, connections = []) => {
       
       if (p1 && p2) {
         const dist = calculateDistance(p1.lat, p1.lng, p2.lat, p2.lng);
-        const spans = conn.spans || 1;
+        const spans = conn.spans || 1; 
         totalDistance += (dist * spans);
       }
     }
@@ -150,7 +148,12 @@ export const calculateTotalProjectDistance = (points, connections = []) => {
   return totalDistance;
 };
 
-// --- FORMATAÇÃO VISUAL CENTRALIZADA ---
+// --- FORMATAÇÃO E UTILITÁRIOS ---
+export const safeToFixed = (value, decimals = 2) => {
+  if (value === undefined || value === null || isNaN(value)) return "0".padStart(decimals + 2, '0');
+  return Number(value).toFixed(decimals);
+};
+
 export const formatDistanceDetailed = (distanceInMeters) => {
   if (distanceInMeters === undefined || distanceInMeters === null || isNaN(distanceInMeters)) {
     return "0 m";
@@ -160,11 +163,6 @@ export const formatDistanceDetailed = (distanceInMeters) => {
   else if (distance < 1000) return `${distance.toFixed(0)} m`;
   else if (distance < 10000) return `${(distance / 1000).toFixed(2)} km`;
   else return `${(distance / 1000).toFixed(3)} km`;
-};
-
-export const safeToFixed = (value, decimals = 2) => {
-  if (value === undefined || value === null || isNaN(value)) return "0".padStart(decimals + 2, '0');
-  return Number(value).toFixed(decimals);
 };
 
 export const generateUUID = () => {

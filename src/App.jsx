@@ -1134,37 +1134,46 @@ function App() {
   };
   
   // --- SUBSTITUA A FUNÇÃO saveProject POR ESTA ---
+// --- SUBSTITUA NO SEU App.jsx ---
+
 const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
   try {
     let finalPoints = pointsToSave;
     
-    // Validações básicas
+    // Validação de segurança
     if (editingProject && finalPoints.length === 0) finalPoints = editingProject.points;
     if (!finalPoints || finalPoints.length === 0) {
       if (!autoSave) showFeedback('Erro', 'Não há pontos para salvar.', 'error');
       return;
     }
     
-    // Define o nome
+    // Definição do Nome
     let projectNameToUse = projectName;
     if (editingProject && !projectName.trim()) projectNameToUse = editingProject.name;
     else if (currentProject && !projectName.trim()) projectNameToUse = currentProject.name;
     else if (autoSave && !projectName.trim()) projectNameToUse = `Rastreamento ${new Date().toLocaleString('pt-BR')}`;
     
-    if (!projectNameToUse.trim()) {
+    if (!projectNameToUse.trim() && !autoSave) {
       showFeedback('Erro', 'O projeto precisa de um nome.', 'error');
       return;
     }
     
-    // Prepara o objeto para salvar
+    // --- AQUI ESTÁ A CORREÇÃO CRÍTICA ---
+    // Forçamos o recálculo usando a função do geoUtils que agora TEM a lógica de spans
+    // Isso garante que o valor que vai pro banco (total_distance) seja o valor COM multiplicador.
     const calculatedTotalDistance = calculateTotalProjectDistance(finalPoints, extraConnections);
+    
+    // Atualiza o estado local para refletir na UI imediatamente
+    setTotalDistance(calculatedTotalDistance);
+    
     const nowISO = new Date().toISOString();
     
     const projectData = {
       name: projectNameToUse.trim(),
       points: finalPoints,
       extra_connections: extraConnections, // Garante que loops sejam salvos
-      total_distance: calculatedTotalDistance,
+      total_distance: calculatedTotalDistance, // SALVA O VALOR CORRETO NO BANCO
+      totalDistance: calculatedTotalDistance, // Fallback para legado
       bairro: selectedBairro !== 'todos' ? selectedBairro : 'Vários',
       tracking_mode: 'manual',
       updated_at: nowISO,
@@ -1174,9 +1183,8 @@ const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
     let savedProject;
     let isUpdate = false;
     
-    // Lógica de Salvamento (Supabase ou Local)
+    // Lógica de Supabase (Update ou Insert)
     if (currentProject || editingProject) {
-      // ATUALIZAÇÃO
       isUpdate = true;
       const targetId = currentProject?.id || editingProject.id;
       
@@ -1185,16 +1193,14 @@ const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
           .from('projetos')
           .update(projectData)
           .eq('id', targetId)
-          .select(); // O .select() é crucial para retornar o dado atualizado
+          .select();
         
         if (error) throw error;
         savedProject = data[0];
       } else {
-        // Offline update
         savedProject = { ...currentProject, ...editingProject, ...projectData, id: targetId };
       }
     } else {
-      // NOVO PROJETO
       if (isOnline && user) {
         const { data, error } = await supabase.from('projetos').insert([projectData]).select();
         if (error) throw error;
@@ -1208,24 +1214,19 @@ const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
       }
     }
     
-    // --- AQUI ESTÁ A CORREÇÃO DE ATUALIZAÇÃO DE LISTA ---
-    
-    // 1. Atualiza a lista geral de projetos (Menu Lateral)
+    // Atualiza as listas para você ver a mudança sem recarregar a página
     setProjects(prev => {
       const filtered = prev.filter(p => p.id !== savedProject.id);
-      return [savedProject, ...filtered]; // Coloca o salvo no topo
+      return [savedProject, ...filtered];
     });
     
-    // 2. Atualiza os projetos carregados no mapa (Camadas visuais)
     setLoadedProjects(prev => prev.map(p => p.id === savedProject.id ? savedProject : p));
     
-    // 3. Se for o projeto atual ativo, atualiza a referência dele
     if (currentProject && currentProject.id === savedProject.id) {
       setCurrentProject(savedProject);
-      // Não limpamos manualPoints aqui para você continuar editando sem recarregar!
     }
     
-    // 4. Salva no Cache Local
+    // Salva no cache
     const userProjects = storage.loadProjects(user?.id);
     const otherProjects = userProjects.filter(p => p.id !== savedProject.id);
     storage.saveProjects(user?.id, [savedProject, ...otherProjects]);
@@ -1234,7 +1235,7 @@ const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
       setShowProjectDialog(false);
       setEditingProject(null);
       setProjectName('');
-      showFeedback('Sucesso', 'Projeto salvo e atualizado!', 'success');
+      showFeedback('Sucesso', `Projeto salvo! Distância total: ${formatDistanceDetailed(calculatedTotalDistance)}`, 'success');
     }
     
   } catch (error) {
