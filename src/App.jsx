@@ -76,6 +76,7 @@ import ProjectLockService from './services/ProjectLockService'
 import { useProjects } from './hooks/useProjects';
 
 // 1. NOVOS IMPORTS (UTILITÁRIOS E SERVIÇOS)
+// No início do App.jsx, atualize as importações:
 import {
   calculateDistance,
   generateUUID,
@@ -83,9 +84,11 @@ import {
   safeToFixed,
   formatDistanceDetailed,
   calculateTotalProjectDistance,
+  calculateTrackingDistance, // ADICIONE ESTA LINHA
   KalmanFilter,
-  GPSFilter, // <--- ADICIONE ISSO
-  RoadSnappingService
+  GPSFilter,
+  RoadSnappingService,
+  normalizeSpans // ADICIONE ESTA LINHA TAMBÉM
 } from './utils/geoUtils';
 import { RoutingService } from './services/RoutingService';
 
@@ -679,6 +682,19 @@ function App() {
     }))
   }), [filteredMarkers]);
   
+  // Adicione este useEffect após as outras declarações de estado
+useEffect(() => {
+  // Atualiza a distância sempre que manualPoints ou extraConnections mudarem
+  if (manualPoints.length > 0) {
+    const newDistance = calculateTotalProjectDistance(manualPoints, extraConnections);
+    if (Math.abs(newDistance - totalDistance) > 0.01) { // Evita atualizações desnecessárias
+      setTotalDistance(newDistance);
+    }
+  } else {
+    setTotalDistance(0);
+  }
+}, [manualPoints, extraConnections]);
+  
   // Efeito para manter o lock ativo
   useEffect(() => {
     let interval;
@@ -1148,12 +1164,8 @@ const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
       return;
     }
     
-    // Normalizar spans (garantir que são números válidos)
-    finalPoints = finalPoints.map(point => ({
-      ...point,
-      spans: (point.spans !== undefined && point.spans !== null && !isNaN(point.spans)) ?
-        Math.max(1, Number(point.spans)) : 1
-    }));
+    // NORMALIZA OS SPANS ANTES DE SALVAR
+    finalPoints = normalizeSpans(finalPoints);
     
     let projectNameToUse = projectName;
     if (editingProject && !projectName.trim()) projectNameToUse = editingProject.name;
@@ -1167,7 +1179,6 @@ const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
     
     // 1. Calcula a distância correta considerando spans
     const calculatedTotalDistance = calculateTotalProjectDistance(finalPoints, extraConnections);
-    setTotalDistance(calculatedTotalDistance); // Atualiza UI imediatamente
     
     const nowISO = new Date().toISOString();
     
@@ -1176,7 +1187,7 @@ const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
       name: projectNameToUse.trim(),
       points: finalPoints,
       extra_connections: extraConnections,
-      total_distance: calculatedTotalDistance, // Usa o cálculo correto
+      total_distance: calculatedTotalDistance,
       bairro: selectedBairro !== 'todos' ? selectedBairro : 'Vários',
       tracking_mode: 'manual',
       updated_at: nowISO,
@@ -1196,19 +1207,8 @@ const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
           .eq('id', targetId)
           .select();
         
-        if (error) {
-          console.error('Erro ao atualizar projeto:', error);
-          // Tentar inserir como novo se falhar
-          const { data: insertData, error: insertError } = await supabase
-            .from('projetos')
-            .insert([projectData])
-            .select();
-          
-          if (insertError) throw insertError;
-          savedProject = insertData[0];
-        } else {
-          savedProject = data[0];
-        }
+        if (error) throw error;
+        savedProject = data[0];
       } else {
         savedProject = {
           ...currentProject,
@@ -1234,10 +1234,10 @@ const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
     // 3. ATUALIZAÇÃO LOCAL IMEDIATA
     const localProjectObj = {
       ...savedProject,
-      totalDistance: calculatedTotalDistance // Garante compatibilidade
+      totalDistance: calculatedTotalDistance
     };
     
-    // Atualiza o projeto atual no estado
+    // Atualiza todos os estados
     if (currentProject && currentProject.id === localProjectObj.id) {
       setCurrentProject(localProjectObj);
     }
@@ -1258,8 +1258,9 @@ const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
       }
     });
     
-    // Atualiza pontos manuais
+    // Atualiza pontos manuais e distância
     setManualPoints(finalPoints);
+    setTotalDistance(calculatedTotalDistance);
     
     // Salva no Cache
     const userProjects = storage.loadProjects(user?.id);
@@ -1278,32 +1279,6 @@ const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
     if (!autoSave) showFeedback('Erro', `Erro ao salvar: ${error.message}`, 'error');
   }
 };
-
-// Função para atualizar distância em tempo real durante o rastreamento
-const updateRealTimeDistance = (points) => {
-  if (!points || points.length < 2) {
-    setTotalDistance(0);
-    return 0;
-  }
-  
-  // Usa a função de cálculo rápido para o rastreamento
-  const newDistance = calculateTrackingDistance(points);
-  setTotalDistance(newDistance);
-  
-  // Atualiza o projeto atual se existir
-  if (currentProject) {
-    setCurrentProject(prev => ({
-      ...prev,
-      points: points,
-      total_distance: newDistance,
-      totalDistance: newDistance
-    }));
-  }
-  
-  return newDistance;
-};
-  
-  // Função startTracking com sistema de lock
   // Função startTracking com sistema de lock
   const startTracking = async (mode = 'gps') => {
     if (loadedProjects.length > 1) {
@@ -1598,7 +1573,7 @@ useEffect(() => {
       }
     }
   }
-}, [manualPoints, extraConnections]); // Dependências: atualiza quando pontos ou conexões mudam
+}, [manualPoints, extraConnections]); // Dependências: atualiza quando pontos ou conexões mudamg
   
   const createProjectsTable = async () => {
     try {
@@ -2267,24 +2242,27 @@ const handleSpanChange = (count) => {
     return p;
   });
   
-  // 2. Atualiza o estado dos pontos
+  // 2. Atualiza o estado dos pontos (Isso redesenha o mapa)
   setManualPoints(updatedPoints);
   
-  // 3. ATUALIZA A DISTÂNCIA EM TEMPO REAL
-  updateRealTimeDistance(updatedPoints);
+  // 3. RECALCULA A DISTÂNCIA IMEDIATAMENTE
+  // Usa a função centralizada que importamos do geoUtils
+  const newTotal = calculateTotalProjectDistance(updatedPoints, extraConnections);
+  setTotalDistance(newTotal);
   
-  // 4. Atualiza o projeto atual em memória
+  // 4. ATUALIZA O PROJETO ATUAL EM MEMÓRIA (O Pulo do Gato)
+  // Sem isso, se você salvar, ele pega o estado antigo
   if (currentProject) {
     setCurrentProject(prev => ({
       ...prev,
       points: updatedPoints,
-      total_distance: totalDistance,
-      totalDistance: totalDistance
+      total_distance: newTotal,
+      totalDistance: newTotal
     }));
   }
   
-  // 5. Feedback visual
-  showFeedback('Atualizado', `Segmento alterado para ${count} vãos. Nova distância: ${formatDistanceDetailed(totalDistance)}`, 'success');
+  // 5. Feedback visual rápido
+  showFeedback('Atualizado', `Segmento alterado para ${count} vãos. Nova distância: ${formatDistanceDetailed(newTotal)}`, 'success');
   
   setSpanSelectorInfo(null);
 };
@@ -2667,15 +2645,16 @@ const addPoint = (position) => {
     id: generateUUID(),
     timestamp: Date.now(),
     connectedFrom: selectedStartPoint ? selectedStartPoint.id : null,
-    user_id: user.id,
-    user_email: user.email,
+    user_id: user?.id,
+    user_email: user?.email,
     spans: 1,
   };
   
   setManualPoints(prev => {
     const updatedPoints = [...prev, newPoint];
-    // Atualiza a distância em tempo real
-    updateRealTimeDistance(updatedPoints);
+    // Atualiza a distância usando a função correta
+    const newTotalDistance = calculateTotalProjectDistance(updatedPoints, extraConnections);
+    setTotalDistance(newTotalDistance);
     return updatedPoints;
   });
   
@@ -2683,32 +2662,6 @@ const addPoint = (position) => {
     setSelectedStartPoint(newPoint);
   }
 };
-  
-  const undoLastPoint = () => {
-    if (manualPoints.length > 0) {
-      const pointToRemove = manualPoints[manualPoints.length - 1];
-      
-      const newPoints = manualPoints.slice(0, -1);
-      
-      setManualPoints(newPoints);
-      const newTotalDistance = calculateTotalProjectDistance(newPoints, extraConnections);
-      setTotalDistance(newTotalDistance);
-      
-      if (selectedStartPoint && selectedStartPoint.id === pointToRemove.id) {
-        if (newPoints.length > 0) {
-          const parentPoint = pointToRemove.connectedFrom ?
-            newPoints.find(p => p.id === pointToRemove.connectedFrom) :
-            null;
-          
-          const newActivePoint = parentPoint || newPoints[newPoints.length - 1];
-          
-          setSelectedStartPoint(newActivePoint);
-        } else {
-          setSelectedStartPoint(null);
-        }
-      }
-    }
-  };
   
   const pauseTracking = async () => {
     try {
