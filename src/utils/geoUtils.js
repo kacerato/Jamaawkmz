@@ -91,7 +91,8 @@ export class RoadSnappingService {
 
 // --- CÁLCULO GEODÉSICO ---
 export const calculateDistance = (lat1, lon1, lat2, lon2) => {
-  if (!lat1 || !lon1 || !lat2 || !lon2) return 0;
+  if (lat1 === undefined || lat1 === null || lon1 === undefined || lon1 === null ||
+      lat2 === undefined || lat2 === null || lon2 === undefined || lon2 === null) return 0;
   
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
@@ -125,7 +126,8 @@ export const calculateTotalProjectDistance = (points, connections = []) => {
       
       // AQUI ESTÁ O SEGREDO: Multiplicador de Vãos (Spans)
       // Se spans for undefined ou null, assume 1 (padrão)
-      const spans = point.spans || 1; 
+      let spans = Number(point.spans);
+      if (isNaN(spans) || spans < 1) spans = 1;
       
       totalDistance += (dist * spans);
     }
@@ -139,7 +141,8 @@ export const calculateTotalProjectDistance = (points, connections = []) => {
       
       if (p1 && p2) {
         const dist = calculateDistance(p1.lat, p1.lng, p2.lat, p2.lng);
-        const spans = conn.spans || 1; 
+        let spans = Number(conn.spans);
+        if (isNaN(spans) || spans < 1) spans = 1;
         totalDistance += (dist * spans);
       }
     }
