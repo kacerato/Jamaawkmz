@@ -1299,7 +1299,7 @@ function App() {
   kalmanLngRef.current = new KalmanFilter(0.1, 0.1);
 };
   
-  // Função loadProject com sistema de lock E RECÁLCULO DE DISTÂNCIA
+  // Função loadProject com sistema de lock e CORREÇÃO DE STATE
   const loadProject = async (project) => {
     if (currentProject && isOnline && user) {
       await ProjectLockService.releaseLock(currentProject.id, user.id);
@@ -1310,6 +1310,7 @@ function App() {
       return;
     }
     
+    // Verificação de segurança para dados não salvos
     if (manualPoints.length > 0) {
       if (currentProject && currentProject.id === project.id) {
         setShowProjectsList(false);
@@ -1323,61 +1324,54 @@ function App() {
     setShowProjectsList(false);
     
     requestAnimationFrame(async () => {
-      // 1. Garante que extra_connections exista (correção para legado)
-      const safeConnections = project.extra_connections || [];
-      
-      setManualPoints([]);
-      setExtraConnections(safeConnections); // Atualiza estado
-      
-      // 2. RECÁLCULO FORÇADO: Usa a nova lógica imediatamente ao carregar
-      // Isso corrige a distância de projetos antigos na hora que abre
-      const recalculatedDistance = calculateTotalProjectDistance(project.points, safeConnections);
-      
-      setTotalDistance(recalculatedDistance); // Atualiza visual
-      setSelectedStartPoint(null);
+      // 1. Limpa estados anteriores
       setTracking(false);
       setPaused(false);
+      setSelectedStartPoint(null);
       
-      // Atualiza o objeto currentProject com a distância corrigida
-      const projectWithFixes = {
-          ...project,
-          total_distance: recalculatedDistance,
-          totalDistance: recalculatedDistance,
-          extra_connections: safeConnections
-      };
+      // 2. Define o projeto atual
+      setCurrentProject(project);
 
-      setCurrentProject(projectWithFixes);
+      // 3. RESTAURA OS DADOS DO PROJETO NO STATE (CRÍTICO)
+      setManualPoints(project.points || []);
       
+      // --- CORREÇÃO AQUI: Restaurar conexões extras ---
+      const loadedConnections = project.extra_connections || [];
+      setExtraConnections(loadedConnections); 
+      // ------------------------------------------------
+      
+      // 4. Recalcula a distância total baseada no que foi carregado
+      // Importante: usar a função que aceita conexões extras
+      const totalDist = calculateTotalProjectDistance(project.points || [], loadedConnections);
+      setTotalDistance(totalDist);
+      
+      // Lógica de visualização (mantida do seu código original)
       const exists = loadedProjects.find(p => p.id === project.id);
       
       if (!exists) {
         let bairroDetectado = project.bairro;
         if (!project.bairro || project.bairro === 'Vários') {
           BairroDetectionService.detectBairroForProject(project.points).then(b => {
-            if (b) {
-              console.log("Bairro detectado em background:", b);
-            }
+            if (b) console.log("Bairro detectado em background:", b);
           });
         }
         
         const projectWithColor = {
-          ...projectWithFixes, // Usa o projeto com as correções
+          ...project,
           bairro: bairroDetectado || 'Vários',
           color: project.color || generateRandomColor(),
-          points: project.points
+          points: project.points // Garante que pontos vão para a layer visual
         };
         
         setLoadedProjects(prev => [...prev, projectWithColor]);
         
-        if (project.points.length > 0 && mapRef.current) {
+        if (project.points && project.points.length > 0 && mapRef.current) {
           const firstPoint = project.points[0];
-          
           setTimeout(() => {
             mapRef.current.flyTo({
               center: [firstPoint.lng, firstPoint.lat],
               zoom: 16,
               speed: 1.2,
-              curve: 1,
               essential: true
             });
           }, 100);
