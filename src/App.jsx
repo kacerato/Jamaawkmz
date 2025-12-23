@@ -1380,6 +1380,16 @@ useEffect(() => {
           };
         }
         
+        // Adiciona ao mapa imediatamente (Visual)
+        const projectWithColor = { ...savedProject, color: generateRandomColor() };
+        // Atualiza a referência para usar a versão com cor se necessário
+        savedProject = projectWithColor;
+
+        setLoadedProjects(prev => {
+          // Evita duplicatas visuais
+          if (prev.some(p => p.id === savedProject.id)) return prev;
+          return [...prev, savedProject];
+        });
       }
       
       // ATUALIZAÇÃO DA LISTA LOCAL
@@ -1402,11 +1412,8 @@ useEffect(() => {
       }
 
 if (!autoSave) {
-  if (editingProject) {
-    setCurrentProject(savedProject);
-  } else {
-    setCurrentProject(null);
-  }
+  // Mantém o projeto carregado para visualização imediata
+  setCurrentProject(savedProject);
 }
 
 if (!autoSave) {
