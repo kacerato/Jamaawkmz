@@ -84,6 +84,7 @@ import {
   formatDistanceDetailed,
   calculateTotalProjectDistance,
   KalmanFilter,
+  GPSFilter, // <--- ADICIONE ISSO
   RoadSnappingService
 } from './utils/geoUtils';
 import { RoutingService } from './services/RoutingService';
@@ -586,6 +587,9 @@ function App() {
   
   const kalmanLatRef = useRef(new KalmanFilter(0.1, 0.1));
   const kalmanLngRef = useRef(new KalmanFilter(0.1, 0.1));
+  
+  // ADICIONE ISSO: Filtra precisão ruim (>30m) e movimentos minúsculos (<0.5m)
+  const gpsFilterRef = useRef(new GPSFilter(30, 0.5));
   
   const totalDistanceAllProjects = calculateTotalDistanceAllProjects(projects);
   
@@ -1251,53 +1255,53 @@ function App() {
   // Função startTracking com sistema de lock
   // Função startTracking com sistema de lock
   const startTracking = async (mode = 'gps') => {
-  if (loadedProjects.length > 1) {
-    showFeedback('Bloqueado', 'Múltiplos projetos ativos. Deixe apenas UM projeto no mapa para continuar o traçado.', 'error');
-    return;
-  }
-  
-  if (loadedProjects.length === 1) {
-    const project = loadedProjects[0];
+    if (loadedProjects.length > 1) {
+      showFeedback('Bloqueado', 'Múltiplos projetos ativos. Deixe apenas UM projeto no mapa para continuar o traçado.', 'error');
+      return;
+    }
     
-    if (isOnline && user) {
-      const hasLock = await ProjectLockService.acquireLock(project.id, user.id);
-      if (!hasLock) {
-        const status = await ProjectLockService.checkLockStatus(project.id, user.id);
-        if (status.isLocked) {
-          showFeedback('Projeto Travado', `Este projeto está sendo editado por ${status.lockedBy}. Modo leitura ativado.`, 'error');
-          return;
+    if (loadedProjects.length === 1) {
+      const project = loadedProjects[0];
+      
+      if (isOnline && user) {
+        const hasLock = await ProjectLockService.acquireLock(project.id, user.id);
+        if (!hasLock) {
+          const status = await ProjectLockService.checkLockStatus(project.id, user.id);
+          if (status.isLocked) {
+            showFeedback('Projeto Travado', `Este projeto está sendo editado por ${status.lockedBy}. Modo leitura ativado.`, 'error');
+            return;
+          }
         }
       }
-    }
-    
-    setCurrentProject(project);
-    setManualPoints(project.points);
-    setTotalDistance(project.totalDistance || project.total_distance || 0);
-    setProjectName(project.name);
-    
-    if (project.points && project.points.length > 0) {
-      const lastPoint = project.points[project.points.length - 1];
-      setSelectedStartPoint(lastPoint);
       
-      showFeedback('Conectado', `Rastreamento continuado a partir do Ponto ${project.points.length}`, 'success');
+      setCurrentProject(project);
+      setManualPoints(project.points);
+      setTotalDistance(project.totalDistance || project.total_distance || 0);
+      setProjectName(project.name);
+      
+      if (project.points && project.points.length > 0) {
+        const lastPoint = project.points[project.points.length - 1];
+        setSelectedStartPoint(lastPoint);
+        
+        showFeedback('Conectado', `Rastreamento continuado a partir do Ponto ${project.points.length}`, 'success');
+      }
     }
-  }
-  else if (!currentProject) {
-    setManualPoints([]);
-    setTotalDistance(0);
-    setProjectName('');
-    setSelectedStartPoint(null);
-  }
-  
-  setTrackingInputMode(mode);
-  setTracking(true);
-  setPaused(false);
-  setShowTrackingControls(true);
-  setShowRulerPopup(false);
-  
-  kalmanLatRef.current = new KalmanFilter(0.1, 0.1);
-  kalmanLngRef.current = new KalmanFilter(0.1, 0.1);
-};
+    else if (!currentProject) {
+      setManualPoints([]);
+      setTotalDistance(0);
+      setProjectName('');
+      setSelectedStartPoint(null);
+    }
+    
+    setTrackingInputMode(mode);
+    setTracking(true);
+    setPaused(false);
+    setShowTrackingControls(true);
+    setShowRulerPopup(false);
+    
+    kalmanLatRef.current = new KalmanFilter(0.1, 0.1);
+    kalmanLngRef.current = new KalmanFilter(0.1, 0.1);
+  };
   
   // Função loadProject com sistema de lock e CORREÇÃO DE STATE
   const loadProject = async (project) => {
@@ -1331,13 +1335,13 @@ function App() {
       
       // 2. Define o projeto atual
       setCurrentProject(project);
-
+      
       // 3. RESTAURA OS DADOS DO PROJETO NO STATE (CRÍTICO)
       setManualPoints(project.points || []);
       
       // --- CORREÇÃO AQUI: Restaurar conexões extras ---
       const loadedConnections = project.extra_connections || [];
-      setExtraConnections(loadedConnections); 
+      setExtraConnections(loadedConnections);
       // ------------------------------------------------
       
       // 4. Recalcula a distância total baseada no que foi carregado
@@ -1691,36 +1695,50 @@ function App() {
     if (navigator.geolocation) {
       watchId = navigator.geolocation.watchPosition(
         (position) => {
-          const { latitude, longitude, accuracy, speed } = position.coords
+          const { latitude, longitude, accuracy, speed } = position.coords;
           
-          const smoothedLat = kalmanLatRef.current.filter(latitude);
-          const smoothedLng = kalmanLngRef.current.filter(longitude);
+          // 1. Cria objeto do ponto bruto com a precisão
+          const rawPoint = { lat: latitude, lng: longitude, accuracy };
           
-          const smoothedPosition = {
-            lat: smoothedLat,
-            lng: smoothedLng
-          };
-          
-          setCurrentPosition(smoothedPosition);
-          setGpsAccuracy(accuracy);
-          setSpeed(speed || 0);
-          
-          setPositionHistory(prev => {
-            const newHistory = [...prev, {
+          // 2. FILTRO DE QUALIDADE: Só aceita se passar nos critérios
+          if (gpsFilterRef.current.isValid(rawPoint)) {
+            
+            // 3. Se aprovado, passa pelo Kalman (suavização)
+            const smoothedLat = kalmanLatRef.current.filter(latitude);
+            const smoothedLng = kalmanLngRef.current.filter(longitude);
+            
+            const smoothedPosition = {
               lat: smoothedLat,
-              lng: smoothedLng,
-              timestamp: Date.now(),
-              accuracy: accuracy
-            }].slice(-10);
-            return newHistory;
-          });
+              lng: smoothedLng
+            };
+            
+            // 4. Atualiza posição e dados reais
+            setCurrentPosition(smoothedPosition);
+            setGpsAccuracy(accuracy);
+            setSpeed(speed || 0);
+            
+            setPositionHistory(prev => {
+              const newHistory = [...prev, {
+                lat: smoothedLat,
+                lng: smoothedLng,
+                timestamp: Date.now(),
+                accuracy: accuracy
+              }].slice(-10);
+              return newHistory;
+            });
+          } else {
+            // 5. Se foi rejeitado (sinal ruim), apenas atualiza a precisão na tela
+            // mas NÃO move o boneco nem cria rastro sujo.
+            console.log(`GPS fraco (${accuracy}m) ou parado. Ignorando salto.`);
+            setGpsAccuracy(accuracy);
+          }
         },
         (error) => {
-          console.error('Erro ao obter localização:', error)
+          console.error('Erro ao obter localização:', error);
           if (navigator.geolocation) {
             navigator.geolocation.getCurrentPosition(
               (position) => {
-                const { latitude, longitude } = position.coords
+                const { latitude, longitude } = position.coords;
                 setCurrentPosition({
                   lat: latitude,
                   lng: longitude
@@ -1738,16 +1756,16 @@ function App() {
         {
           enableHighAccuracy: true,
           timeout: 15000,
-          maximumAge: 5000
+          maximumAge: 0 // Força leitura nova, não aceita cache
         }
       )
     }
     
     return () => {
       if (watchId) {
-        navigator.geolocation.clearWatch(watchId)
+        navigator.geolocation.clearWatch(watchId);
       }
-    }
+    };
   }, [tracking, paused])
   
   const saveBairros = async (newBairros) => {
@@ -3498,9 +3516,28 @@ function App() {
   onExportProject={exportProjectAsKML}
   onJoinProject={handleJoinProject}
   onRenameProject={handleRenameProject}
+  
+  // --- CORREÇÃO DO RELATÓRIO AQUI ---
   onOpenReport={(project) => {
     const img = getMapImage();
-    setReportData({ project, image: img });
+    
+    // 1. FORÇA O RECÁLCULO IMEDIATO usando a lógica correta (geoUtils)
+    // Isso garante que vãos (spans) e loops sejam somados agora,
+    // mesmo que o valor no banco de dados esteja desatualizado.
+    const distAtualizada = calculateTotalProjectDistance(
+      project.points || [], 
+      project.extra_connections || []
+    );
+    
+    // 2. Cria um objeto temporário com a distância corrigida
+    const projetoCorrigido = {
+      ...project,
+      total_distance: distAtualizada, // Atualiza para o campo padrão do banco
+      totalDistance: distAtualizada   // Atualiza para o campo legado (se houver)
+    };
+
+    // 3. Envia o projeto com o valor certo para o relatório
+    setReportData({ project: projetoCorrigido, image: img });
     setShowProjectsList(false);
   }}
 />
