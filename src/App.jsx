@@ -1133,124 +1133,115 @@ function App() {
     }
   };
   
-  const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
-    try {
-      let finalPoints = pointsToSave;
+  // --- SUBSTITUA A FUNÇÃO saveProject POR ESTA ---
+const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
+  try {
+    let finalPoints = pointsToSave;
+    
+    // Validações básicas
+    if (editingProject && finalPoints.length === 0) finalPoints = editingProject.points;
+    if (!finalPoints || finalPoints.length === 0) {
+      if (!autoSave) showFeedback('Erro', 'Não há pontos para salvar.', 'error');
+      return;
+    }
+    
+    // Define o nome
+    let projectNameToUse = projectName;
+    if (editingProject && !projectName.trim()) projectNameToUse = editingProject.name;
+    else if (currentProject && !projectName.trim()) projectNameToUse = currentProject.name;
+    else if (autoSave && !projectName.trim()) projectNameToUse = `Rastreamento ${new Date().toLocaleString('pt-BR')}`;
+    
+    if (!projectNameToUse.trim()) {
+      showFeedback('Erro', 'O projeto precisa de um nome.', 'error');
+      return;
+    }
+    
+    // Prepara o objeto para salvar
+    const calculatedTotalDistance = calculateTotalProjectDistance(finalPoints, extraConnections);
+    const nowISO = new Date().toISOString();
+    
+    const projectData = {
+      name: projectNameToUse.trim(),
+      points: finalPoints,
+      extra_connections: extraConnections, // Garante que loops sejam salvos
+      total_distance: calculatedTotalDistance,
+      bairro: selectedBairro !== 'todos' ? selectedBairro : 'Vários',
+      tracking_mode: 'manual',
+      updated_at: nowISO,
+      user_id: user?.id
+    };
+    
+    let savedProject;
+    let isUpdate = false;
+    
+    // Lógica de Salvamento (Supabase ou Local)
+    if (currentProject || editingProject) {
+      // ATUALIZAÇÃO
+      isUpdate = true;
+      const targetId = currentProject?.id || editingProject.id;
       
-      if (editingProject && finalPoints.length === 0) {
-        finalPoints = editingProject.points;
-      }
-      
-      if (!finalPoints || finalPoints.length === 0) {
-        if (!autoSave) showFeedback('Erro', 'Não há pontos para salvar.', 'error');
-        return;
-      }
-      
-      if (!projectName.trim() && !autoSave && !editingProject && !currentProject) {
-        showFeedback('Erro', 'Digite um nome para o projeto.', 'error');
-        return;
-      }
-      
-      let projectNameToUse = projectName;
-      if (editingProject && !projectName.trim()) projectNameToUse = editingProject.name;
-      else if (currentProject && !projectName.trim()) projectNameToUse = currentProject.name;
-      else if (autoSave && !projectName.trim()) projectNameToUse = `Rastreamento ${new Date().toLocaleString('pt-BR')}`;
-      
-      const sanitizedPoints = finalPoints.map(p => ({
-        ...p,
-        id: (p.id && typeof p.id === 'string') ? p.id : generateUUID(),
-        connectedFrom: (p.connectedFrom && typeof p.connectedFrom === 'string') ? p.connectedFrom : null
-      }));
-      
-      const calculatedTotalDistance = calculateTotalProjectDistance(sanitizedPoints, extraConnections);
-      
-      const nowISO = new Date().toISOString();
-      
-      const projectData = {
-        name: projectNameToUse.trim(),
-        points: sanitizedPoints,
-        extra_connections: extraConnections,
-        total_distance: calculatedTotalDistance,
-        bairro: selectedBairro !== 'todos' ? selectedBairro : 'Vários',
-        tracking_mode: 'manual',
-        updated_at: nowISO
-      };
-      
-      let savedProject;
-      
-      if (editingProject) {
-        if (isOnline && user) {
-          const { data, error } = await supabase.from('projetos').update(projectData).eq('id', editingProject.id).select();
-          if (error) throw error;
-          savedProject = data[0];
-        } else {
-          savedProject = { ...editingProject, ...projectData };
-        }
-        setProjects(prev => prev.map(p => p.id === editingProject.id ? savedProject : p));
-        setEditingProject(null);
+      if (isOnline && user && !targetId.toString().startsWith('offline_')) {
+        const { data, error } = await supabase
+          .from('projetos')
+          .update(projectData)
+          .eq('id', targetId)
+          .select(); // O .select() é crucial para retornar o dado atualizado
         
-      } else if (currentProject) {
-        if (isOnline && user) {
-          const { data, error } = await supabase.from('projetos').update(projectData).eq('id', currentProject.id).select();
-          if (error) throw error;
-          savedProject = data[0];
-        } else {
-          savedProject = { ...currentProject, ...projectData };
-        }
-        setProjects(prev => prev.map(p => p.id === currentProject.id ? savedProject : p));
-        setCurrentProject(savedProject);
-        
+        if (error) throw error;
+        savedProject = data[0];
       } else {
-        if (isOnline && user) {
-          const { data, error } = await supabase.from('projetos').insert([{ ...projectData, user_id: user.id }]).select();
-          if (error) throw error;
-          savedProject = data[0];
-        } else {
-          savedProject = {
-            ...projectData,
-            id: `offline_${Date.now()}`,
-            created_at: nowISO,
-            user_id: user?.id || 'offline'
-          };
-        }
-        setProjects(prev => [...prev, savedProject]);
+        // Offline update
+        savedProject = { ...currentProject, ...editingProject, ...projectData, id: targetId };
       }
-      
-      const userProjects = storage.loadProjects(user?.id);
-      const otherProjects = userProjects.filter(p => p.id !== savedProject.id);
-      storage.saveProjects(user?.id, [...otherProjects, savedProject]);
-      
-      if (!autoSave && currentProject && isOnline && user) {
-        try {
-          if (ProjectLockService && typeof ProjectLockService.releaseLock === 'function') {
-            await ProjectLockService.releaseLock(currentProject.id, user.id);
-          }
-        } catch (lockError) {
-          console.warn("Erro ao liberar lock (não crítico):", lockError);
-        }
-      }
-      
-      if (!autoSave) {
-        setProjectName('');
-        setShowProjectDialog(false);
-        if (!editingProject) {
-          setTracking(false);
-          setPaused(false);
-          setShowTrackingControls(false);
-          setManualPoints([]);
-          setTotalDistance(0);
-          setSelectedStartPoint(null);
-        }
-        showFeedback('Sucesso', 'Projeto salvo com sucesso!', 'success');
-      }
-      
-    } catch (error) {
-      console.error('Erro CRÍTICO ao salvar projeto:', error);
-      if (!autoSave) {
-        showFeedback('Erro', 'Falha ao salvar. Verifique o console.', 'error');
+    } else {
+      // NOVO PROJETO
+      if (isOnline && user) {
+        const { data, error } = await supabase.from('projetos').insert([projectData]).select();
+        if (error) throw error;
+        savedProject = data[0];
+      } else {
+        savedProject = {
+          ...projectData,
+          id: `offline_${Date.now()}`,
+          created_at: nowISO
+        };
       }
     }
-  };
+    
+    // --- AQUI ESTÁ A CORREÇÃO DE ATUALIZAÇÃO DE LISTA ---
+    
+    // 1. Atualiza a lista geral de projetos (Menu Lateral)
+    setProjects(prev => {
+      const filtered = prev.filter(p => p.id !== savedProject.id);
+      return [savedProject, ...filtered]; // Coloca o salvo no topo
+    });
+    
+    // 2. Atualiza os projetos carregados no mapa (Camadas visuais)
+    setLoadedProjects(prev => prev.map(p => p.id === savedProject.id ? savedProject : p));
+    
+    // 3. Se for o projeto atual ativo, atualiza a referência dele
+    if (currentProject && currentProject.id === savedProject.id) {
+      setCurrentProject(savedProject);
+      // Não limpamos manualPoints aqui para você continuar editando sem recarregar!
+    }
+    
+    // 4. Salva no Cache Local
+    const userProjects = storage.loadProjects(user?.id);
+    const otherProjects = userProjects.filter(p => p.id !== savedProject.id);
+    storage.saveProjects(user?.id, [savedProject, ...otherProjects]);
+    
+    if (!autoSave) {
+      setShowProjectDialog(false);
+      setEditingProject(null);
+      setProjectName('');
+      showFeedback('Sucesso', 'Projeto salvo e atualizado!', 'success');
+    }
+    
+  } catch (error) {
+    console.error('Erro ao salvar:', error);
+    if (!autoSave) showFeedback('Erro', 'Falha ao salvar. Tente novamente.', 'error');
+  }
+};
   
   // Função startTracking com sistema de lock
   // Função startTracking com sistema de lock
@@ -2179,24 +2170,42 @@ function App() {
     })
   }
   
-  const handleSpanChange = (count) => {
-    if (!spanSelectorInfo) return;
-    
-    const updatedPoints = manualPoints.map(p => {
-      if (p.id === spanSelectorInfo.targetPointId) {
-        return { ...p, spans: count };
-      }
-      return p;
-    });
-    
-    setManualPoints(updatedPoints);
-    
-    // Agora usa a ÚNICA função correta, passando as conexões extras do estado
-    const newTotal = calculateTotalProjectDistance(updatedPoints, extraConnections);
-    setTotalDistance(newTotal);
-    
-    setSpanSelectorInfo(null);
-  };
+  // --- SUBSTITUA A FUNÇÃO handleSpanChange POR ESTA ---
+const handleSpanChange = (count) => {
+  if (!spanSelectorInfo) return;
+  
+  // 1. Cria uma cópia profunda dos pontos com o novo Span
+  const updatedPoints = manualPoints.map(p => {
+    if (p.id === spanSelectorInfo.targetPointId) {
+      return { ...p, spans: count };
+    }
+    return p;
+  });
+  
+  // 2. Atualiza o estado dos pontos (Isso redesenha o mapa)
+  setManualPoints(updatedPoints);
+  
+  // 3. RECALCULA A DISTÂNCIA IMEDIATAMENTE
+  // Usa a função centralizada que importamos do geoUtils
+  const newTotal = calculateTotalProjectDistance(updatedPoints, extraConnections);
+  setTotalDistance(newTotal);
+  
+  // 4. ATUALIZA O PROJETO ATUAL EM MEMÓRIA (O Pulo do Gato)
+  // Sem isso, se você salvar, ele pega o estado antigo
+  if (currentProject) {
+    setCurrentProject(prev => ({
+      ...prev,
+      points: updatedPoints,
+      total_distance: newTotal,
+      totalDistance: newTotal
+    }));
+  }
+  
+  // 5. Feedback visual rápido
+  showFeedback('Atualizado', `Segmento alterado para ${count} vãos. Nova distância: ${formatDistanceDetailed(newTotal)}`, 'success');
+  
+  setSpanSelectorInfo(null);
+};
   
   const segmentsGeoJSON = useMemo(() => {
     const features = [];
