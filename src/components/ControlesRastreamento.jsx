@@ -21,12 +21,10 @@ const ControlesRastreamento = ({
   speed,
   handleRemovePoints,
   showProjectDialog,
-  selectedMarkers = [],
-  setSelectedMarkers,
-  undoLastPoint,
   formatDistanceDetailed,
+  undoLastPoint, // ← Deve estar aqui
   selectedStartPoint,
-  resetStartPoint
+  resetStartPoint // ← Deve estar aqui
 }) => {
   
   const safeManualPoints = manualPoints || [];

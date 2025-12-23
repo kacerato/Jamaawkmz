@@ -652,6 +652,33 @@ function App() {
     }
   };
   
+  // Procure pela função undoLastPoint no App.jsx e certifique-se que ela existe:
+const undoLastPoint = () => {
+  if (manualPoints.length > 0) {
+    const pointToRemove = manualPoints[manualPoints.length - 1];
+    
+    const newPoints = manualPoints.slice(0, -1);
+    
+    setManualPoints(newPoints);
+    const newTotalDistance = calculateTotalProjectDistance(newPoints, extraConnections);
+    setTotalDistance(newTotalDistance);
+    
+    if (selectedStartPoint && selectedStartPoint.id === pointToRemove.id) {
+      if (newPoints.length > 0) {
+        const parentPoint = pointToRemove.connectedFrom ?
+          newPoints.find(p => p.id === pointToRemove.connectedFrom) :
+          null;
+        
+        const newActivePoint = parentPoint || newPoints[newPoints.length - 1];
+        
+        setSelectedStartPoint(newActivePoint);
+      } else {
+        setSelectedStartPoint(null);
+      }
+    }
+  }
+};
+  
   // Função para capturar imagem do mapa
   const getMapImage = () => {
     if (mapRef.current) {
@@ -814,9 +841,9 @@ useEffect(() => {
   };
   
   const resetStartPoint = () => {
-    setSelectedStartPoint(null);
-  };
-  
+  setSelectedStartPoint(null);
+  showFeedback('Resetado', 'Ponto inicial foi resetado', 'info');
+};
   const deleteMultipleProjects = async () => {
     if (selectedProjects.length === 0) {
       showFeedback('Erro', 'Nenhum projeto selecionado para excluir.', 'error');
@@ -3882,32 +3909,32 @@ const addPoint = (position) => {
         onNewProject={startNewProject}
       />
 
-      {tracking && showTrackingControls && (
-        <ControlesRastreamento
-          tracking={tracking}
-          paused={paused}
-          pauseTracking={pauseTracking}
-          addManualPoint={addManualPoint}
-          stopTracking={stopTracking}
-          setShowProjectDialog={setShowProjectDialog}
-          setShowProjectDetails={setShowProjectDetails}
-          manualPoints={manualPoints}
-          totalDistance={totalDistance}
-          trackingMode="manual"
-          currentPosition={currentPosition}
-          currentProject={currentProject}
-          snappingEnabled={snappingEnabled}
-          onToggleSnapping={toggleSnapping}
-          gpsAccuracy={gpsAccuracy}
-          speed={speed}
-          handleRemovePoints={handleRemovePoints}
-          showProjectDialog={showProjectDialog}
-          formatDistanceDetailed={formatDistanceDetailed}
-          undoLastPoint={undoLastPoint}
-          selectedStartPoint={selectedStartPoint}
-          resetStartPoint={resetStartPoint}
-        />
-      )}
+     {tracking && showTrackingControls && (
+  <ControlesRastreamento
+    tracking={tracking}
+    paused={paused}
+    pauseTracking={pauseTracking}
+    addManualPoint={addManualPoint}
+    stopTracking={stopTracking}
+    setShowProjectDialog={setShowProjectDialog}
+    setShowProjectDetails={setShowProjectDetails}
+    manualPoints={manualPoints}
+    totalDistance={totalDistance}
+    trackingMode="manual"
+    currentPosition={currentPosition}
+    currentProject={currentProject}
+    snappingEnabled={snappingEnabled}
+    onToggleSnapping={toggleSnapping}
+    gpsAccuracy={gpsAccuracy}
+    speed={speed}
+    handleRemovePoints={handleRemovePoints}
+    showProjectDialog={showProjectDialog}
+    formatDistanceDetailed={formatDistanceDetailed}
+    undoLastPoint={undoLastPoint} // ← ESTA LINHA DEVE EXISTIR
+    selectedStartPoint={selectedStartPoint}
+    resetStartPoint={resetStartPoint}
+  />
+)}
 
       {popupMarker && (
         <ModernPopup
