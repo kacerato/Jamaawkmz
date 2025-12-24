@@ -1,6 +1,6 @@
 // services/ProjectLockService.js
 
-export class ProjectLockService {
+class ProjectLockService {
   static locks = new Map();
   static timeouts = new Map();
   
@@ -154,3 +154,5 @@ export class ProjectLockService {
 setInterval(() => {
   ProjectLockService.cleanup();
 }, 300000);
+
+export default ProjectLockService;
