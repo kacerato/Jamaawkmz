@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { FileText, Download, X, MapPin, Activity, Calendar, User, ShieldAlert, Clock, Navigation } from 'lucide-react';
+import { FileText, Download, X, MapPin, Activity, Calendar, User, ShieldAlert, Clock, Navigation, Hash, Layers } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import jsPDF from 'jspdf';
@@ -8,19 +8,28 @@ import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Capacitor } from '@capacitor/core';
 import { FileOpener } from '@capacitor-community/file-opener';
 import { getStaticMapUrl } from '../utils/MapboxStatic';
+import { calculateTotalProjectDistance } from '../utils/geoUtils';
 
-const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
+const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail }) => {
   const [staticMapUrl, setStaticMapUrl] = useState(null);
   const [isDownloading, setIsDownloading] = useState(false);
 
-  // --- PROCESSAMENTO DE DADOS (COM SUPORTE A RAMIFICAÇÕES) ---
+  // --- PROCESSAMENTO DE DADOS (COM SUPORTE A RAMIFICAÇÕES E VÃOS) ---
   const stats = useMemo(() => {
     if (!project || !project.points) return null;
 
     const groups = {};
     const userResponsibility = {};
-    let calculatedTotal = 0;
+    let totalSpans = 0;
+    let maxSpansPerSegment = 0;
 
+    // Calcula a distância total COM vãos usando a função centralizada
+    const calculatedTotalDistance = calculateTotalProjectDistance(
+      project.points || [], 
+      project.extra_connections || []
+    );
+
+    // Processa os pontos
     project.points.forEach((p, idx) => {
       const dateObj = new Date(p.timestamp || p.created_at);
       const date = dateObj.toLocaleDateString('pt-BR');
@@ -31,7 +40,8 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
           distance: 0, 
           startTime: dateObj, 
           endTime: dateObj,
-          users: new Set()
+          users: new Set(),
+          spans: 0
         };
       }
       
@@ -42,29 +52,13 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
       if (dateObj < group.startTime) group.startTime = dateObj;
       if (dateObj > group.endTime) group.endTime = dateObj;
 
-      // --- CÁLCULO INTELIGENTE DE DISTÂNCIA (Ramificações) ---
-      let dist = 0;
-      let parent = null;
-
-      // 1. Se tem um pai explícito (Ramificação/Galho)
-      if (p.connectedFrom) {
-        parent = project.points.find(point => point.id === p.connectedFrom);
-      } 
-      // 2. Se não tem pai, mas não é o primeiro (Sequencial padrão)
-      else if (idx > 0) {
-        parent = project.points[idx - 1];
-      }
-
-      // Se encontrou um ponto anterior válido, calcula a distância
-      if (parent) {
-        dist = calcDist(parent, p);
-        
-        // Se a distância for absurdamente grande (>5km) provavelmente é erro de GPS ou importação, ignoramos para não quebrar o relatório
-        if (dist < 5000) { 
-            group.distance += dist;
-            calculatedTotal += dist;
-        }
-      }
+      // Contabiliza vãos
+      const spans = (p.spans !== undefined && p.spans !== null && !isNaN(p.spans)) ? 
+                   Math.max(1, Number(p.spans)) : 1;
+      group.spans += spans;
+      totalSpans += spans;
+      
+      if (spans > maxSpansPerSegment) maxSpansPerSegment = spans;
 
       // Responsabilidade
       const user = p.user_email || currentUserEmail || 'Desconhecido';
@@ -77,12 +71,15 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
     return {
       groups,
       userResponsibility,
-      // Usa o total calculado aqui que respeita ramificações, ou o do projeto se já vier salvo corretamente
-      totalDistance: calculatedTotal > 0 ? calculatedTotal : (project.total_distance || 0),
+      totalDistance: calculatedTotalDistance,
+      totalSpans,
+      maxSpansPerSegment,
       totalPoints: project.points.length,
-      lastUpdate: new Date(project.updated_at || Date.now()).toLocaleString('pt-BR')
+      lastUpdate: new Date(project.updated_at || Date.now()).toLocaleString('pt-BR'),
+      hasBranches: project.points.some(p => p.connectedFrom),
+      hasExtraConnections: project.extra_connections && project.extra_connections.length > 0
     };
-  }, [project]);
+  }, [project, currentUserEmail]);
 
   // Gera a URL do Mapa (que agora desenha ramificações graças ao MapboxStatic.js atualizado)
   useEffect(() => {
@@ -97,13 +94,17 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
   // Função matemática de distância (Haversine)
   function calcDist(p1, p2) {
     const R = 6371e3; 
-    const φ1 = p1.lat * Math.PI/180;
-    const φ2 = p2.lat * Math.PI/180;
-    const a = Math.sin((p2.lat-p1.lat) * Math.PI/180/2)**2 + Math.cos(φ1)*Math.cos(φ2) * Math.sin((p2.lng-p1.lng) * Math.PI/180/2)**2;
+    const φ1 = p1.lat * Math.PI / 180;
+    const φ2 = p2.lat * Math.PI / 180;
+    const a = Math.sin((p2.lat-p1.lat) * Math.PI / 180/2)**2 + Math.cos(φ1)*Math.cos(φ2) * Math.sin((p2.lng-p1.lng) * Math.PI / 180/2)**2;
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
   }
 
-  const formatDist = (m) => m < 1000 ? `${m.toFixed(1)}m` : `${(m/1000).toFixed(3)}km`;
+  const formatDist = (m) => {
+    if (m < 1) return `${(m * 100).toFixed(0)} cm`;
+    if (m < 1000) return `${m.toFixed(1)} m`;
+    return `${(m/1000).toFixed(3)} km`;
+  };
 
   const generateAndOpenPDF = async () => {
     setIsDownloading(true);
@@ -131,12 +132,12 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
       doc.setTextColor(34, 211, 238); // Cyan
       doc.setFontSize(22);
       doc.setFont("helvetica", "bold");
-      doc.text("RELATÓRIO TÉCNICO", 15, y);
+      doc.text("RELATÓRIO TÉCNICO - JAMAAW", 15, y);
       
       doc.setFontSize(10);
       doc.setTextColor(148, 163, 184); 
-      doc.text(`Gerado em ${new Date().toLocaleString()}`, 15, y + 6);
-      doc.text("JAMAAW GEO SYSTEM", width - 15, y, { align: 'right' });
+      doc.text(`Gerado em ${new Date().toLocaleString('pt-BR')}`, 15, y + 6);
+      doc.text("Sistema de Mapeamento de Redes", width - 15, y, { align: 'right' });
 
       y += 15;
 
@@ -145,7 +146,11 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
         try {
           const response = await fetch(staticMapUrl);
           const blob = await response.blob();
-          const base64 = await new Promise((r) => { const reader = new FileReader(); reader.onload = () => r(reader.result); reader.readAsDataURL(blob); });
+          const base64 = await new Promise((r) => { 
+            const reader = new FileReader(); 
+            reader.onload = () => r(reader.result); 
+            reader.readAsDataURL(blob); 
+          });
           
           doc.addImage(base64, 'JPEG', 15, y, 180, 90);
           doc.setDrawColor(34, 211, 238);
@@ -160,7 +165,7 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
 
       // Card Resumo
       doc.setFillColor(30, 41, 59);
-      doc.roundedRect(15, y, 180, 25, 3, 3, 'F');
+      doc.roundedRect(15, y, 180, 35, 3, 3, 'F');
       
       doc.setFontSize(14);
       doc.setTextColor(255, 255, 255);
@@ -168,11 +173,31 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
       
       doc.setFontSize(10);
       doc.setTextColor(34, 211, 238);
-      doc.text(`EXTENSÃO TOTAL: ${formatDist(stats.totalDistance)}`, 20, y + 18);
-      doc.text(`PONTOS: ${stats.totalPoints}`, 90, y + 18);
-      doc.text(`BAIRRO: ${project.bairro || 'N/A'}`, 140, y + 18);
+      doc.text(`EXTENSÃO TOTAL: ${formatDist(stats.totalDistance)}`, 20, y + 20);
+      doc.text(`PONTOS: ${stats.totalPoints}`, 90, y + 20);
+      doc.text(`BAIRRO: ${project.bairro || 'N/A'}`, 140, y + 20);
       
-      y += 35;
+      doc.setTextColor(168, 85, 247); // Purple
+      doc.text(`VÃOS: ${stats.totalSpans}`, 20, y + 30);
+      doc.text(`RASTREAMENTO: ${project.tracking_mode || 'manual'}`, 90, y + 30);
+      doc.text(`ATUALIZADO: ${new Date(project.updated_at).toLocaleDateString('pt-BR')}`, 140, y + 30);
+      
+      y += 45;
+
+      // Informações de Estrutura
+      if (stats.hasBranches || stats.hasExtraConnections) {
+        doc.setFillColor(51, 65, 85);
+        doc.roundedRect(15, y, 180, 15, 3, 3, 'F');
+        doc.setFontSize(9);
+        doc.setTextColor(255, 255, 255);
+        
+        let structureText = "ESTRUTURA: ";
+        if (stats.hasBranches) structureText += "Com Ramificações ";
+        if (stats.hasExtraConnections) structureText += "Com Conexões Extras ";
+        
+        doc.text(structureText, 20, y + 10);
+        y += 25;
+      }
 
       // Tabela de Equipe
       doc.setFontSize(11);
@@ -180,11 +205,15 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
       doc.text("EQUIPE TÉCNICA", 15, y);
       y += 5;
 
-      const teamData = Object.entries(stats.userResponsibility).map(([email, count]) => [email, count]);
+      const teamData = Object.entries(stats.userResponsibility).map(([email, count]) => [
+        email, 
+        count,
+        `${((count / stats.totalPoints) * 100).toFixed(1)}%`
+      ]);
       
       autoTable(doc, {
         startY: y,
-        head: [['RESPONSÁVEL', 'QTD. PONTOS']],
+        head: [['RESPONSÁVEL', 'PONTOS', '%']],
         body: teamData,
         theme: 'grid',
         headStyles: { fillColor: [6, 182, 212], textColor: [0, 0, 0], fontStyle: 'bold' },
@@ -201,26 +230,38 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
       y += 5;
 
       const detailData = [];
-      Object.entries(stats.groups).forEach(([date, data]) => {
+      Object.entries(stats.groups).forEach(([date, groupData]) => {
         // Cabeçalho do Dia
         detailData.push([
-          { content: `${date} - Produção: ${formatDist(data.distance)}`, colSpan: 4, styles: { fillColor: [51, 65, 85], fontStyle: 'bold', textColor: [34, 211, 238], halign: 'left' } }
+          { 
+            content: `${date} - Produção: ${formatDist(groupData.distance)} (${groupData.spans} vãos)`, 
+            colSpan: 4, 
+            styles: { 
+              fillColor: [51, 65, 85], 
+              fontStyle: 'bold', 
+              textColor: [34, 211, 238], 
+              halign: 'left' 
+            } 
+          }
         ]);
         
         // Pontos do dia
-        data.points.forEach((p, i) => {
+        groupData.points.forEach((p, i) => {
+          const spans = (p.spans !== undefined && p.spans !== null && !isNaN(p.spans)) ? 
+                       Math.max(1, Number(p.spans)) : 1;
+          
           detailData.push([
             i + 1,
-            new Date(p.timestamp || p.created_at).toLocaleTimeString(),
+            new Date(p.timestamp || p.created_at).toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'}),
             `${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}`,
-            p.user_email?.split('@')[0] || '---'
+            `${p.user_email?.split('@')[0] || '---'} (${spans} vão${spans > 1 ? 's' : ''})`
           ]);
         });
       });
 
       autoTable(doc, {
         startY: y,
-        head: [['#', 'HORA', 'COORDENADAS', 'TÉCNICO']],
+        head: [['#', 'HORA', 'COORDENADAS', 'TÉCNICO (VÃOS)']],
         body: detailData,
         theme: 'grid',
         headStyles: { fillColor: [15, 23, 42], textColor: [34, 211, 238], lineColor: [34, 211, 238] },
@@ -230,6 +271,108 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
         styles: { textColor: [255, 255, 255] }
       });
 
+      // Página 2 - Detalhes dos Vãos
+      doc.addPage();
+      doc.setFillColor(15, 23, 42);
+      doc.rect(0, 0, width, height, 'F');
+      
+      y = 20;
+      
+      doc.setFontSize(16);
+      doc.setTextColor(34, 211, 238);
+      doc.text("ANÁLISE DE VÃOS POR SEGMENTO", 15, y);
+      
+      y += 10;
+      
+      // Análise de Vãos
+      const spanAnalysisData = [];
+      let segmentCount = 0;
+      
+      if (project.points && project.points.length > 1) {
+        for (let i = 1; i < project.points.length; i++) {
+          const current = project.points[i];
+          const previous = project.points[i - 1];
+          
+          const spans = (current.spans !== undefined && current.spans !== null && !isNaN(current.spans)) ? 
+                       Math.max(1, Number(current.spans)) : 1;
+          
+          segmentCount++;
+          const segmentDist = calcDist(previous, current);
+          const totalDist = segmentDist * spans;
+          
+          spanAnalysisData.push([
+            segmentCount,
+            `${previous.lat.toFixed(4)}, ${previous.lng.toFixed(4)}`,
+            `${current.lat.toFixed(4)}, ${current.lng.toFixed(4)}`,
+            formatDist(segmentDist),
+            spans,
+            formatDist(totalDist)
+          ]);
+        }
+      }
+      
+      autoTable(doc, {
+        startY: y,
+        head: [['SEG', 'PONTO INICIAL', 'PONTO FINAL', 'DIST BASE', 'VÃOS', 'DIST TOTAL']],
+        body: spanAnalysisData,
+        theme: 'grid',
+        headStyles: { fillColor: [168, 85, 247], textColor: [255, 255, 255], fontStyle: 'bold' },
+        bodyStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], lineColor: [51, 65, 85] },
+        margin: { left: 15, right: 15 }
+      });
+      
+      y = doc.lastAutoTable.finalY + 15;
+      
+      // Resumo de Vãos
+      doc.setFillColor(30, 41, 59);
+      doc.roundedRect(15, y, 180, 40, 3, 3, 'F');
+      
+      doc.setFontSize(11);
+      doc.setTextColor(255, 255, 255);
+      doc.text("RESUMO DE VÃOS", 20, y + 10);
+      
+      doc.setFontSize(9);
+      doc.setTextColor(168, 85, 247);
+      doc.text(`Total de Vãos: ${stats.totalSpans}`, 20, y + 18);
+      doc.text(`Máximo por Segmento: ${stats.maxSpansPerSegment} vãos`, 20, y + 25);
+      doc.text(`Segmentos: ${segmentCount}`, 100, y + 18);
+      doc.text(`Média por Segmento: ${(stats.totalSpans / segmentCount).toFixed(1)} vãos`, 100, y + 25);
+      
+      y += 50;
+
+      // Informações Técnicas
+      doc.setFontSize(11);
+      doc.setTextColor(34, 211, 238);
+      doc.text("INFORMAÇÕES TÉCNICAS", 15, y);
+      
+      y += 5;
+      
+      const techInfo = [
+        [`ID do Projeto:`, project.id],
+        [`Criado por:`, project.user_email || currentUserEmail || 'Desconhecido'],
+        [`Data de Criação:`, new Date(project.created_at).toLocaleString('pt-BR')],
+        [`Última Atualização:`, new Date(project.updated_at || project.created_at).toLocaleString('pt-BR')],
+        [`Precisão Média:`, project.avg_accuracy ? `${project.avg_accuracy.toFixed(1)}m` : 'N/A'],
+        [`Modo de Captura:`, project.tracking_mode || 'manual']
+      ];
+      
+      autoTable(doc, {
+        startY: y,
+        body: techInfo,
+        theme: 'plain',
+        bodyStyles: { 
+          fillColor: [30, 41, 59], 
+          textColor: [255, 255, 255], 
+          lineColor: [51, 65, 85],
+          cellPadding: { top: 4, right: 4, bottom: 4, left: 4 }
+        },
+        columnStyles: {
+          0: { textColor: [148, 163, 184], fontStyle: 'bold' },
+          1: { textColor: [255, 255, 255] }
+        },
+        margin: { left: 15, right: 15 }
+      });
+
       // Rodapé
       const pageCount = doc.internal.getNumberOfPages();
       for(let i = 1; i <= pageCount; i++) {
@@ -237,10 +380,11 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
         doc.setFontSize(8);
         doc.setTextColor(100, 116, 139);
         doc.text(`Página ${i} de ${pageCount}`, width - 20, height - 10, { align: 'right' });
+        doc.text("Jamaaw Geo System © 2024", 15, height - 10);
       }
 
       // Salvar e Abrir
-      const safeName = `Relatorio_${project.name.replace(/\s+/g, '_')}.pdf`;
+      const safeName = `Relatorio_${project.name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()}.pdf`;
       
       if (Capacitor.getPlatform() === 'web') {
         doc.save(safeName);
@@ -289,6 +433,11 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
                   <span className="text-[10px] font-bold bg-cyan-500/20 text-cyan-400 px-2 py-0.5 rounded uppercase">
                     {project.name}
                   </span>
+                  {stats.hasBranches && (
+                    <span className="text-[10px] font-bold bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded uppercase">
+                      Com Ramificações
+                    </span>
+                  )}
                 </div>
               </div>
               <Button size="icon" variant="ghost" onClick={onClose} className="rounded-full hover:bg-white/10 text-slate-400 -mr-2">
@@ -312,14 +461,40 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
             {/* Cards de Métricas */}
             <div className="grid grid-cols-2 gap-3">
               <div className="bg-gradient-to-br from-slate-800/60 to-slate-900/60 p-4 rounded-2xl border border-cyan-500/20 backdrop-blur-md">
-                <MapPin className="text-cyan-400 mb-2 w-6 h-6" />
+                <div className="flex items-center justify-between mb-2">
+                  <MapPin className="text-cyan-400 w-6 h-6" />
+                  <span className="text-[10px] text-cyan-400/70 font-bold bg-cyan-500/10 px-2 py-0.5 rounded-full">
+                    COM VÃOS
+                  </span>
+                </div>
                 <span className="text-2xl font-bold text-white font-mono tracking-tight">{formatDist(stats.totalDistance)}</span>
                 <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider mt-1 block">Extensão Total</span>
               </div>
               <div className="bg-gradient-to-br from-slate-800/60 to-slate-900/60 p-4 rounded-2xl border border-purple-500/20 backdrop-blur-md">
-                <Activity className="text-purple-400 mb-2 w-6 h-6" />
+                <div className="flex items-center justify-between mb-2">
+                  <Hash className="text-purple-400 w-6 h-6" />
+                  <span className="text-[10px] text-purple-400/70 font-bold bg-purple-500/10 px-2 py-0.5 rounded-full">
+                    SEGMENTOS
+                  </span>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl font-bold text-white font-mono tracking-tight">{stats.totalSpans}</span>
+                  <span className="text-sm text-purple-400">vãos</span>
+                </div>
+                <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider mt-1 block">Total de Vãos</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-gradient-to-br from-slate-800/60 to-slate-900/60 p-4 rounded-2xl border border-blue-500/20 backdrop-blur-md">
+                <Activity className="text-blue-400 mb-2 w-6 h-6" />
                 <span className="text-2xl font-bold text-white font-mono tracking-tight">{stats.totalPoints}</span>
                 <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider mt-1 block">Pontos Totais</span>
+              </div>
+              <div className="bg-gradient-to-br from-slate-800/60 to-slate-900/60 p-4 rounded-2xl border border-green-500/20 backdrop-blur-md">
+                <Layers className="text-green-400 mb-2 w-6 h-6" />
+                <span className="text-2xl font-bold text-white font-mono tracking-tight">{stats.maxSpansPerSegment}</span>
+                <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider mt-1 block">Máx por Segmento</span>
               </div>
             </div>
 
@@ -329,6 +504,9 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
                 <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
                    <Calendar size={14} /> Histórico de Execução
                 </h3>
+                <span className="text-[10px] text-slate-500">
+                  {Object.keys(stats.groups).length} dias
+                </span>
               </div>
               
               {Object.entries(stats.groups).map(([date, groupData]) => (
@@ -345,14 +523,17 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
                         </div>
                         <div className="text-right">
                             <div className="text-sm font-bold text-cyan-400 font-mono">{formatDist(groupData.distance)}</div>
-                            <div className="text-[10px] text-slate-500">{groupData.points.length} pontos</div>
+                            <div className="text-[10px] text-slate-500 flex gap-2">
+                              <span>{groupData.points.length} pontos</span>
+                              <span className="text-purple-400">• {groupData.spans} vãos</span>
+                            </div>
                         </div>
                     </div>
                     {/* Barra de Progresso Visual */}
                     <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden mb-3">
                         <div 
                             className="bg-gradient-to-r from-cyan-500 to-purple-500 h-full shadow-[0_0_10px_rgba(6,182,212,0.5)]" 
-                            style={{ width: `${Math.max(5, (groupData.points.length / stats.totalPoints) * 100)}%` }}
+                            style={{ width: `${Math.max(5, (groupData.distance / stats.totalDistance) * 100)}%` }}
                         ></div>
                     </div>
                     {/* Lista de Responsáveis */}
@@ -382,6 +563,9 @@ const ProjectReport = ({ isOpen, onClose, project, currentUserEmail }) => {
                 <div className="flex items-center gap-2"><Download size={18} /> Baixar e Abrir PDF</div>
               )}
             </Button>
+            <p className="text-[10px] text-slate-500 text-center mt-2">
+              PDF inclui análise detalhada de vãos e segmentos
+            </p>
           </div>
 
         </div>

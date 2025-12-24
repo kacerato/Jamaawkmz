@@ -1178,8 +1178,14 @@ useEffect(() => {
   
   // --- SUBSTITUA A FUNÇÃO saveProject POR ESTA ---
 // --- SUBSTITUA NO SEU App.jsx ---
+const calculateProjectDistance = useCallback((project) => {
+    if (!project || !project.points || project.points.length < 2) {
+      return project?.total_distance || project?.totalDistance || 0;
+    }
+    
+    return calculateTotalProjectDistance(project.points, project.extra_connections || []);
+  }, []);
 
-// --- FUNÇÃO saveProject CORRIGIDA (SEM O ERRO PGRST204) ---
 const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
   try {
     let finalPoints = pointsToSave;
@@ -1191,8 +1197,12 @@ const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
       return;
     }
     
-    // NORMALIZA OS SPANS ANTES DE SALVAR
-    finalPoints = normalizeSpans(finalPoints);
+    // Normalizar spans (garantir que são números válidos)
+    finalPoints = finalPoints.map(point => ({
+      ...point,
+      spans: (point.spans !== undefined && point.spans !== null && !isNaN(point.spans)) ?
+        Math.max(1, Number(point.spans)) : 1
+    }));
     
     let projectNameToUse = projectName;
     if (editingProject && !projectName.trim()) projectNameToUse = editingProject.name;
@@ -1294,11 +1304,25 @@ const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
     const otherProjects = userProjects.filter(p => p.id !== localProjectObj.id);
     storage.saveProjects(user?.id, [localProjectObj, ...otherProjects]);
     
+    // 4. FINALIZA O RASTREAMENTO APÓS SALVAR (NOVO)
     if (!autoSave) {
+      setTracking(false);
+      setPaused(false);
+      setShowTrackingControls(false);
+      setManualPoints([]);
+      setExtraConnections([]);
+      setTotalDistance(0);
+      setSelectedStartPoint(null);
+      setPositionHistory([]);
+      setGpsAccuracy(null);
+      setSpeed(0);
+      
       setShowProjectDialog(false);
       setEditingProject(null);
       setProjectName('');
       showFeedback('Sucesso', `Projeto salvo! Distância: ${formatDistanceDetailed(calculatedTotalDistance)}`, 'success');
+    } else {
+      showFeedback('Salvo', 'Projeto salvo automaticamente', 'info');
     }
     
   } catch (error) {
@@ -1306,55 +1330,71 @@ const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
     if (!autoSave) showFeedback('Erro', `Erro ao salvar: ${error.message}`, 'error');
   }
 };
-  // Função startTracking com sistema de lock
   const startTracking = async (mode = 'gps') => {
-    if (loadedProjects.length > 1) {
-      showFeedback('Bloqueado', 'Múltiplos projetos ativos. Deixe apenas UM projeto no mapa para continuar o traçado.', 'error');
-      return;
-    }
+  if (loadedProjects.length > 1) {
+    showFeedback('Bloqueado', 'Múltiplos projetos ativos. Deixe apenas UM projeto no mapa para continuar o traçado.', 'error');
+    return;
+  }
+  
+  if (loadedProjects.length === 1) {
+    const project = loadedProjects[0];
     
-    if (loadedProjects.length === 1) {
-      const project = loadedProjects[0];
-      
-      if (isOnline && user) {
-        const hasLock = await ProjectLockService.acquireLock(project.id, user.id);
-        if (!hasLock) {
-          const status = await ProjectLockService.checkLockStatus(project.id, user.id);
-          if (status.isLocked) {
-            showFeedback('Projeto Travado', `Este projeto está sendo editado por ${status.lockedBy}. Modo leitura ativado.`, 'error');
-            return;
-          }
+    if (isOnline && user) {
+      const hasLock = await ProjectLockService.acquireLock(project.id, user.id);
+      if (!hasLock) {
+        const status = await ProjectLockService.checkLockStatus(project.id, user.id);
+        if (status.isLocked) {
+          showFeedback('Projeto Travado', `Este projeto está sendo editado por ${status.lockedBy}. Modo leitura ativado.`, 'error');
+          return;
         }
       }
-      
-      setCurrentProject(project);
-      setManualPoints(project.points);
-      setTotalDistance(project.totalDistance || project.total_distance || 0);
-      setProjectName(project.name);
-      
-      if (project.points && project.points.length > 0) {
-        const lastPoint = project.points[project.points.length - 1];
-        setSelectedStartPoint(lastPoint);
-        
-        showFeedback('Conectado', `Rastreamento continuado a partir do Ponto ${project.points.length}`, 'success');
-      }
-    }
-    else if (!currentProject) {
-      setManualPoints([]);
-      setTotalDistance(0);
-      setProjectName('');
-      setSelectedStartPoint(null);
     }
     
-    setTrackingInputMode(mode);
-    setTracking(true);
-    setPaused(false);
-    setShowTrackingControls(true);
-    setShowRulerPopup(false);
+    // Usa o cálculo com vãos ao carregar
+    const calculatedDistance = calculateProjectDistance(project);
     
-    kalmanLatRef.current = new KalmanFilter(0.1, 0.1);
-    kalmanLngRef.current = new KalmanFilter(0.1, 0.1);
-  };
+    setCurrentProject(project);
+    setManualPoints(project.points);
+    setTotalDistance(calculatedDistance);
+    setProjectName(project.name);
+    
+    if (project.points && project.points.length > 0) {
+      const lastPoint = project.points[project.points.length - 1];
+      setSelectedStartPoint(lastPoint);
+      
+      showFeedback('Conectado', `Rastreamento continuado a partir do Ponto ${project.points.length}`, 'success');
+    }
+  }
+  else if (!currentProject) {
+    setManualPoints([]);
+    setTotalDistance(0);
+    setProjectName('');
+    setSelectedStartPoint(null);
+  }
+  
+  setTrackingInputMode(mode);
+  setTracking(true);
+  setPaused(false);
+  setShowTrackingControls(true);
+  setShowRulerPopup(false);
+  
+  kalmanLatRef.current = new KalmanFilter(0.1, 0.1);
+  kalmanLngRef.current = new KalmanFilter(0.1, 0.1);
+};
+
+// Adicione esta função para garantir que os projetos carregados tenham cálculo correto
+useEffect(() => {
+  if (loadedProjects.length > 0) {
+    // Atualiza a distância de cada projeto carregado
+    const updatedProjects = loadedProjects.map(project => ({
+      ...project,
+      total_distance: calculateProjectDistance(project),
+      totalDistance: calculateProjectDistance(project)
+    }));
+    
+    setLoadedProjects(updatedProjects);
+  }
+}, [loadedProjects.length]); //
   
   // Função loadProject com sistema de lock e CORREÇÃO DE STATE
   const loadProject = async (project) => {
@@ -3589,28 +3629,23 @@ const addPoint = (position) => {
   onRenameProject={handleRenameProject}
   
   // --- CORREÇÃO DO RELATÓRIO AQUI ---
-  onOpenReport={(project) => {
-    const img = getMapImage();
-    
-    // 1. FORÇA O RECÁLCULO IMEDIATO usando a lógica correta (geoUtils)
-    // Isso garante que vãos (spans) e loops sejam somados agora,
-    // mesmo que o valor no banco de dados esteja desatualizado.
-    const distAtualizada = calculateTotalProjectDistance(
-      project.points || [], 
-      project.extra_connections || []
-    );
-    
-    // 2. Cria um objeto temporário com a distância corrigida
-    const projetoCorrigido = {
-      ...project,
-      total_distance: distAtualizada, // Atualiza para o campo padrão do banco
-      totalDistance: distAtualizada   // Atualiza para o campo legado (se houver)
-    };
+  // No App.jsx, onde você chama onOpenReport, atualize para:
+onOpenReport={(project) => {
+  const img = getMapImage();
+  
+  // Calcula a distância com vãos
+  const distAtualizada = calculateProjectDistance(project);
+  
+  // Cria um objeto temporário com a distância corrigida
+  const projetoCorrigido = {
+    ...project,
+    total_distance: distAtualizada,
+    totalDistance: distAtualizada
+  };
 
-    // 3. Envia o projeto com o valor certo para o relatório
-    setReportData({ project: projetoCorrigido, image: img });
-    setShowProjectsList(false);
-  }}
+  setReportData({ project: projetoCorrigido, image: img });
+  setShowProjectsList(false);
+}}
 />
 
       <LoadedProjectsManager

@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   FolderOpen, Download, Trash2, Play, Users, 
   Copy, Plus, Check, Search, X, Edit3, 
-  Activity, ClipboardList, AlertTriangle, Calendar, MapPin
+  Activity, ClipboardList, AlertTriangle, Calendar, MapPin, Hash
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -32,6 +32,44 @@ const ProjectManager = ({
   const displayedProjects = (activeTab === 'mine' ? myProjects : sharedProjects)
     .filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
+  // Função para calcular distância com vãos
+  const calculateProjectDistance = (project) => {
+    if (!project || !project.points || project.points.length < 2) {
+      return project?.total_distance || project?.totalDistance || 0;
+    }
+    
+    let totalDistance = 0;
+    
+    // Cálculo manual considerando vãos
+    for (let i = 1; i < project.points.length; i++) {
+      const current = project.points[i];
+      const previous = project.points[i - 1];
+      
+      if (current && previous && current.lat && current.lng && previous.lat && previous.lng) {
+        // Função de cálculo de distância (simplificada)
+        const lat1 = previous.lat * Math.PI / 180;
+        const lat2 = current.lat * Math.PI / 180;
+        const dLat = (current.lat - previous.lat) * Math.PI / 180;
+        const dLng = (current.lng - previous.lng) * Math.PI / 180;
+        
+        const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                 Math.cos(lat1) * Math.cos(lat2) *
+                 Math.sin(dLng/2) * Math.sin(dLng/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        const R = 6378137; // Raio da Terra em metros
+        const dist = R * c;
+        
+        // Multiplicador de vãos
+        const spans = (current.spans !== undefined && current.spans !== null && !isNaN(current.spans)) ? 
+                     Math.max(1, Number(current.spans)) : 1;
+        
+        totalDistance += (dist * spans);
+      }
+    }
+    
+    return totalDistance;
+  };
+
   const confirmDelete = () => {
     if (projectToDelete) {
       onDeleteProject(projectToDelete.id);
@@ -41,7 +79,15 @@ const ProjectManager = ({
 
   const ProjectCard = ({ project }) => {
     const isMine = project.user_id === currentUserId;
-    // Design limpo, sem firulas natalinas
+    const projectDistance = calculateProjectDistance(project);
+    
+    // Contar vãos totais
+    const totalSpans = project.points?.reduce((sum, point) => {
+      const spans = (point.spans !== undefined && point.spans !== null && !isNaN(point.spans)) ? 
+                   Math.max(1, Number(point.spans)) : 1;
+      return sum + spans;
+    }, 0) || 0;
+
     const glowClass = isMine 
       ? 'border-cyan-500/20 hover:border-cyan-500/40' 
       : 'border-purple-500/20 hover:border-purple-500/40';
@@ -72,7 +118,10 @@ const ProjectManager = ({
             
             <div className="flex flex-wrap items-center gap-3 mt-2">
               <span className="text-[10px] font-mono text-cyan-200/70 bg-cyan-500/5 px-1.5 py-0.5 rounded border border-cyan-500/10 flex items-center gap-1">
-                 <MapPin size={10} /> {((project.total_distance || project.totalDistance || 0)/1000).toFixed(2)} km
+                 <MapPin size={10} /> {(projectDistance/1000).toFixed(2)} km
+              </span>
+              <span className="text-[10px] font-mono text-purple-200/70 bg-purple-500/5 px-1.5 py-0.5 rounded border border-purple-500/10 flex items-center gap-1">
+                 <Hash size={10} /> {totalSpans} vãos
               </span>
               <span className="text-[10px] text-slate-500 flex items-center gap-1">
                 <Calendar size={10} /> {new Date(project.updated_at || project.created_at).toLocaleDateString()}
