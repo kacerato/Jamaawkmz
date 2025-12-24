@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { FileText, Download, X, MapPin, Activity, Calendar, User, ShieldAlert, Clock, Navigation, Hash, Layers } from 'lucide-react';
+import { FileText, Download, X, MapPin, Activity, Calendar, User, Clock, Hash, Layers } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import jsPDF from 'jspdf';
@@ -10,11 +10,21 @@ import { FileOpener } from '@capacitor-community/file-opener';
 import { getStaticMapUrl } from '../utils/MapboxStatic';
 import { calculateTotalProjectDistance } from '../utils/geoUtils';
 
+// --- FUNÇÃO AUXILIAR (Movida para fora para performance e acesso global) ---
+function calcDist(p1, p2) {
+  if (!p1 || !p2) return 0;
+  const R = 6371e3; // Raio da Terra em metros
+  const φ1 = p1.lat * Math.PI / 180;
+  const φ2 = p2.lat * Math.PI / 180;
+  const a = Math.sin((p2.lat-p1.lat) * Math.PI / 180/2)**2 + Math.cos(φ1)*Math.cos(φ2) * Math.sin((p2.lng-p1.lng) * Math.PI / 180/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
 const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail }) => {
   const [staticMapUrl, setStaticMapUrl] = useState(null);
   const [isDownloading, setIsDownloading] = useState(false);
 
-  // --- PROCESSAMENTO DE DADOS (COM SUPORTE A RAMIFICAÇÕES E VÃOS) ---
+  // --- PROCESSAMENTO DE DADOS (CORRIGIDO) ---
   const stats = useMemo(() => {
     if (!project || !project.points) return null;
 
@@ -23,13 +33,13 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
     let totalSpans = 0;
     let maxSpansPerSegment = 0;
 
-    // Calcula a distância total COM vãos usando a função centralizada
+    // Calcula a distância total global (para referência)
     const calculatedTotalDistance = calculateTotalProjectDistance(
       project.points || [], 
       project.extra_connections || []
     );
 
-    // Processa os pontos
+    // Processa os pontos para o relatório diário
     project.points.forEach((p, idx) => {
       const dateObj = new Date(p.timestamp || p.created_at);
       const date = dateObj.toLocaleDateString('pt-BR');
@@ -37,7 +47,7 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
       if (!groups[date]) {
         groups[date] = { 
           points: [], 
-          distance: 0, 
+          distance: 0, // Inicializa zerado
           startTime: dateObj, 
           endTime: dateObj,
           users: new Set(),
@@ -52,9 +62,31 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
       if (dateObj < group.startTime) group.startTime = dateObj;
       if (dateObj > group.endTime) group.endTime = dateObj;
 
-      // Contabiliza vãos
+      // --- CORREÇÃO: CÁLCULO DE DISTÂNCIA DO SEGMENTO ---
+      // 1. Identifica o ponto anterior (pai)
+      let previousPoint = null;
+      if (p.connectedFrom) {
+        // Se for uma ramificação, busca pelo ID
+        previousPoint = project.points.find(pt => pt.id === p.connectedFrom);
+      } else if (idx > 0) {
+        // Se for sequencial, pega o anterior no array
+        previousPoint = project.points[idx - 1];
+      }
+
+      // 2. Define os vãos (Spans)
       const spans = (p.spans !== undefined && p.spans !== null && !isNaN(p.spans)) ? 
                    Math.max(1, Number(p.spans)) : 1;
+
+      // 3. Calcula e acumula se houver um ponto anterior válido
+      if (previousPoint) {
+        const segmentMeters = calcDist(previousPoint, p);
+        const totalSegmentMeters = segmentMeters * spans;
+        
+        // Adiciona à distância do dia
+        group.distance += totalSegmentMeters;
+      }
+      // ----------------------------------------------------
+
       group.spans += spans;
       totalSpans += spans;
       
@@ -62,7 +94,7 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
 
       // Responsabilidade
       const user = p.user_email || currentUserEmail || 'Desconhecido';
-      group.users.add(user.split('@')[0]); // Nome curto
+      group.users.add(user.split('@')[0]); 
       
       if (!userResponsibility[user]) userResponsibility[user] = 0;
       userResponsibility[user]++;
@@ -71,7 +103,7 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
     return {
       groups,
       userResponsibility,
-      totalDistance: calculatedTotalDistance,
+      totalDistance: calculatedTotalDistance, // Mantém o total geral preciso
       totalSpans,
       maxSpansPerSegment,
       totalPoints: project.points.length,
@@ -81,7 +113,6 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
     };
   }, [project, currentUserEmail]);
 
-  // Gera a URL do Mapa (que agora desenha ramificações graças ao MapboxStatic.js atualizado)
   useEffect(() => {
     if (isOpen && project?.points?.length > 0) {
       const url = getStaticMapUrl(project.points, 800, 400); 
@@ -90,15 +121,6 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
   }, [isOpen, project]);
 
   if (!project || !stats) return null;
-
-  // Função matemática de distância (Haversine)
-  function calcDist(p1, p2) {
-    const R = 6371e3; 
-    const φ1 = p1.lat * Math.PI / 180;
-    const φ2 = p2.lat * Math.PI / 180;
-    const a = Math.sin((p2.lat-p1.lat) * Math.PI / 180/2)**2 + Math.cos(φ1)*Math.cos(φ2) * Math.sin((p2.lng-p1.lng) * Math.PI / 180/2)**2;
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  }
 
   const formatDist = (m) => {
     if (m < 1) return `${(m * 100).toFixed(0)} cm`;
@@ -113,23 +135,21 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
       const width = doc.internal.pageSize.getWidth();
       const height = doc.internal.pageSize.getHeight();
 
-      // Sobrescreve addPage para garantir fundo escuro em todas as páginas
       const originalAddPage = doc.addPage;
       doc.addPage = function() {
         const ret = originalAddPage.call(this);
-        this.setFillColor(15, 23, 42); // Slate 900
+        this.setFillColor(15, 23, 42); 
         this.rect(0, 0, width, height, 'F');
         return ret;
       };
 
-      // 1. Pinta Página 1
       doc.setFillColor(15, 23, 42);
       doc.rect(0, 0, width, height, 'F');
 
       let y = 15;
 
       // Cabeçalho
-      doc.setTextColor(34, 211, 238); // Cyan
+      doc.setTextColor(34, 211, 238); 
       doc.setFontSize(22);
       doc.setFont("helvetica", "bold");
       doc.text("RELATÓRIO TÉCNICO - JAMAAW", 15, y);
@@ -141,7 +161,6 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
 
       y += 15;
 
-      // Imagem do Mapa (Com traçado de ramificações)
       if (staticMapUrl) {
         try {
           const response = await fetch(staticMapUrl);
@@ -159,7 +178,7 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
           y += 95;
         } catch (e) {
           console.error("Erro ao baixar mapa", e);
-          y += 20; // Pula espaço se falhar
+          y += 20;
         }
       }
 
@@ -177,14 +196,13 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
       doc.text(`PONTOS: ${stats.totalPoints}`, 90, y + 20);
       doc.text(`BAIRRO: ${project.bairro || 'N/A'}`, 140, y + 20);
       
-      doc.setTextColor(168, 85, 247); // Purple
+      doc.setTextColor(168, 85, 247); 
       doc.text(`VÃOS: ${stats.totalSpans}`, 20, y + 30);
       doc.text(`RASTREAMENTO: ${project.tracking_mode || 'manual'}`, 90, y + 30);
       doc.text(`ATUALIZADO: ${new Date(project.updated_at).toLocaleDateString('pt-BR')}`, 140, y + 30);
       
       y += 45;
 
-      // Informações de Estrutura
       if (stats.hasBranches || stats.hasExtraConnections) {
         doc.setFillColor(51, 65, 85);
         doc.roundedRect(15, y, 180, 15, 3, 3, 'F');
@@ -199,7 +217,6 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
         y += 25;
       }
 
-      // Tabela de Equipe
       doc.setFontSize(11);
       doc.setTextColor(255, 255, 255);
       doc.text("EQUIPE TÉCNICA", 15, y);
@@ -223,7 +240,6 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
       
       y = doc.lastAutoTable.finalY + 15;
 
-      // Tabela Detalhada (Histórico Diário)
       doc.setFontSize(11);
       doc.setTextColor(255, 255, 255);
       doc.text("DETALHAMENTO DIÁRIO", 15, y);
@@ -245,7 +261,6 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
           }
         ]);
         
-        // Pontos do dia
         groupData.points.forEach((p, i) => {
           const spans = (p.spans !== undefined && p.spans !== null && !isNaN(p.spans)) ? 
                        Math.max(1, Number(p.spans)) : 1;
@@ -271,7 +286,6 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
         styles: { textColor: [255, 255, 255] }
       });
 
-      // Página 2 - Detalhes dos Vãos
       doc.addPage();
       doc.setFillColor(15, 23, 42);
       doc.rect(0, 0, width, height, 'F');
@@ -284,30 +298,37 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
       
       y += 10;
       
-      // Análise de Vãos
       const spanAnalysisData = [];
       let segmentCount = 0;
       
       if (project.points && project.points.length > 1) {
         for (let i = 1; i < project.points.length; i++) {
           const current = project.points[i];
-          const previous = project.points[i - 1];
-          
-          const spans = (current.spans !== undefined && current.spans !== null && !isNaN(current.spans)) ? 
-                       Math.max(1, Number(current.spans)) : 1;
-          
-          segmentCount++;
-          const segmentDist = calcDist(previous, current);
-          const totalDist = segmentDist * spans;
-          
-          spanAnalysisData.push([
-            segmentCount,
-            `${previous.lat.toFixed(4)}, ${previous.lng.toFixed(4)}`,
-            `${current.lat.toFixed(4)}, ${current.lng.toFixed(4)}`,
-            formatDist(segmentDist),
-            spans,
-            formatDist(totalDist)
-          ]);
+          // Lógica de segmento aqui também para consistência do PDF
+          let previous = null;
+          if (current.connectedFrom) {
+             previous = project.points.find(p => p.id === current.connectedFrom);
+          } else {
+             previous = project.points[i - 1];
+          }
+
+          if (previous) {
+            const spans = (current.spans !== undefined && current.spans !== null && !isNaN(current.spans)) ? 
+                        Math.max(1, Number(current.spans)) : 1;
+            
+            segmentCount++;
+            const segmentDist = calcDist(previous, current);
+            const totalDist = segmentDist * spans;
+            
+            spanAnalysisData.push([
+                segmentCount,
+                `${previous.lat.toFixed(4)}, ${previous.lng.toFixed(4)}`,
+                `${current.lat.toFixed(4)}, ${current.lng.toFixed(4)}`,
+                formatDist(segmentDist),
+                spans,
+                formatDist(totalDist)
+            ]);
+          }
         }
       }
       
@@ -323,7 +344,6 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
       
       y = doc.lastAutoTable.finalY + 15;
       
-      // Resumo de Vãos
       doc.setFillColor(30, 41, 59);
       doc.roundedRect(15, y, 180, 40, 3, 3, 'F');
       
@@ -336,11 +356,10 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
       doc.text(`Total de Vãos: ${stats.totalSpans}`, 20, y + 18);
       doc.text(`Máximo por Segmento: ${stats.maxSpansPerSegment} vãos`, 20, y + 25);
       doc.text(`Segmentos: ${segmentCount}`, 100, y + 18);
-      doc.text(`Média por Segmento: ${(stats.totalSpans / segmentCount).toFixed(1)} vãos`, 100, y + 25);
+      doc.text(`Média por Segmento: ${(stats.totalSpans / (segmentCount || 1)).toFixed(1)} vãos`, 100, y + 25);
       
       y += 50;
 
-      // Informações Técnicas
       doc.setFontSize(11);
       doc.setTextColor(34, 211, 238);
       doc.text("INFORMAÇÕES TÉCNICAS", 15, y);
@@ -373,7 +392,6 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
         margin: { left: 15, right: 15 }
       });
 
-      // Rodapé
       const pageCount = doc.internal.getNumberOfPages();
       for(let i = 1; i <= pageCount; i++) {
         doc.setPage(i);
@@ -383,7 +401,6 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
         doc.text("Jamaaw Geo System © 2024", 15, height - 10);
       }
 
-      // Salvar e Abrir
       const safeName = `Relatorio_${project.name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()}.pdf`;
       
       if (Capacitor.getPlatform() === 'web') {
@@ -533,7 +550,7 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
                     <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden mb-3">
                         <div 
                             className="bg-gradient-to-r from-cyan-500 to-purple-500 h-full shadow-[0_0_10px_rgba(6,182,212,0.5)]" 
-                            style={{ width: `${Math.max(5, (groupData.distance / stats.totalDistance) * 100)}%` }}
+                            style={{ width: `${Math.max(5, (groupData.distance / (stats.totalDistance || 1)) * 100)}%` }}
                         ></div>
                     </div>
                     {/* Lista de Responsáveis */}
