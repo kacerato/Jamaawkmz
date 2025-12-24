@@ -3109,17 +3109,7 @@ function App() {
     setAdjustBoundsForProject(false);
   };
   
-  const centerMapOnUser = () => {
-    if (currentPosition && mapRef.current) {
-      mapRef.current.flyTo({
-        center: [currentPosition.lng, currentPosition.lat],
-        zoom: 16,
-        essential: true,
-      });
-    } else {
-      showFeedback('Erro', 'Localização atual ainda não disponível.', 'error');
-    }
-  };
+
   
   const handleARMode = async () => {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
