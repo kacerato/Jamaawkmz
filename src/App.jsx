@@ -234,28 +234,42 @@ const storage = {
 };
 
 // Componente Memoizado do Poste
+// Componente PoleMarker otimizado
 const PoleMarker = React.memo(({ point, index, color, onClick, isActive }) => {
+  // Prevenir renderização de pontos inválidos
+  if (!point || typeof point.lat !== 'number' || typeof point.lng !== 'number') {
+    return null;
+  }
+  
   return (
     <Marker 
       longitude={point.lng} 
       latitude={point.lat}
       anchor="bottom"
-      onClick={onClick}
+      onClick={(e) => {
+        e.originalEvent.stopPropagation();
+        if (onClick) onClick(e);
+      }}
     >
-      <div className="pole-marker-container" style={{ willChange: 'transform' }}>
+      <div className="pole-marker-container">
         <img 
           src={electricPoleIcon} 
           alt={`Ponto ${index}`} 
           className="pole-image"
           loading="lazy"
-          style={{ pointerEvents: 'none' }}
+          style={{ 
+            pointerEvents: 'none',
+            width: '32px',
+            height: '32px'
+          }}
         />
         
         <div 
           className={`pole-number-plate ${isActive ? 'pole-active' : ''}`}
           style={{ 
-            borderColor: color, 
-            color: color
+            borderColor: color || '#3b82f6', 
+            color: color || '#3b82f6',
+            backgroundColor: '#0f172a'
           }}
         >
           {index}
@@ -264,10 +278,13 @@ const PoleMarker = React.memo(({ point, index, color, onClick, isActive }) => {
     </Marker>
   );
 }, (prevProps, nextProps) => {
+  // Comparação mais rigorosa para evitar re-render desnecessárias
   return (
     prevProps.point.id === nextProps.point.id &&
     prevProps.color === nextProps.color &&
-    prevProps.isActive === nextProps.isActive
+    prevProps.isActive === nextProps.isActive &&
+    prevProps.point.lat === nextProps.point.lat &&
+    prevProps.point.lng === nextProps.point.lng
   );
 });
 
@@ -596,6 +613,29 @@ function App() {
   const gpsFilterRef = useRef(new GPSFilter(30, 0.5));
   
   const totalDistanceAllProjects = calculateTotalDistanceAllProjects(projects);
+  
+  // Adicionar esta função de limpeza
+const cleanupMapState = () => {
+  setPopupInfo(null);
+  setPointPopupInfo(null);
+  setSpanSelectorInfo(null);
+  setRouteCoordinates([]);
+  setDistanceResult(null);
+  
+  // Forçar uma re-renderização limpa
+  if (mapRef.current && mapRef.current.getMap) {
+    const map = mapRef.current.getMap();
+    if (map) {
+      map.triggerRepaint();
+    }
+  }
+};
+
+// Chamar cleanup antes de carregar novo projeto
+const loadProject = async (project) => {
+  cleanupMapState();
+  // ... resto do código
+};
   
   // Função auxiliar para mostrar feedback
   const showFeedback = (title, message, type = 'success') => {
@@ -1425,118 +1465,37 @@ function App() {
   }, [loadedProjects.length]); //
   
   // Função loadProject com sistema de lock e CORREÇÃO DE STATE
-  const loadProject = async (project) => {
-    if (!project) {
-      showFeedback('Erro', 'Projeto inválido', 'error');
-      return;
+ // Função para validar projetos
+// Função para validar projetos
+const validateProject = (project) => {
+  if (!project || !project.id || !project.name) {
+    return false;
+  }
+  
+  if (!Array.isArray(project.points)) {
+    return false;
+  }
+  
+  // Validar cada ponto
+  for (const point of project.points) {
+    if (!point || typeof point.lat !== 'number' || isNaN(point.lat) ||
+      typeof point.lng !== 'number' || isNaN(point.lng)) {
+      return false;
     }
-    
-    // Verifica se há rastreamento ativo
-    if (tracking && !paused) {
-      const shouldStop = window.confirm(
-        'Rastreamento ativo detectado. Deseja parar o rastreamento atual para carregar este projeto?'
-      );
-      
-      if (shouldStop) {
-        await stopTracking();
-      } else {
-        return;
-      }
-    }
-    
-    // Se há pontos manuais não salvos
-    if (manualPoints.length > 0) {
-      if (currentProject && currentProject.id === project.id) {
-        // Já está carregado, apenas fecha o gerenciador
-        setShowProjectsList(false);
-        return;
-      }
-      
-      const shouldDiscard = window.confirm(
-        'Existem pontos não salvos no mapa. Deseja descartá-los para carregar este projeto?'
-      );
-      
-      if (!shouldDiscard) {
-        return;
-      }
-    }
-    
-    // Libera lock do projeto atual se existir
-    if (currentProject && isOnline && user) {
-      try {
-        await ProjectLockService.releaseLock(currentProject.id, user.id);
-      } catch (error) {
-        console.warn('Erro ao liberar lock:', error);
-      }
-    }
-    
-    setShowProjectsList(false);
-    
-    // Usa requestAnimationFrame para garantir que a UI está atualizada
-    requestAnimationFrame(() => {
-      // Limpa estados de rastreamento
-      setTracking(false);
-      setPaused(false);
-      setSelectedStartPoint(null);
-      setManualPoints([]);
-      setTotalDistance(0);
-      
-      // Define o projeto atual
-      setCurrentProject(project);
-      
-      // Restaura pontos do projeto
-      const points = project.points || [];
-      setManualPoints(points);
-      
-      // Restaura conexões extras
-      const loadedConnections = project.extra_connections || [];
-      setExtraConnections(loadedConnections);
-      
-      // Recalcula distância
-      const totalDist = calculateTotalProjectDistance(points, loadedConnections);
-      setTotalDistance(totalDist);
-      
-      // Verifica se o projeto já está carregado
-      const exists = loadedProjects.find(p => p.id === project.id);
-      
-      if (!exists) {
-        // Adiciona cor se não existir
-        const projectWithColor = {
-          ...project,
-          color: project.color || generateRandomColor(),
-          bairro: project.bairro || 'Vários'
-        };
-        
-        setLoadedProjects(prev => [...prev, projectWithColor]);
-      }
-      
-      // Move o mapa para o projeto (com verificação de segurança)
-      if (points.length > 0 && mapRef.current) {
-        const firstPoint = points[0];
-        
-        // Delay para garantir que o mapa está pronto
-        setTimeout(() => {
-          if (mapRef.current && mapRef.current.getMap) {
-            try {
-              mapRef.current.flyTo({
-                center: [firstPoint.lng, firstPoint.lat],
-                zoom: 16,
-                speed: 1.2,
-                essential: true
-              });
-            } catch (error) {
-              console.warn('Erro ao mover mapa:', error);
-              // Fallback: usa jumpTo
-              mapRef.current.jumpTo({
-                center: [firstPoint.lng, firstPoint.lat],
-                zoom: 16
-              });
-            }
-          }
-        }, 100);
-      }
-    });
-  };
+  }
+  
+  return true;
+};
+
+// Modificar a função de carregar projeto para usar validação
+const safeLoadProject = async (project) => {
+  if (!validateProject(project)) {
+    showFeedback('Erro', 'Projeto contém dados inválidos', 'error');
+    return;
+  }
+  
+  await loadProject(project);
+};
   
   const loadMultipleProjects = async () => {
     if (!canLoadProjects()) {
@@ -3184,22 +3143,35 @@ function App() {
     <div className="relative h-screen w-screen overflow-hidden bg-slate-900">
       <div className="absolute inset-0 z-0">
   <Map
-    ref={mapRef}
-    initialViewState={{
-      longitude: -35.7353,
-      latitude: -9.6658,
-      zoom: 13
-    }}
-    style={{ 
-      width: '100%', 
-      height: '100%', 
-      position: 'relative',
-      pointerEvents: 'auto'  // Adicione esta linha
-    }}
-    mapStyle={mapStyles[mapStyle].url}
-    mapboxAccessToken={mapboxToken}
-    cursor={tracking && trackingInputMode === 'touch' && !paused ? 'crosshair' : 'grab'}
-    preserveDrawingBuffer={true}
+  ref={mapRef}
+  initialViewState={{
+    longitude: -35.7353,
+    latitude: -9.6658,
+    zoom: 13
+  }}
+  style={{ 
+    width: '100%', 
+    height: '100%',
+    position: 'relative'
+  }}
+  mapStyle={mapStyles[mapStyle].url}
+  mapboxAccessToken={mapboxToken}
+  cursor={tracking && trackingInputMode === 'touch' && !paused ? 'crosshair' : 'grab'}
+  preserveDrawingBuffer={true}
+  cooperativeGestures={true}
+  attributionControl={false}
+  maxPitch={0}
+  minZoom={10}
+  maxZoom={20}
+  onLoad={(e) => {
+    console.log('Mapa carregado com sucesso');
+    const map = e.target;
+    map.resize();
+  }}
+  onError={(e) => {
+    console.error('Erro no mapa:', e);
+  }}
+
     interactiveLayerIds={[  // Especifique quais layers são interativas
       'markers-hit-area',
       'segment-hit-area',
