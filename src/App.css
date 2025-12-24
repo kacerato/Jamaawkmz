@@ -3095,3 +3095,44 @@ input, textarea {
 .transition-all {
   transition-duration: 200ms !important; /* Mais rápido = Mais responsivo */
 }
+
+/* Remove bloqueios de clique no mapa */
+.mapboxgl-canvas-container {
+  pointer-events: auto !important;
+}
+
+.mapboxgl-canvas {
+  touch-action: pan-x pan-y !important;
+}
+
+/* Garante que os controles do mapa não bloqueiem cliques */
+.mapboxgl-control-container {
+  pointer-events: auto !important;
+}
+
+/* Remove bloqueios de layers interativas */
+.mapboxgl-map {
+  pointer-events: auto !important;
+}
+
+/* Ajusta o z-index para garantir que o mapa fique atrás dos controles mas responda a cliques */
+.mapboxgl-canvas-container {
+  z-index: 1 !important;
+}
+
+/* Remove qualquer overlay que possa estar bloqueando */
+.overlay-blocker {
+  display: none !important;
+}
+
+/* Estilo para garantir que o mapa responda a toques em dispositivos móveis */
+@media (max-width: 768px) {
+  .mapboxgl-map {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  
+  .mapboxgl-canvas {
+    touch-action: pan-x pan-y pinch-zoom !important;
+  }
+}

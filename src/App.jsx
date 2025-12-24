@@ -1187,7 +1187,7 @@ const calculateProjectDistance = useCallback((project) => {
   }, []);
 
 const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
-  try {
+      try {
     let finalPoints = pointsToSave;
     
     // Validações
@@ -1320,9 +1320,8 @@ const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
       setShowProjectDialog(false);
       setEditingProject(null);
       setProjectName('');
+      
       showFeedback('Sucesso', `Projeto salvo! Distância: ${formatDistanceDetailed(calculatedTotalDistance)}`, 'success');
-    } else {
-      showFeedback('Salvo', 'Projeto salvo automaticamente', 'info');
     }
     
   } catch (error) {
@@ -2446,6 +2445,74 @@ const handleSpanChange = (count) => {
     }
   };
   
+  const generateProjectSegmentsGeoJSON = useCallback((project) => {
+  if (!project || !project.points || project.points.length < 2) {
+    return { type: 'FeatureCollection', features: [] };
+  }
+  
+  const features = [];
+  const pointMap = new Map();
+  for (const p of project.points) pointMap.set(p.id, p);
+  
+  // 1. Distância Sequencial / Ramificações
+  for (let i = 0; i < project.points.length; i++) {
+    const point = project.points[i];
+    let parent = null;
+    
+    if (point.connectedFrom) {
+      parent = pointMap.get(point.connectedFrom);
+    } else if (i > 0) {
+      parent = project.points[i - 1];
+    }
+    
+    if (parent) {
+      const spans = point.spans || 1;
+      const color = SPAN_COLORS[spans] || '#06b6d4';
+      
+      // Linha do segmento
+      features.push({
+        type: 'Feature',
+        properties: {
+          type: 'segment',
+          targetPointId: point.id,
+          spans: spans,
+          color: color,
+          projectId: project.id
+        },
+        geometry: {
+          type: 'LineString',
+          coordinates: [
+            [parent.lng, parent.lat],
+            [point.lng, point.lat]
+          ]
+        }
+      });
+      
+      // Badge do vão (no meio do segmento)
+      const midLng = (parent.lng + point.lng) / 2;
+      const midLat = (parent.lat + point.lat) / 2;
+      
+      features.push({
+        type: 'Feature',
+        properties: {
+          type: 'badge',
+          targetPointId: point.id,
+          spans: spans,
+          label: `${spans}AG`,
+          color: color,
+          projectId: project.id
+        },
+        geometry: {
+          type: 'Point',
+          coordinates: [midLng, midLat]
+        }
+      });
+    }
+  }
+  
+  return { type: 'FeatureCollection', features };
+}, []);
+  
   const handleCalculateDistance = async () => {
     if (selectedForDistance.length !== 2) {
       showFeedback('Erro', 'Selecione exatamente 2 marcadores', 'error');
@@ -2747,38 +2814,123 @@ const addPoint = (position) => {
   };
   
   const stopTracking = async () => {
+  try {
+    // Se há pontos manuais e não está pausado
+    if (manualPoints.length > 0 && !paused) {
+      let projectNameToUse = projectName;
+      
+      // Se estiver continuando um projeto existente
+      if (currentProject) {
+        projectNameToUse = currentProject.name;
+        
+        // Atualiza o projeto existente com os novos pontos
+        const allPoints = [...(currentProject.points || []), ...manualPoints];
+        const calculatedTotalDistance = calculateTotalProjectDistance(allPoints, extraConnections);
+        
+        const updatedProject = {
+          ...currentProject,
+          points: allPoints,
+          total_distance: calculatedTotalDistance,
+          totalDistance: calculatedTotalDistance,
+          updated_at: new Date().toISOString()
+        };
+        
+        // Atualiza o projeto nos estados
+        setCurrentProject(updatedProject);
+        setLoadedProjects(prev =>
+          prev.map(p => p.id === updatedProject.id ? updatedProject : p)
+        );
+        
+        // Salva no Supabase se online
+        if (isOnline && user) {
+          const { error } = await supabase
+            .from('projetos')
+            .update({
+              points: allPoints,
+              total_distance: calculatedTotalDistance,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', currentProject.id);
+          
+          if (error) throw error;
+        }
+        
+        showFeedback('Atualizado', 'Projeto atualizado com novos pontos', 'success');
+      } else {
+        // Cria um novo projeto
+        projectNameToUse = projectName.trim() || `Rastreamento ${new Date().toLocaleString('pt-BR')}`;
+        const calculatedTotalDistance = calculateTotalProjectDistance(manualPoints, extraConnections);
+        
+        const projectData = {
+          name: projectNameToUse,
+          points: manualPoints,
+          extra_connections: extraConnections,
+          total_distance: calculatedTotalDistance,
+          bairro: selectedBairro !== 'todos' ? selectedBairro : 'Vários',
+          tracking_mode: 'manual',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          user_id: user?.id,
+          color: generateRandomColor()
+        };
+        
+        let savedProject;
+        
+        if (isOnline && user) {
+          const { data, error } = await supabase.from('projetos').insert([projectData]).select();
+          if (error) throw error;
+          savedProject = data[0];
+        } else {
+          savedProject = {
+            ...projectData,
+            id: `offline_${Date.now()}`,
+            color: generateRandomColor()
+          };
+        }
+        
+        const localProjectObj = {
+          ...savedProject,
+          totalDistance: calculatedTotalDistance,
+          color: savedProject.color || generateRandomColor()
+        };
+        
+        // Adiciona aos projetos carregados para manter o traçado visível
+        setLoadedProjects(prev => [...prev, localProjectObj]);
+        setProjects(prev => [localProjectObj, ...prev]);
+        
+        // Salva no Cache
+        const userProjects = storage.loadProjects(user?.id);
+        const otherProjects = userProjects.filter(p => p.id !== localProjectObj.id);
+        storage.saveProjects(user?.id, [localProjectObj, ...otherProjects]);
+        
+        showFeedback('Projeto Criado', 'Traçado salvo como novo projeto', 'success');
+      }
+    }
+    
+    // Libera o lock do projeto
     if (currentProject && isOnline && user) {
       await ProjectLockService.releaseLock(currentProject.id, user.id);
     }
     
-    try {
-      if (manualPoints.length > 0 && !showProjectDialog) {
-        let projectNameToUse = projectName;
-        if (currentProject && !projectName.trim()) {
-          projectNameToUse = currentProject.name;
-        } else if (!projectName.trim()) {
-          projectNameToUse = `Rastreamento ${new Date().toLocaleString('pt-BR')}`;
-        }
-        
-        if (projectNameToUse.trim() && manualPoints.length > 0) {
-          await saveProject(true, manualPoints);
-        }
-      }
-    } catch (error) {
-      console.error('Erro ao salvar projeto automaticamente:', error);
-    } finally {
-      setTracking(false);
-      setPaused(false);
-      setShowTrackingControls(false);
-      setManualPoints([]);
-      setExtraConnections([]);
-      setTotalDistance(0);
-      setSelectedStartPoint(null);
-      setPositionHistory([]);
-      setGpsAccuracy(null);
-      setSpeed(0);
-    }
-  };
+  } catch (error) {
+    console.error('Erro ao salvar automaticamente:', error);
+    showFeedback('Atenção', 'Traçado não foi salvo automaticamente', 'warning');
+  } finally {
+    // Limpa apenas os estados de rastreamento, mantendo projetos carregados
+    setTracking(false);
+    setPaused(false);
+    setShowTrackingControls(false);
+    setManualPoints([]);
+    setExtraConnections([]);
+    setTotalDistance(0);
+    setSelectedStartPoint(null);
+    setPositionHistory([]);
+    setGpsAccuracy(null);
+    setSpeed(0);
+    // NÃO limpa o currentProject aqui - ele precisa ficar para mostrar os traçados
+    setProjectName('');
+  }
+};
   
   const clearManualPoints = () => {
     setManualPoints([])
@@ -2977,18 +3129,29 @@ const addPoint = (position) => {
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-slate-900">
       <div className="absolute inset-0 z-0">
-        <Map
-          ref={mapRef}
-          initialViewState={{
-            longitude: -35.7353,
-            latitude: -9.6658,
-            zoom: 13
-          }}
-          style={{ width: '100%', height: '100%', position: 'relative' }}
-          mapStyle={mapStyles[mapStyle].url}
-          mapboxAccessToken={mapboxToken}
-          cursor={tracking && trackingInputMode === 'touch' && !paused ? 'crosshair' : 'auto'}
-          preserveDrawingBuffer={true}
+  <Map
+    ref={mapRef}
+    initialViewState={{
+      longitude: -35.7353,
+      latitude: -9.6658,
+      zoom: 13
+    }}
+    style={{ 
+      width: '100%', 
+      height: '100%', 
+      position: 'relative',
+      pointerEvents: 'auto'  // Adicione esta linha
+    }}
+    mapStyle={mapStyles[mapStyle].url}
+    mapboxAccessToken={mapboxToken}
+    cursor={tracking && trackingInputMode === 'touch' && !paused ? 'crosshair' : 'grab'}
+    preserveDrawingBuffer={true}
+    interactiveLayerIds={[  // Especifique quais layers são interativas
+      'markers-hit-area',
+      'segment-hit-area',
+      'segment-badge-bg'
+    ]}
+  
           onClick={async (e) => {
     // 1. Verificação de segurança: O mapa está carregado?
     if (!mapRef.current) return;
@@ -3099,54 +3262,70 @@ const addPoint = (position) => {
             />
           </Source>
 
-          {loadedProjects.map(project => (
-            <Source 
-              key={`source-${project.id}`}
-              id={`route-${project.id}`} 
-              type="geojson" 
-              data={{
-                type: 'FeatureCollection',
-                features: [
-                  {
-                    type: 'Feature',
-                    geometry: {
-                      type: 'LineString',
-                      coordinates: project.points
-                        .filter(point => !point.connectedFrom)
-                        .map(point => [point.lng, point.lat])
-                    }
-                  },
-                  ...project.points
-                    .filter(point => point.connectedFrom)
-                    .map(point => {
-                      const parent = project.points.find(p => p.id === point.connectedFrom);
-                      return parent ? {
-                        type: 'Feature',
-                        geometry: {
-                          type: 'LineString',
-                          coordinates: [[parent.lng, parent.lat], [point.lng, point.lat]]
-                        }
-                      } : null;
-                    }).filter(Boolean)
-                ]
-              }}
-            >
-              <Layer
-  id={`route-layer-${project.id}`}
-  type="line"
-  paint={{
-    'line-color': project.color,
-    'line-width': [
-      'interpolate', ['linear'], ['zoom'],
-      10, 1,
-      15, 3,
-      22, 6
-    ],
-    'line-opacity': 0.8
-  }}
-/>
-            </Source>
-          ))}
+         {/* CAMADA DE TRAÇADOS PARA PROJETOS CARREGADOS (COM VÃOS) */}
+{loadedProjects.map(project => {
+  if (!project.points || project.points.length < 2) return null;
+  
+  const segmentsData = generateProjectSegmentsGeoJSON(project);
+  
+  return (
+    <Source 
+      key={`segments-source-${project.id}`}
+      id={`segments-source-${project.id}`} 
+      type="geojson" 
+      data={segmentsData}
+    >
+      {/* Linhas dos segmentos */}
+      <Layer
+        id={`segment-line-${project.id}`}
+        type="line"
+        layout={{
+          'line-join': 'round',
+          'line-cap': 'round'
+        }}
+        paint={{
+          'line-color': ['get', 'color'],
+          'line-width': [
+            'interpolate', ['linear'], ['zoom'],
+            10, 1,
+            15, 3,
+            22, 6
+          ],
+          'line-opacity': 0.8
+        }}
+      />
+      
+      {/* Background dos badges */}
+      <Layer
+        id={`segment-badge-bg-${project.id}`}
+        type="circle"
+        filter={['==', 'type', 'badge']}
+        paint={{
+          'circle-radius': 8,
+          'circle-color': '#0f172a',
+          'circle-stroke-width': 2,
+          'circle-stroke-color': ['get', 'color']
+        }}
+      />
+      
+      {/* Texto dos badges */}
+      <Layer
+        id={`segment-badge-text-${project.id}`}
+        type="symbol"
+        filter={['==', 'type', 'badge']}
+        layout={{
+          'text-field': ['get', 'label'],
+          'text-size': 10,
+          'text-font': ['DIN Offc Pro Bold', 'Arial Unicode MS Bold'],
+          'text-allow-overlap': true
+        }}
+        paint={{
+          'text-color': '#ffffff'
+        }}
+      />
+    </Source>
+  );
+})}
 
           {loadedProjects.map(project => (
             <React.Fragment key={`markers-${project.id}`}>
