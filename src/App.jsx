@@ -74,6 +74,7 @@ import MultipleSelectionPopup from './components/MultipleSelectionPopup'
 import BairroDetectionService from './components/BairroDetectionService'
 import ProjectLockService from './services/ProjectLockService'
 import { useProjects } from './hooks/useProjects';
+import { useMapRef } from './hooks/useMapRef.js';
 
 // 1. NOVOS IMPORTS (UTILITÁRIOS E SERVIÇOS)
 // No início do App.jsx, atualize as importações:
