@@ -1,0 +1,30 @@
+# Dependencies
+/node_modules
+
+# Build artifacts
+/dist
+/build
+
+# Capacitor
+/ios
+/www
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Misc
+.DS_Store
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Mobile artifacts
+*.aab
+
+# Signing
+/android/app/keystore.jks
+/android/app/keystore.properties
