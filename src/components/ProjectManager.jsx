@@ -44,7 +44,6 @@ const ProjectManager = ({
       return project?.total_distance || project?.totalDistance || 0;
     }
     
-    // Calcula distância considerando vãos
     let totalDistance = 0;
     for (let i = 1; i < project.points.length; i++) {
       const current = project.points[i];
@@ -84,6 +83,22 @@ const ProjectManager = ({
       return sum + spans;
     }, 0) || 0;
 
+    const handleOpenMembers = (e) => {
+      e.stopPropagation();
+      if (onOpenMembers) {
+        onOpenMembers(project);
+      } else {
+        console.warn('onOpenMembers não está definido');
+      }
+    };
+
+    const handleOpenReport = (e) => {
+      e.stopPropagation();
+      if (onOpenReport) {
+        onOpenReport(project);
+      }
+    };
+
     return (
       <div className={`group relative bg-gradient-to-br from-slate-900/90 to-slate-800/90 backdrop-blur-md rounded-xl p-4 mb-3 transition-all duration-300 border ${
         isMine 
@@ -91,7 +106,6 @@ const ProjectManager = ({
           : 'border-purple-500/20 hover:border-purple-500/40 hover:shadow-[0_0_20px_rgba(168,85,247,0.2)]'
       } hover:scale-[1.02] hover:bg-slate-800/90`}>
         
-        {/* Header do Card */}
         <div className="flex justify-between items-start gap-4 mb-3">
           <div className="flex items-start gap-3 flex-1 min-w-0">
             <div className={`w-10 h-10 rounded-lg flex items-center justify-center border ${
@@ -153,7 +167,6 @@ const ProjectManager = ({
           </button>
         </div>
 
-        {/* Footer com botões de ação */}
         <div className="flex items-center gap-2 pt-3 border-t border-white/5">
           <Button 
             onClick={() => onLoadProject(project)}
@@ -169,7 +182,7 @@ const ProjectManager = ({
           <div className="flex bg-black/30 rounded-lg p-0.5 border border-white/5 items-center">
             <ActionButton 
               icon={Activity} 
-              onClick={() => onOpenMembers(project)} 
+              onClick={handleOpenMembers}
               title="Equipe" 
               color="text-slate-400 hover:text-purple-400 hover:bg-purple-500/10" 
               tooltip="Ver equipe"
@@ -177,7 +190,7 @@ const ProjectManager = ({
             <div className="w-px bg-white/5 h-4 mx-0.5"></div>
             <ActionButton 
               icon={ClipboardList} 
-              onClick={() => onOpenReport(project)} 
+              onClick={handleOpenReport}
               title="Relatório" 
               color="text-slate-400 hover:text-yellow-400 hover:bg-yellow-500/10"
               tooltip="Gerar relatório"
@@ -189,18 +202,6 @@ const ProjectManager = ({
               title="Exportar" 
               color="text-slate-400 hover:text-green-400 hover:bg-green-500/10"
               tooltip="Exportar KML"
-            />
-            <div className="w-px bg-white/5 h-4 mx-0.5"></div>
-            <ActionButton 
-              icon={Share2} 
-              onClick={() => {
-                const shareUrl = `${window.location.origin}/project/${project.id}`;
-                navigator.clipboard.writeText(shareUrl);
-                showFeedback('Copiado!', 'Link do projeto copiado para área de transferência', 'success');
-              }}
-              title="Compartilhar" 
-              color="text-slate-400 hover:text-blue-400 hover:bg-blue-500/10"
-              tooltip="Compartilhar link"
             />
             {isMine && (
               <>
@@ -227,7 +228,6 @@ const ProjectManager = ({
       title={tooltip || title}
     >
       <Icon size={14} />
-      {/* Tooltip */}
       <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover/btn:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50 border border-white/5">
         {title}
         <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 w-2 h-2 bg-slate-800 rotate-45 border-b border-r border-white/5"></div>
@@ -235,19 +235,12 @@ const ProjectManager = ({
     </button>
   );
 
-  // Função auxiliar para mostrar feedback (precisa ser passada do componente pai)
-  const showFeedback = (title, message, type) => {
-    // Esta função deve ser passada como prop do componente pai
-    console.log(`[${type}] ${title}: ${message}`);
-  };
-
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onClose}>
         <DialogContent className="fixed left-[50%] top-[50%] translate-x-[-50%] translate-y-[-50%] w-[95vw] max-w-md h-[85vh] p-0 border-none bg-transparent shadow-none [&>button]:hidden">
           <div className="flex flex-col h-full bg-slate-950/95 backdrop-blur-2xl rounded-[24px] overflow-hidden border border-white/10 shadow-2xl">
             
-            {/* Header fixo */}
             <div className="flex-none p-5 pb-3 bg-gradient-to-b from-slate-900 to-transparent border-b border-white/5">
               <div className="flex justify-between items-center mb-4">
                 <DialogTitle className="text-lg font-bold text-white flex items-center gap-2">
@@ -264,7 +257,6 @@ const ProjectManager = ({
                 </button>
               </div>
 
-              {/* Tabs */}
               <div className="bg-black/30 p-1 rounded-xl flex mb-4 border border-white/5">
                 {['mine', 'shared'].map(tab => (
                   <button 
@@ -284,7 +276,6 @@ const ProjectManager = ({
                 ))}
               </div>
 
-              {/* Barra de busca */}
               <div className="relative group mb-3">
                 <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-500 group-focus-within:text-cyan-400 transition-colors" />
                 <input 
@@ -296,7 +287,6 @@ const ProjectManager = ({
                 />
               </div>
               
-              {/* Input para juntar-se a projeto (apenas na aba shared) */}
               {activeTab === 'shared' && (
                 <div className="flex gap-2 mt-2">
                   <div className="relative flex-1">
@@ -318,7 +308,6 @@ const ProjectManager = ({
               )}
             </div>
 
-            {/* Lista de projetos (scrollável) */}
             <div className="flex-1 overflow-y-auto px-5 py-3 custom-scrollbar space-y-2">
               {displayedProjects.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-40 text-slate-500">
@@ -340,7 +329,6 @@ const ProjectManager = ({
               )}
             </div>
 
-            {/* Footer */}
             <div className="flex-none p-3 border-t border-white/5 bg-slate-900/50">
               <div className="flex items-center justify-between text-xs text-slate-500">
                 <div className="flex items-center gap-2">
@@ -357,7 +345,6 @@ const ProjectManager = ({
         </DialogContent>
       </Dialog>
       
-      {/* Diálogo de confirmação de exclusão */}
       <AlertDialog open={!!projectToDelete} onOpenChange={() => setProjectToDelete(null)}>
         <AlertDialogContent className="bg-slate-900 border border-slate-700 text-white rounded-2xl max-w-xs backdrop-blur-md">
           <AlertDialogHeader>
@@ -387,7 +374,6 @@ const ProjectManager = ({
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Diálogo de renomear */}
       <Dialog open={!!renameData} onOpenChange={() => setRenameData(null)}>
         <DialogContent className="bg-slate-900 border border-slate-700 text-white rounded-2xl max-w-xs backdrop-blur-md">
           <DialogHeader>
