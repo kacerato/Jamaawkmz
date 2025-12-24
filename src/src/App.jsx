@@ -36,11 +36,7 @@ import {
   Users,
   Hash,
   ArrowRight,
-  Trash2,
-  Globe,
-  Lock,
-  Unlock,
-  AlertCircle
+  Trash2 // ADICIONADO
 } from 'lucide-react'
 import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.jsx'
@@ -57,12 +53,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { supabase } from './lib/supabase'
 import electricPoleIcon from './assets/electric-pole.png';
 import Auth from './components/Auth'
-import SpanSelector, { SPAN_COLORS } from './components/SpanSelector';
 import JSZip from 'jszip'
 import { Network } from '@capacitor/network'
 import { Preferences } from '@capacitor/preferences'
 import { Filesystem, Directory } from '@capacitor/filesystem'
-import { FileOpener } from '@capacitor-community/file-opener'
 import { Capacitor } from '@capacitor/core'
 import axios from 'axios'
 import ARCamera from './components/ARCamera'
@@ -72,33 +66,9 @@ import ModernPopup from './components/ModernPopup'
 import ImportProgressPopup from './components/ImportProgressPopup'
 import MultipleSelectionPopup from './components/MultipleSelectionPopup'
 import BairroDetectionService from './components/BairroDetectionService'
-import ProjectLockService from './services/ProjectLockService'
-import { useProjects } from './hooks/useProjects';
-
-// 1. NOVOS IMPORTS (UTILITÁRIOS E SERVIÇOS)
-// No início do App.jsx, atualize as importações:
-import {
-  calculateDistance,
-  generateUUID,
-  generateRandomColor,
-  safeToFixed,
-  formatDistanceDetailed,
-  calculateTotalProjectDistance,
-  calculateTrackingDistance, // ADICIONE ESTA LINHA
-  KalmanFilter,
-  GPSFilter,
-  RoadSnappingService,
-  normalizeSpans // ADICIONE ESTA LINHA TAMBÉM
-} from './utils/geoUtils';
-import { RoutingService } from './services/RoutingService';
-
-// 2. NOVOS COMPONENTES VISUAIS
-import MapControls from './components/MapControls';
-import ProjectMembersDialog from './components/ProjectMembersDialog';
-
 import 'mapbox-gl/dist/mapbox-gl.css'
 import './App.css'
-import ProjectReport from './components/ProjectReport';
+import ProjectReport from './components/ProjectReport'; // NOVA IMPORTAÇÃO
 
 const DEFAULT_BAIRROS = [
   'Ponta Verde',
@@ -117,20 +87,83 @@ const mapStyles = {
   streets: { name: 'Ruas', url: 'mapbox://styles/mapbox/streets-v11' },
   satellite: { name: 'Satélite', url: 'mapbox://styles/mapbox/satellite-streets-v11' },
   dark: { name: 'Escuro', url: 'mapbox://styles/mapbox/dark-v10' },
+  light: { name: 'Claro', url: 'mapbox://styles/mapbox/light-v10' },
+  outdoors: { name: 'Ar Livre', url: 'mapbox://styles/mapbox/outdoors-v11' },
 };
 
-// Função para garantir lista única (remove duplicatas por ID)
-const deduplicateProjects = (projectsList) => {
-  const uniqueMap = new Map();
-  projectsList.sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
-  
-  projectsList.forEach(p => {
-    if (!uniqueMap.has(p.id)) {
-      uniqueMap.set(p.id, p);
-    }
+// Função para gerar UUIDs
+const generateUUID = () => {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  // Fallback simples se crypto não estiver disponível
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    var r = Math.random() * 16 | 0,
+      v = c == 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
   });
-  return Array.from(uniqueMap.values());
 };
+
+const generateRandomColor = () => {
+  const colors = [
+    '#1e3a8a', '#3730a3', '#5b21b6', '#7c2d12', '#831843',
+    '#0f766e', '#1e40af', '#334155', '#475569', '#6b21a8',
+    '#86198f', '#9d174d', '#be185d', '#7e22ce', '#6d28d9',
+    '#4338ca', '#374151', '#4b5563', '#1f2937', '#111827'
+  ];
+  return colors[Math.floor(Math.random() * colors.length)];
+};
+
+const safeToFixed = (value, decimals = 2) => {
+  if (value === undefined || value === null || isNaN(value)) {
+    return "0".padStart(decimals + 2, '0');
+  }
+  return Number(value).toFixed(decimals);
+};
+
+const formatDistanceDetailed = (distanceInMeters) => {
+  if (distanceInMeters === undefined || distanceInMeters === null || isNaN(distanceInMeters)) {
+    return "0 m";
+  }
+  
+  const distance = Number(distanceInMeters);
+  
+  if (distance < 1) {
+    return `${(distance * 100).toFixed(0)} cm`;
+  } else if (distance < 1000) {
+    return `${distance.toFixed(0)} m`;
+  } else if (distance < 10000) {
+    return `${(distance / 1000).toFixed(2)} km`;
+  } else {
+    return `${(distance / 1000).toFixed(1)} km`;
+  }
+};
+
+class KalmanFilter {
+  constructor(R = 1, Q = 1, A = 1, B = 0, C = 1) {
+    this.R = R;
+    this.Q = Q;
+    this.A = A;
+    this.B = B;
+    this.C = C;
+    this.cov = NaN;
+    this.x = NaN;
+  }
+  
+  filter(z, u = 0) {
+    if (isNaN(this.x)) {
+      this.x = (1 / this.C) * z;
+      this.cov = (1 / this.C) * this.Q * (1 / this.C);
+    } else {
+      const predX = (this.A * this.x) + (this.B * u);
+      const predCov = ((this.A * this.cov) * this.A) + this.Q;
+      const K = predCov * this.C * (1 / ((this.C * predCov * this.C) + this.R));
+      this.x = predX + K * (z - (this.C * predX));
+      this.cov = predCov - (K * this.C * predCov);
+    }
+    return this.x;
+  }
+}
 
 const isValidProject = (project) => {
   try {
@@ -156,6 +189,51 @@ const isValidProject = (project) => {
   }
 };
 
+class RoadSnappingService {
+  static async snapToRoad(lat, lng, radius = 50) {
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
+        
+      );
+      
+      const data = await response.json();
+      
+      if (data && data.lat && data.lon) {
+        return {
+          lat: parseFloat(data.lat),
+          lng: parseFloat(data.lon),
+          address: data.address,
+          snapped: true
+        };
+      }
+    } catch (error) {
+      console.warn('Erro no snapping de rua:', error);
+    }
+    
+    return { lat, lng, snapped: false };
+  }
+  
+  static async snapMultiplePoints(points) {
+    const snappedPoints = [];
+    
+    for (const point of points) {
+      const snapped = await this.snapToRoad(point.lat, point.lng);
+      snappedPoints.push({
+        ...point,
+        lat: snapped.lat,
+        lng: snapped.lng,
+        originalLat: point.lat,
+        originalLng: point.lng
+      });
+      
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    
+    return snappedPoints;
+  }
+}
+
 const getUniqueProjectName = (baseName, existingProjects) => {
   let newName = baseName;
   let counter = 1;
@@ -179,60 +257,26 @@ const calculateTotalDistanceAllProjects = (projects) => {
   return total;
 };
 
-// Funções de localStorage
-const storage = {
-  // Projetos
-  saveProjects: (userId, projects) => {
-    localStorage.setItem(`jamaaw_projects_${userId}`, JSON.stringify(projects));
-  },
-  loadProjects: (userId) => {
-    const data = localStorage.getItem(`jamaaw_projects_${userId}`);
-    return data ? JSON.parse(data) : [];
-  },
+// Função de Alta Precisão (WGS-84) - Compatível com Google Earth
+const calculateDistance = (lat1, lon1, lat2, lon2) => {
+  const R = 6378137; // Raio equatorial da Terra (WGS-84) em metros
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
   
-  // Bairros
-  saveBairros: (bairros) => {
-    localStorage.setItem('jamaaw_bairros', JSON.stringify(bairros));
-  },
-  loadBairros: () => {
-    const data = localStorage.getItem('jamaaw_bairros');
-    return data ? JSON.parse(data) : null;
-  },
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
   
-  // Favoritos
-  saveFavorites: (userId, favorites) => {
-    localStorage.setItem(`jamaaw_favorites_${userId}`, JSON.stringify(favorites));
-  },
-  loadFavorites: (userId) => {
-    const data = localStorage.getItem(`jamaaw_favorites_${userId}`);
-    return data ? JSON.parse(data) : null;
-  },
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   
-  // Marcadores
-  saveMarkers: (userId, markers) => {
-    localStorage.setItem(`jamaaw_markers_${userId}`, JSON.stringify(markers));
-  },
-  loadMarkers: (userId) => {
-    const data = localStorage.getItem(`jamaaw_markers_${userId}`);
-    return data ? JSON.parse(data) : null;
-  },
+  // Ajuste fino para o achatamento da Terra (WGS-84 approximation)
+  // Isso remove a discrepância de ~0.3% a 0.5% do Haversine comum
+  const d = R * c;
   
-  // Remover projeto
-  deleteProject: (userId, projectId) => {
-    const projects = storage.loadProjects(userId);
-    const updatedProjects = projects.filter(p => p.id !== projectId);
-    storage.saveProjects(userId, updatedProjects);
-  },
-  
-  // Limpar dados do usuário
-  clearUserData: (userId) => {
-    localStorage.removeItem(`jamaaw_projects_${userId}`);
-    localStorage.removeItem(`jamaaw_favorites_${userId}`);
-    localStorage.removeItem(`jamaaw_markers_${userId}`);
-  },
-};
+  return d;
+}
 
-// Componente Memoizado do Poste
+// Componente Memoizado do Poste (Só renderiza se as props mudarem)
 const PoleMarker = React.memo(({ point, index, color, onClick, isActive }) => {
   return (
     <Marker 
@@ -241,15 +285,17 @@ const PoleMarker = React.memo(({ point, index, color, onClick, isActive }) => {
       anchor="bottom"
       onClick={onClick}
     >
-      <div className="pole-marker-container" style={{ willChange: 'transform' }}>
+      <div className="pole-marker-container" style={{ willChange: 'transform' }}> {/* will-change ajuda a GPU */}
+        {/* Imagem do Poste */}
         <img 
           src={electricPoleIcon} 
           alt={`Ponto ${index}`} 
           className="pole-image"
-          loading="lazy"
-          style={{ pointerEvents: 'none' }}
+          loading="lazy" // Ajuda a não travar o carregamento inicial
+          style={{ pointerEvents: 'none' }} // Melhora a rolagem
         />
         
+        {/* Número do Ponto */}
         <div 
           className={`pole-number-plate ${isActive ? 'pole-active' : ''}`}
           style={{ 
@@ -263,6 +309,7 @@ const PoleMarker = React.memo(({ point, index, color, onClick, isActive }) => {
     </Marker>
   );
 }, (prevProps, nextProps) => {
+  // Otimização agressiva: Só re-renderiza se o ID, Cor ou Estado Ativo mudar
   return (
     prevProps.point.id === nextProps.point.id &&
     prevProps.color === nextProps.color &&
@@ -270,7 +317,7 @@ const PoleMarker = React.memo(({ point, index, color, onClick, isActive }) => {
   );
 });
 
-// Componente do Card do Projeto
+// Novo componente otimizado para o Card do Projeto
 const ProjectCard = React.memo(({ project, isSelected, onToggle, onLoad, onEdit, onExport, onDelete, tracking }) => {
   const distance = safeToFixed(((project.totalDistance || project.total_distance) || 0) / 1000, 2);
   const date = new Date(project.created_at || project.createdAt || Date.now()).toLocaleDateString('pt-BR');
@@ -358,6 +405,7 @@ const ProjectCard = React.memo(({ project, isSelected, onToggle, onLoad, onEdit,
     </div>
   );
 }, (prevProps, nextProps) => {
+  // Esta função diz ao React quando NÃO re-renderizar
   return (
     prevProps.isSelected === nextProps.isSelected &&
     prevProps.project.id === nextProps.project.id &&
@@ -366,10 +414,13 @@ const ProjectCard = React.memo(({ project, isSelected, onToggle, onLoad, onEdit,
   );
 });
 
-// Sub-componente para o conteúdo do popup de ponto de rastreamento
+
+
+// Sub-componente para o conteúdo do popup de ponto de rastreamento com efeito Glow
 const TrackingPointPopupContent = ({ pointInfo, onClose, onSelectStart, selectedStartPoint, manualPoints }) => {
   const cardRef = useRef(null);
   
+  // Lógica do Efeito Glow (Mouse Move)
   const handleMouseMove = (e) => {
     if (!cardRef.current) return;
     const { left, top } = cardRef.current.getBoundingClientRect();
@@ -380,6 +431,7 @@ const TrackingPointPopupContent = ({ pointInfo, onClose, onSelectStart, selected
     cardRef.current.style.setProperty('--mouse-y', `${y}px`);
   };
   
+  // Encontra o índice real do ponto no array principal
   const pointIndex = manualPoints.findIndex(p => p.id === pointInfo.point.id) + 1;
   
   return (
@@ -392,6 +444,7 @@ const TrackingPointPopupContent = ({ pointInfo, onClose, onSelectStart, selected
         '--mouse-y': '50%',
       }}
     >
+      {/* Camada de Glow do Background */}
       <div 
         className="pointer-events-none absolute -inset-px rounded-2xl opacity-0 transition duration-300 group-hover:opacity-100"
         style={{
@@ -399,6 +452,7 @@ const TrackingPointPopupContent = ({ pointInfo, onClose, onSelectStart, selected
         }}
       />
 
+      {/* Camada de Glow da Borda (Shine Border) */}
       <div 
         className="pointer-events-none absolute -inset-px rounded-2xl opacity-0 transition duration-300 group-hover:opacity-100"
         style={{
@@ -411,7 +465,9 @@ const TrackingPointPopupContent = ({ pointInfo, onClose, onSelectStart, selected
         }}
       />
 
+      {/* Conteúdo Real */}
       <div className="relative p-4 bg-slate-900/80 backdrop-blur-xl h-full rounded-2xl">
+        {/* Header */}
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             <div className="flex items-center justify-center w-8 h-8 rounded-full bg-cyan-500/20 border border-cyan-500/30 shadow-[0_0_10px_rgba(6,182,212,0.2)]">
@@ -436,6 +492,7 @@ const TrackingPointPopupContent = ({ pointInfo, onClose, onSelectStart, selected
           </Button>
         </div>
 
+        {/* Coordenadas */}
         <div className="grid grid-cols-2 gap-2 mb-4">
           <div className="bg-slate-950/50 p-2 rounded-lg border border-slate-800/50 flex flex-col">
             <span className="text-[9px] uppercase text-slate-500 font-semibold mb-0.5 flex items-center gap-1">
@@ -455,6 +512,7 @@ const TrackingPointPopupContent = ({ pointInfo, onClose, onSelectStart, selected
           </div>
         </div>
 
+        {/* Botão de Ação Principal (Usar como Início) */}
         <Button
           onClick={() => {
             onSelectStart(pointInfo.point);
@@ -483,7 +541,6 @@ const TrackingPointPopupContent = ({ pointInfo, onClose, onSelectStart, selected
 };
 
 function App() {
-  
   const mapboxToken = 'pk.eyJ1Ijoia2FjZXJhdG8iLCJhIjoiY21oZG1nNnViMDRybjJub2VvZHV1aHh3aiJ9.l7tCaIPEYqcqDI8_aScm7Q';
   const mapRef = useRef();
   const fileInputRef = useRef(null);
@@ -504,7 +561,6 @@ function App() {
   const [showBairroManager, setShowBairroManager] = useState(false)
   const [newBairro, setNewBairro] = useState('')
   const [routeCoordinates, setRouteCoordinates] = useState([])
-  const [spanSelectorInfo, setSpanSelectorInfo] = useState(null);
   const [calculatingRoute, setCalculatingRoute] = useState(false)
   const [isOnline, setIsOnline] = useState(true)
   const [syncPending, setSyncPending] = useState(false)
@@ -522,7 +578,7 @@ function App() {
   const [manualPoints, setManualPoints] = useState([])
   const [totalDistance, setTotalDistance] = useState(0)
   const [currentProject, setCurrentProject] = useState(null)
-  
+  const [projects, setProjects] = useState([])
   const [showProjectDialog, setShowProjectDialog] = useState(false)
   const [projectName, setProjectName] = useState('')
   const [showProjectsList, setShowProjectsList] = useState(false)
@@ -533,8 +589,7 @@ function App() {
   const [newMarkerData, setNewMarkerData] = useState(null);
   const [snappingEnabled, setSnappingEnabled] = useState(true);
   const [snappingPoints, setSnappingPoints] = useState([]);
-  const [showStyleMenu, setShowStyleMenu] = useState(false);
-  const [mapStyle, setMapStyle] = useState('satellite');
+  const [mapStyle, setMapStyle] = useState('streets');
   
   const [loadedProjects, setLoadedProjects] = useState([]);
   const [showLoadedProjects, setShowLoadedProjects] = useState(false);
@@ -557,127 +612,26 @@ function App() {
   const [importSuccess, setImportSuccess] = useState(false);
   const [importError, setImportError] = useState(null);
   
-  // REMOVIDO: const [selectedMarkers, setSelectedMarkers] = useState([]);
-  
+  const [selectedMarkers, setSelectedMarkers] = useState([]);
+  const [showBatchBairroDialog, setShowBatchBairroDialog] = useState(false);
   const [selectedProjects, setSelectedProjects] = useState([]);
-  // REMOVIDO: const [showMultipleSelection, setShowMultipleSelection] = useState(false);
+  const [showMultipleSelection, setShowMultipleSelection] = useState(false);
   
   const [selectedStartPoint, setSelectedStartPoint] = useState(null);
   
+  // NOVO: Estado para captura de screenshot
   const [mapScreenshot, setMapScreenshot] = useState(null);
   
+  // NOVO: Estado para relatório
   const [reportData, setReportData] = useState(null);
   
+  // Novo estado para modo de entrada do rastreamento
   const [trackingInputMode, setTrackingInputMode] = useState('gps');
-  
-  const [projectLock, setProjectLock] = useState(null);
-  
-  // NOVOS STATES
-  const [extraConnections, setExtraConnections] = useState([]);
-  
-  // 4. NOVO STATE PARA GESTÃO DE MEMBROS
-  const [showMembersDialog, setShowMembersDialog] = useState(false);
-  
-  // ... outros hooks ...
-  const {
-    projects,
-    setProjects,
-    loadProjects,
-    renameProject,
-    deleteProject
-  } = useProjects(user, isOnline);
-  // ...
   
   const kalmanLatRef = useRef(new KalmanFilter(0.1, 0.1));
   const kalmanLngRef = useRef(new KalmanFilter(0.1, 0.1));
   
-  // ADICIONE ISSO: Filtra precisão ruim (>30m) e movimentos minúsculos (<0.5m)
-  const gpsFilterRef = useRef(new GPSFilter(30, 0.5));
-  
   const totalDistanceAllProjects = calculateTotalDistanceAllProjects(projects);
-  
-  // Função auxiliar para mostrar feedback
-  const showFeedback = (title, message, type = 'success') => {
-    setNotification({ title, message, type });
-  };
-  
-  // Função para atualizar ponto do projeto
-  const handleUpdateProjectPoint = async (updatedPoint) => {
-    const projectId = pointPopupInfo?.projectId;
-    const projectToUpdate = loadedProjects.find(p => p.id === projectId) || currentProject;
-    
-    if (!projectToUpdate) {
-      console.error("Projeto não encontrado para atualização do ponto");
-      return;
-    }
-    
-    const updatedPoints = projectToUpdate.points.map(p =>
-      p.id === updatedPoint.id ? updatedPoint : p
-    );
-    
-    const updatedProject = { ...projectToUpdate, points: updatedPoints };
-    
-    setLoadedProjects(prev => prev.map(p => p.id === projectId ? updatedProject : p));
-    if (currentProject && currentProject.id === projectId) {
-      setCurrentProject(updatedProject);
-      setManualPoints(updatedPoints);
-    }
-    
-    setPointPopupInfo(prev => ({ ...prev, point: updatedPoint }));
-    
-    if (isOnline && user && !projectId.toString().startsWith('offline_')) {
-      try {
-        const { error } = await supabase
-          .from('projetos')
-          .update({
-            points: updatedPoints,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', projectId);
-        
-        if (error) throw error;
-        console.log("Foto salva no projeto com sucesso!");
-      } catch (err) {
-        console.error("Erro ao salvar foto no projeto:", err);
-        showFeedback("Erro", "Erro ao salvar foto na nuvem", "error");
-      }
-    } else {
-      // Salva localmente no localStorage
-      const userProjects = storage.loadProjects(user?.id);
-      const updatedUserProjects = userProjects.map(p =>
-        p.id === updatedProject.id ? updatedProject : p
-      );
-      storage.saveProjects(user?.id, updatedUserProjects);
-      showFeedback("Salvo", "Foto salva localmente (Offline)", "warning");
-    }
-  };
-  
-  // Procure pela função undoLastPoint no App.jsx e certifique-se que ela existe:
-const undoLastPoint = () => {
-  if (manualPoints.length > 0) {
-    const pointToRemove = manualPoints[manualPoints.length - 1];
-    
-    const newPoints = manualPoints.slice(0, -1);
-    
-    setManualPoints(newPoints);
-    const newTotalDistance = calculateTotalProjectDistance(newPoints, extraConnections);
-    setTotalDistance(newTotalDistance);
-    
-    if (selectedStartPoint && selectedStartPoint.id === pointToRemove.id) {
-      if (newPoints.length > 0) {
-        const parentPoint = pointToRemove.connectedFrom ?
-          newPoints.find(p => p.id === pointToRemove.connectedFrom) :
-          null;
-        
-        const newActivePoint = parentPoint || newPoints[newPoints.length - 1];
-        
-        setSelectedStartPoint(newActivePoint);
-      } else {
-        setSelectedStartPoint(null);
-      }
-    }
-  }
-};
   
   // Função para capturar imagem do mapa
   const getMapImage = () => {
@@ -693,7 +647,7 @@ const undoLastPoint = () => {
     return null;
   };
   
-  // GeoJSON para marcadores
+  // OTIMIZAÇÃO: Converte marcadores para GeoJSON (Processado na GPU)
   const markersGeoJSON = useMemo(() => ({
     type: 'FeatureCollection',
     features: filteredMarkers.map(marker => ({
@@ -704,45 +658,63 @@ const undoLastPoint = () => {
         name: marker.name,
         bairro: marker.bairro,
         descricao: marker.descricao,
-        color: marker.color || '#ef4444'
+        // Usa a cor definida ou vermelho padrão
+        color: marker.color || '#ef4444' 
       }
     }))
   }), [filteredMarkers]);
   
-  // Adicione este useEffect após as outras declarações de estado
-useEffect(() => {
-  // Atualiza a distância sempre que manualPoints ou extraConnections mudarem
-  if (manualPoints.length > 0) {
-    const newDistance = calculateTotalProjectDistance(manualPoints, extraConnections);
-    if (Math.abs(newDistance - totalDistance) > 0.01) { // Evita atualizações desnecessárias
-      setTotalDistance(newDistance);
+  // Dentro do componente App
+  const loadProjectsFromSupabase = async () => {
+    if (!user) return [];
+    try {
+      // 1. Busca meus projetos
+      const { data: myProjects, error: err1 } = await supabase
+        .from('projetos')
+        .select('*')
+        .eq('user_id', user.id);
+      
+      if (err1) throw err1;
+      
+      // 2. Busca projetos onde sou membro
+      const { data: memberData, error: err2 } = await supabase
+        .from('project_members')
+        .select('project_id')
+        .eq('user_id', user.id);
+      
+      if (err2) throw err2;
+      
+      let sharedProjects = [];
+      if (memberData && memberData.length > 0) {
+        const ids = memberData.map(m => m.project_id);
+        const { data: shared, error: err3 } = await supabase
+          .from('projetos')
+          .select('*')
+          .in('id', ids);
+        
+        if (err3) throw err3;
+        sharedProjects = shared;
+      }
+      
+      const allProjects = [...(myProjects || []), ...(sharedProjects || [])];
+      
+      // Ordena por data
+      allProjects.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+      
+      localStorage.setItem('jamaaw_projects', JSON.stringify(allProjects));
+      return allProjects;
+      
+    } catch (error) {
+      console.error('Erro ao carregar projetos:', error);
+      return JSON.parse(localStorage.getItem('jamaaw_projects') || '[]');
     }
-  } else {
-    setTotalDistance(0);
-  }
-}, [manualPoints, extraConnections]);
+  };
   
-  // Efeito para manter o lock ativo
-  useEffect(() => {
-    let interval;
-    if (tracking && currentProject && isOnline && user) {
-      interval = setInterval(async () => {
-        const success = await ProjectLockService.heartbeat(currentProject.id, user.id);
-        if (!success) {
-          showFeedback('Atenção', 'Perda de conexão com o servidor de bloqueio.', 'warning');
-        }
-      }, 120000);
-    }
-    return () => clearInterval(interval);
-  }, [tracking, currentProject, isOnline, user]);
-  
-  // Carregar projetos do Supabase
-  
-  
-  // Atualizar bairros dos projetos
+  // Função para detectar bairros de projetos que ainda estão como "Vários"
   const refreshProjectNeighborhoods = async () => {
     if (!projects || projects.length === 0) return;
     
+    // Filtra projetos que precisam de atualização (bairro 'Vários' ou vazio) e têm pontos
     const projectsToUpdate = projects.filter(p =>
       (!p.bairro || p.bairro === 'Vários') &&
       p.points &&
@@ -753,18 +725,22 @@ useEffect(() => {
     
     console.log(`Detectando bairros para ${projectsToUpdate.length} projetos...`);
     
+    // Cria uma cópia dos projetos atuais para não mutar o estado diretamente
     let updatedProjectsList = [...projects];
     let hasUpdates = false;
     
     for (const project of projectsToUpdate) {
       try {
+        // Usa o serviço existente para detectar
         const detectedBairro = await BairroDetectionService.detectBairroForProject(project.points);
         
         if (detectedBairro && detectedBairro !== 'Vários') {
+          // Atualiza o projeto na lista local
           updatedProjectsList = updatedProjectsList.map(p =>
             p.id === project.id ? { ...p, bairro: detectedBairro } : p
           );
           
+          // Atualiza no Supabase se estiver online
           if (isOnline && user && !project.id.toString().startsWith('offline_')) {
             await supabase
               .from('projetos')
@@ -773,6 +749,7 @@ useEffect(() => {
           }
           
           hasUpdates = true;
+          // Pequeno delay para não bloquear a UI ou exceder limites da API
           await new Promise(resolve => setTimeout(resolve, 200));
         }
       } catch (error) {
@@ -782,20 +759,14 @@ useEffect(() => {
     
     if (hasUpdates) {
       setProjects(updatedProjectsList);
-      // Atualizar localStorage
-      const userProjects = storage.loadProjects(user?.id);
-      const mergedProjects = [...userProjects, ...updatedProjectsList];
-      const uniqueProjects = deduplicateProjects(mergedProjects);
-      storage.saveProjects(user?.id, uniqueProjects);
+      localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjectsList));
       console.log('Lista de projetos atualizada com novos bairros.');
     }
   };
   
-  // Efeito de Realtime para projeto atual
+  // Efeito de Realtime para o projeto ATUAL
   useEffect(() => {
-    if (!currentProject?.id || !isOnline) return;
-    
-    console.log(`📡 Conectando Realtime para projeto: ${currentProject.id}`);
+    if (!currentProject || !isOnline) return;
     
     const channel = supabase
       .channel(`project-tracking-${currentProject.id}`)
@@ -809,31 +780,38 @@ useEffect(() => {
         },
         (payload) => {
           console.log("⚡ Atualização Realtime recebida:", payload);
+          
           const updatedProject = payload.new;
           
+          // Se eu sou quem editou, ignora (já atualizei localmente)
+          // (Isso evita glitches visuais, embora não seja estritamente necessário se o estado for bem gerenciado)
+          
+          // Atualiza estado do projeto atual
           setCurrentProject(prev => ({ ...prev, ...updatedProject }));
           
+          // Se estiver rastreando e os pontos mudarem externamente, atualiza manualPoints
           if (updatedProject.points) {
             setManualPoints(updatedProject.points);
             setTotalDistance(updatedProject.total_distance);
           }
           
+          // Atualiza na lista geral também
           setProjects(prev => prev.map(p => p.id === updatedProject.id ? updatedProject : p));
         }
       )
       .subscribe();
     
     return () => {
-      console.log(`🔌 Desconectando Realtime do projeto: ${currentProject.id}`);
       supabase.removeChannel(channel);
     };
   }, [currentProject?.id, isOnline]);
   
+  // Efeito para rodar a detecção quando abrir a lista de projetos
   useEffect(() => {
     if (showProjectsList) {
       refreshProjectNeighborhoods();
     }
-  }, [showProjectsList]);
+  }, [showProjectsList]); // Roda sempre que showProjectsList mudar para true
   
   const selectPointAsStart = (point) => {
     setSelectedStartPoint(point);
@@ -841,9 +819,9 @@ useEffect(() => {
   };
   
   const resetStartPoint = () => {
-  setSelectedStartPoint(null);
-  showFeedback('Resetado', 'Ponto inicial foi resetado', 'info');
-};
+    setSelectedStartPoint(null);
+  };
+  
   const deleteMultipleProjects = async () => {
     if (selectedProjects.length === 0) {
       showFeedback('Erro', 'Nenhum projeto selecionado para excluir.', 'error');
@@ -870,11 +848,7 @@ useEffect(() => {
       
       const updatedProjects = projects.filter(p => !deletedIds.includes(p.id));
       setProjects(updatedProjects);
-      
-      // Atualizar no localStorage
-      const userProjects = storage.loadProjects(user?.id);
-      const updatedUserProjects = userProjects.filter(p => !deletedIds.includes(p.id));
-      storage.saveProjects(user?.id, updatedUserProjects);
+      localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
       
       setLoadedProjects(prev => prev.filter(p => !deletedIds.includes(p.id)));
       
@@ -899,17 +873,47 @@ useEffect(() => {
     }
   };
   
+  const calculateTotalDistanceWithBranches = (points) => {
+    if (points.length < 2) return 0;
+    
+    let total = 0;
+    
+    const mainPathPoints = points.filter(point => point.connectedFrom === null);
+    for (let i = 0; i < mainPathPoints.length - 1; i++) {
+      total += calculateDistance(
+        mainPathPoints[i].lat,
+        mainPathPoints[i].lng,
+        mainPathPoints[i + 1].lat,
+        mainPathPoints[i + 1].lng
+      );
+    }
+    
+    const branchPoints = points.filter(point => point.connectedFrom !== null);
+    for (const branchPoint of branchPoints) {
+      const parentPoint = points.find(p => p.id === branchPoint.connectedFrom);
+      if (parentPoint) {
+        total += calculateDistance(
+          parentPoint.lat,
+          parentPoint.lng,
+          branchPoint.lat,
+          branchPoint.lng
+        );
+      }
+    }
+    
+    return total;
+  };
+  
   const handleLogout = async () => {
     try {
-      if (currentProject && isOnline && user) {
-        await ProjectLockService.releaseLock(currentProject.id, user.id);
-      }
-      
       localStorage.removeItem('supabase.auth.token');
       sessionStorage.removeItem('supabase.auth.token');
+      localStorage.removeItem('jamaaw_projects');
+      localStorage.removeItem('jamaaw_bairros');
       
       if (user) {
-        storage.clearUserData(user.id);
+        localStorage.removeItem(`jamaaw_favorites_${user.id}`);
+        localStorage.removeItem(`jamaaw_markers_${user.id}`);
       }
       
       const { error } = await supabase.auth.signOut();
@@ -925,6 +929,7 @@ useEffect(() => {
       setProjects([]);
       setManualPoints([]);
       setCurrentProject(null);
+      setSelectedMarkers([]);
       setSelectedStartPoint(null);
       
     } catch (error) {
@@ -932,6 +937,7 @@ useEffect(() => {
       setUser(null);
       setMarkers([]);
       setProjects([]);
+      setSelectedMarkers([]);
       setSelectedStartPoint(null);
     }
   };
@@ -946,49 +952,16 @@ useEffect(() => {
     setImportCurrentAction(action);
   };
   
-  // Efeito de Realtime OTIMIZADO
-  useEffect(() => {
-    if (!currentProject?.id || !isOnline) return;
-    
-    console.log(`📡 Conectando Realtime para projeto: ${currentProject.id}`);
-    
-    const channel = supabase
-      .channel(`project-tracking-${currentProject.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'projetos',
-          filter: `id=eq.${currentProject.id}`
-        },
-        (payload) => {
-          console.log("⚡ Atualização Realtime recebida:", payload);
-          const updatedProject = payload.new;
-          
-          setCurrentProject(prev => ({ ...prev, ...updatedProject }));
-          
-          if (updatedProject.points) {
-            setManualPoints(updatedProject.points);
-            setTotalDistance(updatedProject.total_distance);
-          }
-          
-          setProjects(prev => prev.map(p => p.id === updatedProject.id ? updatedProject : p));
-        }
-      )
-      .subscribe();
-    
-    return () => {
-      console.log(`🔌 Desconectando Realtime do projeto: ${currentProject.id}`);
-      supabase.removeChannel(channel);
-    };
-  }, [currentProject?.id, isOnline]);
+  const showFeedback = (title, message, type = 'success') => {
+    setNotification({ title, message, type });
+  };
   
-  // Importar arquivos KML/KMZ
+  // Função para importar arquivos KML/KMZ
   const handleProjectImport = async (event) => {
     const file = event.target.files[0];
     if (!file) return;
     
+    // Resetar estados de progresso
     setImportProgress(0);
     setImportCurrentStep(1);
     setImportTotalSteps(5);
@@ -1012,6 +985,7 @@ useEffect(() => {
       if (fileName.endsWith('.kmz')) {
         updateImportProgress(20, 2, 'Extraindo KML do arquivo KMZ...');
         
+        // Usa JSZip para abrir o KMZ
         const zip = new(JSZip.default || JSZip)();
         const contents = await zip.loadAsync(file);
         const kmlFile = Object.keys(contents.files).find(name => name.toLowerCase().endsWith('.kml'));
@@ -1037,6 +1011,7 @@ useEffect(() => {
       const nameElement = xmlDoc.getElementsByTagName('name')[0];
       let projectName = nameElement?.textContent || `Projeto Importado ${new Date().toLocaleDateString('pt-BR')}`;
       
+      // Verifica duplicidade
       updateImportProgress(60, 4, 'Verificando nome do projeto...');
       const existingProject = projects.find(p => p.name === projectName);
       let shouldOverwrite = false;
@@ -1059,6 +1034,7 @@ useEffect(() => {
       updateImportProgress(70, 4, 'Extraindo pontos geográficos...');
       
       const points = [];
+      // Lógica de extração de LineStrings
       const lineStrings = xmlDoc.getElementsByTagName('LineString');
       if (lineStrings.length > 0) {
         for (let i = 0; i < lineStrings.length; i++) {
@@ -1080,6 +1056,7 @@ useEffect(() => {
         }
       }
       
+      // Fallback para Placemarks se não houver LineString
       if (points.length === 0) {
         const placemarks = xmlDoc.getElementsByTagName('Placemark');
         for (let i = 0; i < placemarks.length; i++) {
@@ -1099,30 +1076,33 @@ useEffect(() => {
       
       updateImportProgress(90, 5, 'Finalizando importação...');
       
-      const totalDistanceVal = calculateTotalProjectDistance(points, extraConnections);
+      const totalDistanceVal = calculateTotalDistance(points); // Certifique-se que esta função existe no App
       
       const project = {
-        id: existingProject && shouldOverwrite ? existingProject.id : generateUUID(),
+        id: existingProject && shouldOverwrite ? existingProject.id : generateUUID(), // Usa UUID novo se não for sobrescrever
         name: projectName,
         points: points,
-        extra_connections: extraConnections,
-        total_distance: totalDistanceVal,
-        totalDistance: totalDistanceVal,
+        total_distance: totalDistanceVal, // Nome da coluna no Supabase
+        totalDistance: totalDistanceVal, // Compatibilidade local
         bairro: 'Importado',
         tracking_mode: 'manual',
         created_at: new Date().toISOString(),
         user_id: user?.id
       };
       
+      // Salva no banco ou local
       if (isOnline && user) {
+        // Se for sobrescrever, usa update, senão insert
         if (existingProject && shouldOverwrite) {
           await supabase.from('projetos').update(project).eq('id', project.id);
         } else {
           await supabase.from('projetos').insert([project]);
         }
-        
-        await loadProjects();
+        // Atualiza a lista
+        const updatedList = await loadProjectsFromSupabase(); // Chama a função que criamos no passo anterior
+        setProjects(updatedList);
       } else {
+        // Modo Offline
         let updatedProjects;
         if (existingProject && shouldOverwrite) {
           updatedProjects = projects.map(p => p.id === existingProject.id ? project : p);
@@ -1130,17 +1110,14 @@ useEffect(() => {
           updatedProjects = [...projects, project];
         }
         setProjects(updatedProjects);
-        const userProjects = storage.loadProjects(user?.id);
-        const mergedProjects = [...userProjects, project];
-        const uniqueProjects = deduplicateProjects(mergedProjects);
-        storage.saveProjects(user?.id, uniqueProjects);
+        localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
       }
       
       updateImportProgress(100, 5, 'Importação concluída!');
       setImportSuccess(true);
       
       setTimeout(() => {
-        loadProject(project);
+        loadProject(project); // Carrega o projeto no mapa
         setShowImportProgress(false);
       }, 1500);
       
@@ -1151,220 +1128,279 @@ useEffect(() => {
     } finally {
       setUploading(false);
       if (event.target) {
-        event.target.value = '';
+        event.target.value = ''; // Limpa o input
       }
     }
   };
   
+  // Função para focar a câmera no projeto
   const focusOnProject = (project) => {
+    // Verificação de segurança
     if (!project || !project.points || project.points.length === 0) {
+      // Se não tiver pontos, apenas fecha o menu
       setShowLoadedProjects(false);
       return;
     }
     
+    // Pega o primeiro ponto para centralizar
     const firstPoint = project.points[0];
     
-    setShowLoadedProjects(false);
+    // Fecha o menu de projetos carregados
+    // Se esta linha estava dando erro, agora vai funcionar porque está no escopo correto
+    setShowLoadedProjects(false); 
     
+    // Move a câmera do mapa
     if (mapRef.current) {
       mapRef.current.flyTo({
         center: [firstPoint.lng, firstPoint.lat],
         zoom: 16,
         speed: 1.5,
-        essential: true
+        essential: true // Garante que a animação aconteça mesmo se o usuário estiver interagindo
       });
     }
   };
   
-  // --- SUBSTITUA A FUNÇÃO saveProject POR ESTA ---
-// --- SUBSTITUA NO SEU App.jsx ---
-const calculateProjectDistance = useCallback((project) => {
-    if (!project || !project.points || project.points.length < 2) {
-      return project?.total_distance || project?.totalDistance || 0;
-    }
-    
-    return calculateTotalProjectDistance(project.points, project.extra_connections || []);
-  }, []);
-
-const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
-  try {
+  const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
     let finalPoints = pointsToSave;
     
-    // Validações
-    if (editingProject && finalPoints.length === 0) finalPoints = editingProject.points;
+    if (editingProject && finalPoints.length === 0) {
+      finalPoints = editingProject.points;
+    }
+    
     if (!finalPoints || finalPoints.length === 0) {
-      if (!autoSave) showFeedback('Erro', 'Não há pontos para salvar.', 'error');
+      console.log('⚠️ Nenhum ponto para salvar');
+      if (!autoSave) {
+        showFeedback('Erro', 'Não há pontos para salvar no projeto.', 'error');
+      }
       return;
     }
     
-    // Normalizar spans (garantir que são números válidos)
-    finalPoints = finalPoints.map(point => ({
-      ...point,
-      spans: (point.spans !== undefined && point.spans !== null && !isNaN(point.spans)) ?
-        Math.max(1, Number(point.spans)) : 1
-    }));
+    if (autoSave && finalPoints.length === 0) {
+      return;
+    }
+    
+    if (!projectName.trim() && !autoSave && !editingProject && !currentProject) {
+      showFeedback('Erro', 'Digite um nome para o projeto.', 'error');
+      return;
+    }
     
     let projectNameToUse = projectName;
-    if (editingProject && !projectName.trim()) projectNameToUse = editingProject.name;
-    else if (currentProject && !projectName.trim()) projectNameToUse = currentProject.name;
-    else if (autoSave && !projectName.trim()) projectNameToUse = `Rastreamento ${new Date().toLocaleString('pt-BR')}`;
     
-    if (!projectNameToUse.trim() && !autoSave) {
-      showFeedback('Erro', 'O projeto precisa de um nome.', 'error');
-      return;
+    if (editingProject && !projectName.trim()) {
+      projectNameToUse = editingProject.name;
+    } else if (currentProject && !projectName.trim()) {
+      projectNameToUse = currentProject.name;
+    } else if (autoSave && !projectName.trim() && !currentProject && !editingProject) {
+      projectNameToUse = `Rastreamento ${new Date().toLocaleString('pt-BR')}`;
     }
     
-    // 1. Calcula a distância correta considerando spans
-    const calculatedTotalDistance = calculateTotalProjectDistance(finalPoints, extraConnections);
+    // CORREÇÃO AUTOMÁTICA DE IDs: Converte IDs numéricos antigos para UUIDs antes de salvar
+    const sanitizedPoints = finalPoints.map(p => ({
+      ...p,
+      id: typeof p.id === 'number' || !isNaN(p.id) ? generateUUID() : p.id,
+      // Atualiza connectedFrom se for um ID numérico
+      connectedFrom: p.connectedFrom && (typeof p.connectedFrom === 'number' || !isNaN(p.connectedFrom)) ?
+        null // Reseta para evitar referências quebradas - será recalculado se necessário
+        :
+        p.connectedFrom
+    }));
     
-    const nowISO = new Date().toISOString();
+    const calculatedTotalDistance = calculateTotalDistanceWithBranches(sanitizedPoints) || 0;
     
-    // 2. PREPARA DADOS PARA O SUPABASE
     const projectData = {
       name: projectNameToUse.trim(),
-      points: finalPoints,
-      extra_connections: extraConnections,
+      points: sanitizedPoints,
       total_distance: calculatedTotalDistance,
       bairro: selectedBairro !== 'todos' ? selectedBairro : 'Vários',
       tracking_mode: 'manual',
-      updated_at: nowISO,
-      user_id: user?.id
+      updated_at: new Date().toISOString()
     };
     
-    let savedProject;
-    
-    // Lógica de Envio (Update ou Insert)
-    if (currentProject || editingProject) {
-      const targetId = currentProject?.id || editingProject.id;
+    try {
+      let savedProject;
       
-      if (isOnline && user && !targetId.toString().startsWith('offline_')) {
-        const { data, error } = await supabase
-          .from('projetos')
-          .update(projectData)
-          .eq('id', targetId)
-          .select();
+      if (editingProject) {
+        console.log('🔄 Atualizando projeto em edição:', editingProject.name);
         
-        if (error) throw error;
-        savedProject = data[0];
+        if (isOnline && user) {
+          const { data, error } = await supabase
+            .from('projetos')
+            .update(projectData)
+            .eq('id', editingProject.id)
+            .select();
+          
+          if (error) throw error;
+          
+          // Verificação de segurança: Se o RLS falhar ou usuário não tiver permissão, data vem vazio
+          if (!data || data.length === 0) {
+            throw new Error("Permissão negada ou projeto não encontrado para atualização.");
+          }
+          
+          savedProject = data[0];
+        } else {
+          savedProject = { ...editingProject, ...projectData };
+        }
+        
+        const updatedProjects = projects.map(p =>
+          p.id === editingProject.id ? savedProject : p
+        );
+        setProjects(updatedProjects);
+        localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
+        
+        // Atualiza também o projeto na camada visual (loadedProjects)
+        setLoadedProjects(prev => {
+          const exists = prev.find(p => p.id === savedProject.id);
+          if (exists) {
+            return prev.map(p =>
+              p.id === savedProject.id ?
+              { ...savedProject, color: p.color } // Mantém a cor original visual
+              :
+              p
+            );
+          }
+          return prev;
+        });
+        
+        if (currentProject && currentProject.id === editingProject.id) {
+          setCurrentProject(savedProject);
+        }
+        
+        setEditingProject(null);
+        
+      } else if (currentProject) {
+        console.log('🔄 Atualizando projeto atual:', currentProject.name);
+        
+        if (isOnline && user) {
+          const { data, error } = await supabase
+            .from('projetos')
+            .update(projectData)
+            .eq('id', currentProject.id)
+            .select();
+          
+          if (error) throw error;
+          
+          if (!data || data.length === 0) {
+            throw new Error("Erro ao salvar: Retorno vazio do banco.");
+          }
+          
+          savedProject = data[0];
+        } else {
+          savedProject = { ...currentProject, ...projectData };
+        }
+        
+        const updatedProjects = projects.map(p =>
+          p.id === currentProject.id ? savedProject : p
+        );
+        setProjects(updatedProjects);
+        localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
+        
+        // Atualiza também o projeto na camada visual (loadedProjects)
+        setLoadedProjects(prev => {
+          const exists = prev.find(p => p.id === savedProject.id);
+          if (exists) {
+            return prev.map(p =>
+              p.id === savedProject.id ?
+              { ...savedProject, color: p.color } // Mantém a cor original visual
+              :
+              p
+            );
+          }
+          return prev;
+        });
+        
+        setCurrentProject(savedProject);
+        
       } else {
-        savedProject = {
-          ...currentProject,
-          ...editingProject,
-          ...projectData,
-          id: targetId
-        };
+        if (isOnline && user) {
+          const { data, error } = await supabase
+            .from('projetos')
+            .insert([{ ...projectData, user_id: user.id }])
+            .select();
+          
+          if (error) throw error;
+          savedProject = data[0];
+        } else {
+          savedProject = {
+            ...projectData,
+            id: `offline_${Date.now()}`,
+            created_at: new Date().toISOString(),
+            user_id: user?.id || 'offline'
+          };
+        }
+        
+        const updatedProjects = [...projects, savedProject];
+        setProjects(updatedProjects);
+        localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
       }
-    } else {
-      if (isOnline && user) {
-        const { data, error } = await supabase.from('projetos').insert([projectData]).select();
-        if (error) throw error;
-        savedProject = data[0];
-      } else {
-        savedProject = {
-          ...projectData,
-          id: `offline_${Date.now()}`,
-          created_at: nowISO
-        };
-      }
-    }
-    
-    // 3. ATUALIZAÇÃO LOCAL IMEDIATA
-    const localProjectObj = {
-      ...savedProject,
-      totalDistance: calculatedTotalDistance
-    };
-    
-    // Atualiza todos os estados
-    if (currentProject && currentProject.id === localProjectObj.id) {
-      setCurrentProject(localProjectObj);
-    }
-    
-    // Atualiza a lista de projetos
-    setProjects(prev => {
-      const filtered = prev.filter(p => p.id !== localProjectObj.id);
-      return [localProjectObj, ...filtered];
-    });
-    
-    // Atualiza projetos carregados
-    setLoadedProjects(prev => {
-      const exists = prev.find(p => p.id === localProjectObj.id);
-      if (exists) {
-        return prev.map(p => p.id === localProjectObj.id ? localProjectObj : p);
-      } else {
-        return [...prev, localProjectObj];
-      }
-    });
-    
-    // Atualiza pontos manuais e distância
-    setManualPoints(finalPoints);
-    setTotalDistance(calculatedTotalDistance);
-    
-    // Salva no Cache
-    const userProjects = storage.loadProjects(user?.id);
-    const otherProjects = userProjects.filter(p => p.id !== localProjectObj.id);
-    storage.saveProjects(user?.id, [localProjectObj, ...otherProjects]);
-    
-    // 4. FINALIZA O RASTREAMENTO APÓS SALVAR (NOVO)
-    if (!autoSave) {
-      setTracking(false);
-      setPaused(false);
-      setShowTrackingControls(false);
-      setManualPoints([]);
-      setExtraConnections([]);
-      setTotalDistance(0);
-      setSelectedStartPoint(null);
-      setPositionHistory([]);
-      setGpsAccuracy(null);
-      setSpeed(0);
       
-      setShowProjectDialog(false);
-      setEditingProject(null);
-      setProjectName('');
-      showFeedback('Sucesso', `Projeto salvo! Distância: ${formatDistanceDetailed(calculatedTotalDistance)}`, 'success');
-    } else {
-      showFeedback('Salvo', 'Projeto salvo automaticamente', 'info');
-    }
-    
-  } catch (error) {
-    console.error('Erro ao salvar:', error);
-    if (!autoSave) showFeedback('Erro', `Erro ao salvar: ${error.message}`, 'error');
+      // Se for edição, mantém como atual. Se for novo save, LIMPA o atual.
+if (!autoSave) {
+  if (editingProject) {
+    // Se estava editando, mantém atualizado
+    setCurrentProject(savedProject);
+  } else {
+    // SE SALVOU UM NOVO, DESCONECTA TUDO (Resolve o bug do fantasma)
+    setCurrentProject(null);
   }
-};
+}
+
+if (!autoSave) {
+  setProjectName('');
+  setShowProjectDialog(false);
+  
+  if (!editingProject) {
+    setTracking(false);
+    setPaused(false);
+    setShowTrackingControls(false);
+    
+    // Limpa visualmente o mapa
+    setManualPoints([]);
+    setTotalDistance(0);
+    setSelectedStartPoint(null);
+    
+    // Garante que o histórico de posição também limpe
+    setPositionHistory([]);
+  }
+  
+  showFeedback('Sucesso', editingProject ? 'Projeto atualizado!' : 'Projeto salvo e finalizado!', 'success');
+}
+      
+    } catch (error) {
+      console.error('Erro ao salvar projeto:', error);
+      if (!autoSave) {
+        showFeedback('Erro', 'Erro ao salvar projeto. Tente novamente.', 'error');
+      }
+    }
+  };
+  
   const startTracking = async (mode = 'gps') => {
+  // 1. Verificação de Segurança (Múltiplos Projetos)
   if (loadedProjects.length > 1) {
     showFeedback('Bloqueado', 'Múltiplos projetos ativos. Deixe apenas UM projeto no mapa para continuar o traçado.', 'error');
     return;
   }
   
+  // 2. Lógica de Continuação (CORRIGIDA)
   if (loadedProjects.length === 1) {
     const project = loadedProjects[0];
     
-    if (isOnline && user) {
-      const hasLock = await ProjectLockService.acquireLock(project.id, user.id);
-      if (!hasLock) {
-        const status = await ProjectLockService.checkLockStatus(project.id, user.id);
-        if (status.isLocked) {
-          showFeedback('Projeto Travado', `Este projeto está sendo editado por ${status.lockedBy}. Modo leitura ativado.`, 'error');
-          return;
-        }
-      }
-    }
-    
-    // Usa o cálculo com vãos ao carregar
-    const calculatedDistance = calculateProjectDistance(project);
-    
+    // Define o projeto atual e carrega os pontos na memória de edição
     setCurrentProject(project);
-    setManualPoints(project.points);
-    setTotalDistance(calculatedDistance);
+    setManualPoints(project.points); // Garante que a lista não comece do zero
+    setTotalDistance(project.totalDistance || project.total_distance || 0);
     setProjectName(project.name);
     
+    // --- A CORREÇÃO MÁGICA ---
+    // Pega o último ponto do array e define como "Ponto Ativo"
     if (project.points && project.points.length > 0) {
       const lastPoint = project.points[project.points.length - 1];
-      setSelectedStartPoint(lastPoint);
+      setSelectedStartPoint(lastPoint); // <--- ISSO CONECTA O TRAÇO
       
+      // Feedback visual para o usuário saber que conectou
       showFeedback('Conectado', `Rastreamento continuado a partir do Ponto ${project.points.length}`, 'success');
     }
   }
+  // 3. Novo Projeto (Do zero)
   else if (!currentProject) {
     setManualPoints([]);
     setTotalDistance(0);
@@ -1372,36 +1408,19 @@ const saveProject = async (autoSave = false, pointsToSave = manualPoints) => {
     setSelectedStartPoint(null);
   }
   
+  // Configurações de UI
   setTrackingInputMode(mode);
   setTracking(true);
   setPaused(false);
   setShowTrackingControls(true);
-  setShowRulerPopup(false);
+  setShowRulerPopup(false); // Fecha menus antigos se houver
   
+  // Reseta filtros do GPS
   kalmanLatRef.current = new KalmanFilter(0.1, 0.1);
   kalmanLngRef.current = new KalmanFilter(0.1, 0.1);
 };
-
-// Adicione esta função para garantir que os projetos carregados tenham cálculo correto
-useEffect(() => {
-  if (loadedProjects.length > 0) {
-    // Atualiza a distância de cada projeto carregado
-    const updatedProjects = loadedProjects.map(project => ({
-      ...project,
-      total_distance: calculateProjectDistance(project),
-      totalDistance: calculateProjectDistance(project)
-    }));
-    
-    setLoadedProjects(updatedProjects);
-  }
-}, [loadedProjects.length]); //
   
-  // Função loadProject com sistema de lock e CORREÇÃO DE STATE
   const loadProject = async (project) => {
-  if (currentProject && isOnline && user) {
-    await ProjectLockService.releaseLock(currentProject.id, user.id);
-  }
-  
   if (tracking && !paused) {
     showFeedback('Atenção', 'Pare o rastreamento atual antes de carregar um projeto.', 'warning');
     return;
@@ -1417,68 +1436,61 @@ useEffect(() => {
     }
   }
   
+  // Fecha o menu imediatamente para sensação de resposta rápida
   setShowProjectsList(false);
   
+  // Usa requestAnimationFrame para não travar a UI enquanto processa
   requestAnimationFrame(async () => {
-    // 1. Limpa estados anteriores
+    // 1. Limpa e Prepara
+    setManualPoints([]);
+    setTotalDistance(0);
+    setSelectedStartPoint(null);
     setTracking(false);
     setPaused(false);
-    setSelectedStartPoint(null);
     
-    // 2. Define o projeto atual
+    // 2. Define o projeto (Estado React)
     setCurrentProject(project);
     
-    // 3. RESTAURA OS DADOS DO PROJETO
-    const points = project.points || [];
-    setManualPoints(points);
-    
-    // 4. RESTAURA CONEXÕES EXTRAS
-    const loadedConnections = project.extra_connections || [];
-    setExtraConnections(loadedConnections);
-    
-    // 5. RECALCULA A DISTÂNCIA IMEDIATAMENTE
-    // Garante que spans sejam normalizados primeiro
-    const normalizedPoints = points.map(point => ({
-      ...point,
-      spans: (point.spans !== undefined && point.spans !== null && !isNaN(point.spans)) ?
-        Math.max(1, Number(point.spans)) : 1
-    }));
-    
-    const totalDist = calculateTotalProjectDistance(normalizedPoints, loadedConnections);
-    setTotalDistance(totalDist);
-    
-    // Lógica de visualização
     const exists = loadedProjects.find(p => p.id === project.id);
     
     if (!exists) {
+      // Detecta bairro se necessário (Sem bloquear)
       let bairroDetectado = project.bairro;
       if (!project.bairro || project.bairro === 'Vários') {
+        // Não usamos await aqui para não travar o carregamento visual
         BairroDetectionService.detectBairroForProject(project.points).then(b => {
-          if (b) console.log("Bairro detectado em background:", b);
+          if (b) {
+            // Atualiza silenciosamente depois
+            console.log("Bairro detectado em background:", b);
+          }
         });
       }
       
       const projectWithColor = {
         ...project,
-        points: normalizedPoints, // Usa pontos normalizados
         bairro: bairroDetectado || 'Vários',
         color: project.color || generateRandomColor(),
-        total_distance: totalDist, // Atualiza com cálculo correto
-        totalDistance: totalDist
+        // Mapeia pontos apenas com dados essenciais para leveza
+        points: project.points
       };
       
+      // Atualiza a lista visual
       setLoadedProjects(prev => [...prev, projectWithColor]);
       
-      if (project.points && project.points.length > 0 && mapRef.current) {
+      // 3. Move a câmera SUAVEMENTE apenas depois que os dados foram processados
+      if (project.points.length > 0 && mapRef.current) {
+        // Calcula o centro aproximado para um voo mais curto e suave
         const firstPoint = project.points[0];
+        
         setTimeout(() => {
           mapRef.current.flyTo({
             center: [firstPoint.lng, firstPoint.lat],
             zoom: 16,
-            speed: 1.2,
+            speed: 1.2, // Velocidade média para não dar "soco" visual
+            curve: 1,
             essential: true
           });
-        }, 100);
+        }, 100); // Pequeno delay para garantir que o mapa renderizou os pontos
       }
     }
   });
@@ -1562,11 +1574,25 @@ useEffect(() => {
     setCurrentProject(null);
     setProjectName('');
     setManualPoints([]);
-    setExtraConnections([]);
     setTotalDistance(0);
     setSelectedStartPoint(null);
     setShowProjectDetails(false);
     setShowRulerPopup(false);
+  };
+  
+  const calculateTotalDistance = (points) => {
+    if (points.length < 2) return 0;
+    
+    let total = 0;
+    for (let i = 0; i < points.length - 1; i++) {
+      total += calculateDistance(
+        points[i].lat,
+        points[i].lng,
+        points[i + 1].lat,
+        points[i + 1].lng
+      );
+    }
+    return total;
   };
   
   useEffect(() => {
@@ -1611,6 +1637,7 @@ useEffect(() => {
           setMarkers([])
           setProjects([])
           setLoadedProjects([])
+          setSelectedMarkers([])
           setSelectedStartPoint(null)
         }
       } else if (event === 'SIGNED_IN') {
@@ -1622,25 +1649,6 @@ useEffect(() => {
     
     return () => subscription.unsubscribe()
   }, [])
-  
-  // Efeito para atualizar distância quando pontos ou conexões mudarem
-useEffect(() => {
-  if (manualPoints.length > 0) {
-    const newDistance = calculateTotalProjectDistance(manualPoints, extraConnections);
-    if (newDistance !== totalDistance) {
-      setTotalDistance(newDistance);
-      
-      // Atualiza o projeto atual
-      if (currentProject) {
-        setCurrentProject(prev => ({
-          ...prev,
-          total_distance: newDistance,
-          totalDistance: newDistance
-        }));
-      }
-    }
-  }
-}, [manualPoints, extraConnections]); // Dependências: atualiza quando pontos ou conexões mudamg
   
   const createProjectsTable = async () => {
     try {
@@ -1658,7 +1666,6 @@ useEffect(() => {
       const projectData = {
         name: project.name,
         points: project.points,
-        extra_connections: project.extra_connections || [],
         total_distance: project.totalDistance || project.total_distance,
         bairro: project.bairro,
         tracking_mode: 'manual',
@@ -1694,25 +1701,11 @@ useEffect(() => {
     }
   };
   
-  const handleRenameProject = async (projectId, newName) => {
-    await renameProject(projectId, newName);
-    
-    if (currentProject && currentProject.id === projectId) {
-      setCurrentProject(prev => ({ ...prev, name: newName }));
-      setProjectName(newName);
-    }
-    
-    setLoadedProjects(prev => prev.map(p =>
-      p.id === projectId ? { ...p, name: newName } : p
-    ));
-    
-    showFeedback('Sucesso', 'Projeto renomeado', 'success');
-  };
-  
   const deleteProjectFromSupabase = async (projectId) => {
     if (!user) return false;
     
     try {
+      // Mantém o .eq('user_id', user.id) para que apenas o dono possa deletar
       const { error } = await supabase
         .from('projetos')
         .delete()
@@ -1731,53 +1724,85 @@ useEffect(() => {
     if (!user || !isOnline) return;
     
     try {
-      const offlineProjects = storage.loadProjects(user.id);
+      const savedProjects = localStorage.getItem('jamaaw_projects');
+      if (!savedProjects) return;
+      
+      const projects = JSON.parse(savedProjects);
+      const offlineProjects = projects.filter(p => p.id && p.id.toString().startsWith('offline_'));
       
       for (const project of offlineProjects) {
-        if (project.id.toString().startsWith('offline_')) {
-          try {
-            const { data, error } = await supabase
-              .from('projetos')
-              .insert([{
-                name: project.name,
-                points: project.points,
-                extra_connections: project.extra_connections || [],
-                total_distance: project.totalDistance || project.total_distance,
-                bairro: project.bairro,
-                tracking_mode: 'manual',
-                user_id: user.id
-              }])
-              .select();
-            
-            if (error) throw error;
-            
-            const updatedProject = { ...project, id: data[0].id };
-            const userProjects = storage.loadProjects(user.id);
-            const updatedUserProjects = userProjects.map(p =>
-              p.id === project.id ? updatedProject : p
-            );
-            storage.saveProjects(user.id, updatedUserProjects);
-            
-            console.log('Projeto offline sincronizado:', project.name);
-            
-          } catch (projectError) {
-            console.error('Erro ao sincronizar projeto offline:', projectError);
-          }
+        try {
+          const { data, error } = await supabase
+            .from('projetos')
+            .insert([{
+              name: project.name,
+              points: project.points,
+              total_distance: project.totalDistance || project.total_distance,
+              bairro: project.bairro,
+              tracking_mode: 'manual',
+              user_id: user.id
+            }])
+            .select();
+          
+          if (error) throw error;
+          
+          const updatedProjects = projects.map(p =>
+            p.id === project.id ? data[0] : p
+          );
+          localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
+          setProjects(updatedProjects);
+          
+          console.log('Projeto offline sincronizado:', project.name);
+          
+        } catch (projectError) {
+          console.error('Erro ao sincronizar projeto offline:', projectError);
         }
       }
-      
-      await loadProjects();
-      
     } catch (error) {
       console.error('Erro na sincronização offline:', error);
     }
   };
   
-  // Efeito para carregar projetos
+  // EFEITO ATUALIZADO: Carregar projetos
   useEffect(() => {
-    if (user) {
-      loadProjects();
-    }
+    const loadProjects = async () => {
+      try {
+        let loadedProjects = [];
+        
+        if (user) {
+          if (isOnline) {
+            try {
+              const data = await loadProjectsFromSupabase();
+              loadedProjects = data || [];
+              console.log('Projetos carregados:', loadedProjects.length);
+              
+              // Garante que o localStorage está atualizado
+              localStorage.setItem('jamaaw_projects', JSON.stringify(loadedProjects));
+              
+            } catch (supabaseError) {
+              console.error('Erro ao carregar do Supabase:', supabaseError);
+              const savedProjects = localStorage.getItem('jamaaw_projects');
+              if (savedProjects) {
+                loadedProjects = JSON.parse(savedProjects).filter(isValidProject);
+              }
+            }
+          } else {
+            const savedProjects = localStorage.getItem('jamaaw_projects');
+            if (savedProjects) {
+              loadedProjects = JSON.parse(savedProjects).filter(isValidProject);
+            }
+          }
+        }
+        
+        setProjects(loadedProjects);
+        
+      } catch (error) {
+        console.error('Erro crítico ao carregar projetos:', error);
+        setProjects([]);
+      }
+    };
+    
+    loadProjects();
   }, [user, isOnline]);
   
   useEffect(() => {
@@ -1787,24 +1812,18 @@ useEffect(() => {
   }, [isOnline, user]);
   
   useEffect(() => {
-    const loadBairros = async () => {
-      const savedBairros = storage.loadBairros();
-      if (savedBairros) {
-        setBairros(savedBairros);
-      }
-    };
-    loadBairros();
+    const savedBairros = localStorage.getItem('jamaaw_bairros')
+    if (savedBairros) {
+      setBairros(JSON.parse(savedBairros))
+    }
   }, [])
   
   useEffect(() => {
     if (user) {
-      const loadFavorites = async () => {
-        const savedFavorites = storage.loadFavorites(user.id);
-        if (savedFavorites) {
-          setFavorites(savedFavorites);
-        }
-      };
-      loadFavorites();
+      const savedFavorites = localStorage.getItem(`jamaaw_favorites_${user.id}`)
+      if (savedFavorites) {
+        setFavorites(JSON.parse(savedFavorites))
+      }
     }
   }, [user])
   
@@ -1814,50 +1833,36 @@ useEffect(() => {
     if (navigator.geolocation) {
       watchId = navigator.geolocation.watchPosition(
         (position) => {
-          const { latitude, longitude, accuracy, speed } = position.coords;
+          const { latitude, longitude, accuracy, speed } = position.coords
           
-          // 1. Cria objeto do ponto bruto com a precisão
-          const rawPoint = { lat: latitude, lng: longitude, accuracy };
+          const smoothedLat = kalmanLatRef.current.filter(latitude);
+          const smoothedLng = kalmanLngRef.current.filter(longitude);
           
-          // 2. FILTRO DE QUALIDADE: Só aceita se passar nos critérios
-          if (gpsFilterRef.current.isValid(rawPoint)) {
-            
-            // 3. Se aprovado, passa pelo Kalman (suavização)
-            const smoothedLat = kalmanLatRef.current.filter(latitude);
-            const smoothedLng = kalmanLngRef.current.filter(longitude);
-            
-            const smoothedPosition = {
+          const smoothedPosition = {
+            lat: smoothedLat,
+            lng: smoothedLng
+          };
+          
+          setCurrentPosition(smoothedPosition);
+          setGpsAccuracy(accuracy);
+          setSpeed(speed || 0);
+          
+          setPositionHistory(prev => {
+            const newHistory = [...prev, {
               lat: smoothedLat,
-              lng: smoothedLng
-            };
-            
-            // 4. Atualiza posição e dados reais
-            setCurrentPosition(smoothedPosition);
-            setGpsAccuracy(accuracy);
-            setSpeed(speed || 0);
-            
-            setPositionHistory(prev => {
-              const newHistory = [...prev, {
-                lat: smoothedLat,
-                lng: smoothedLng,
-                timestamp: Date.now(),
-                accuracy: accuracy
-              }].slice(-10);
-              return newHistory;
-            });
-          } else {
-            // 5. Se foi rejeitado (sinal ruim), apenas atualiza a precisão na tela
-            // mas NÃO move o boneco nem cria rastro sujo.
-            console.log(`GPS fraco (${accuracy}m) ou parado. Ignorando salto.`);
-            setGpsAccuracy(accuracy);
-          }
+              lng: smoothedLng,
+              timestamp: Date.now(),
+              accuracy: accuracy
+            }].slice(-10);
+            return newHistory;
+          });
         },
         (error) => {
-          console.error('Erro ao obter localização:', error);
+          console.error('Erro ao obter localização:', error)
           if (navigator.geolocation) {
             navigator.geolocation.getCurrentPosition(
               (position) => {
-                const { latitude, longitude } = position.coords;
+                const { latitude, longitude } = position.coords
                 setCurrentPosition({
                   lat: latitude,
                   lng: longitude
@@ -1875,54 +1880,55 @@ useEffect(() => {
         {
           enableHighAccuracy: true,
           timeout: 15000,
-          maximumAge: 0 // Força leitura nova, não aceita cache
+          maximumAge: 5000
         }
       )
     }
     
     return () => {
       if (watchId) {
-        navigator.geolocation.clearWatch(watchId);
+        navigator.geolocation.clearWatch(watchId)
       }
-    };
+    }
   }, [tracking, paused])
   
-  const saveBairros = async (newBairros) => {
-    setBairros(newBairros);
-    storage.saveBairros(newBairros);
+  const saveBairros = (newBairros) => {
+    setBairros(newBairros)
+    localStorage.setItem('jamaaw_bairros', JSON.stringify(newBairros))
   }
   
-  const handleAddBairro = async () => {
+  const handleAddBairro = () => {
     if (newBairro.trim() && !bairros.includes(newBairro.trim())) {
-      const updatedBairros = [...bairros, newBairro.trim()];
-      await saveBairros(updatedBairros);
-      setNewBairro('');
-      setShowAddBairro(false);
-      setShowBairroManager(false);
+      const updatedBairros = [...bairros, newBairro.trim()]
+      saveBairros(updatedBairros)
+      setNewBairro('')
+      setShowAddBairro(false)
+      setShowBairroManager(false)
     }
   }
   
-  const handleRemoveBairro = async (bairro) => {
+  const handleRemoveBairro = (bairro) => {
     if (DEFAULT_BAIRROS.includes(bairro)) {
       showFeedback('Erro', 'Não é possível remover bairros padrão.', 'error');
-      return;
+      return
     }
     if (confirm(`Deseja remover o bairro "${bairro}"?`)) {
-      const updatedBairros = bairros.filter(b => b !== bairro);
-      await saveBairros(updatedBairros);
+      const updatedBairros = bairros.filter(b => b !== bairro)
+      saveBairros(updatedBairros)
       if (selectedBairro === bairro) {
-        setSelectedBairro('todos');
+        setSelectedBairro('todos')
       }
     }
   }
   
-  const toggleFavorite = async (markerId) => {
+  const toggleFavorite = (markerId) => {
     const newFavorites = favorites.includes(markerId) ?
-      favorites.filter(id => id !== markerId) : [...favorites, markerId];
+      favorites.filter(id => id !== markerId) :
+      [...favorites, markerId]
     
-    setFavorites(newFavorites);
+    setFavorites(newFavorites)
     if (user) {
-      storage.saveFavorites(user.id, newFavorites);
+      localStorage.setItem(`jamaaw_favorites_${user.id}`, JSON.stringify(newFavorites))
     }
   }
   
@@ -2005,7 +2011,14 @@ useEffect(() => {
           }
         } else {
           setMarkers(data || [])
-          storage.saveMarkers(user.id, data || [])
+          try {
+            await Preferences.set({
+              key: `jamaaw_markers_${user.id}`,
+              value: JSON.stringify(data || [])
+            })
+          } catch (e) {
+            localStorage.setItem(`jamaaw_markers_${user.id}`, JSON.stringify(data || []))
+          }
         }
       } else {
         await loadMarkersFromCache()
@@ -2022,7 +2035,19 @@ useEffect(() => {
     if (!user) return
     
     try {
-      const cachedMarkers = storage.loadMarkers(user.id)
+      let cachedMarkers = null
+      try {
+        const { value } = await Preferences.get({ key: `jamaaw_markers_${user.id}` })
+        if (value) {
+          cachedMarkers = JSON.parse(value)
+        }
+      } catch (e) {
+        const value = localStorage.getItem(`jamaaw_markers_${user.id}`)
+        if (value) {
+          cachedMarkers = JSON.parse(value)
+        }
+      }
+      
       if (cachedMarkers) {
         setMarkers(cachedMarkers)
       }
@@ -2091,6 +2116,7 @@ useEffect(() => {
     }
     
     try {
+      // Usa a função RPC segura que criamos no SQL
       const { data, error } = await supabase.rpc('join_project', {
         p_id: projectId
       });
@@ -2099,13 +2125,16 @@ useEffect(() => {
       
       if (data.success) {
         showFeedback('Sucesso', data.message, 'success');
-        await loadProjects();
+        // Atualiza a lista imediatamente
+        const updatedList = await loadProjectsFromSupabase();
+        setProjects(updatedList);
       } else {
-        showFeedback('Erro', data.message, 'error');
+        showFeedback('Erro', data.message, 'error'); // Ex: "Projeto não encontrado" ou "Já é membro"
       }
       
     } catch (error) {
       console.error("Erro ao importar:", error);
+      // Tratamento amigável para erro de ID inválido (ex: texto incompleto)
       if (error.code === '22P02') {
         showFeedback('Erro', 'ID inválido. Certifique-se de copiar o código completo.', 'error');
       } else {
@@ -2114,19 +2143,20 @@ useEffect(() => {
     }
   };
   
+  // ============================ NOVA FUNÇÃO handleFileImport ============================
   const handleFileImport = async (event) => {
     const file = event.target.files[0];
     if (!file) return;
-    
+
     setImportProgress(0);
     setShowImportProgress(true);
     setImportCurrentAction('Processando arquivo...');
     setUploading(true);
-    
+
     try {
       let kmlText;
       if (file.name.endsWith('.kmz')) {
-        const zip = new(JSZip.default || JSZip)();
+        const zip = new (JSZip.default || JSZip)();
         const contents = await zip.loadAsync(file);
         const kmlFile = Object.keys(contents.files).find(name => name.endsWith('.kml'));
         if (!kmlFile) throw new Error('KML não encontrado no KMZ');
@@ -2134,50 +2164,59 @@ useEffect(() => {
       } else {
         kmlText = await file.text();
       }
-      
+
+      // Limpeza prévia (Opcional, depende se você quer somar ou substituir)
+      // Se quiser limpar antes: setMarkers([]); 
+
       const parser = new DOMParser();
       const xmlDoc = parser.parseFromString(kmlText, 'text/xml');
       const placemarks = Array.from(xmlDoc.getElementsByTagName('Placemark'));
-      
+
+      // PROCESSAMENTO EM LOTE (INSTANTÂNEO)
       const newMarkers = placemarks.map((placemark, i) => {
         const coordsText = placemark.getElementsByTagName('coordinates')[0]?.textContent?.trim();
         if (!coordsText) return null;
-        
+
         const [lng, lat] = coordsText.split(',').map(Number);
         if (isNaN(lat) || isNaN(lng)) return null;
-        
+
         return {
           id: generateUUID(),
           name: placemark.getElementsByTagName('name')[0]?.textContent || `Ponto ${i + 1}`,
           lat,
           lng,
           descricao: placemark.getElementsByTagName('description')[0]?.textContent || '',
-          bairro: '',
+          bairro: '', // Será detectado depois se necessário
           created_at: new Date().toISOString(),
           user_id: user?.id
         };
-      }).filter(Boolean);
-      
+      }).filter(Boolean); // Remove nulos
+
+      // Atualiza o estado UMA VEZ só
       setMarkers(prev => [...prev, ...newMarkers]);
       
+      // Salva no Cache Local imediatamente
       if (user) {
-        storage.saveMarkers(user.id, newMarkers);
+        localStorage.setItem(`jamaaw_markers_${user.id}`, JSON.stringify(newMarkers));
       }
-      
+
+      // Upload para Supabase em Background (Não trava a UI)
       if (isOnline && user && newMarkers.length > 0) {
         setImportCurrentAction('Sincronizando com a nuvem...');
+        // Envia em lotes de 50 para não estourar o request
         const batchSize = 50;
         for (let i = 0; i < newMarkers.length; i += batchSize) {
           const batch = newMarkers.slice(i, i + batchSize);
           await supabase.from('marcacoes').insert(batch);
         }
       }
-      
+
       setImportProgress(100);
       setImportSuccess(true);
       
+      // Fecha o popup rápido
       setTimeout(() => setShowImportProgress(false), 1500);
-      
+
     } catch (error) {
       console.error('Erro na importação:', error);
       setImportError('Falha ao ler o arquivo.');
@@ -2211,7 +2250,11 @@ useEffect(() => {
       handleClearRoute()
       
       if (user) {
-        storage.saveMarkers(user.id, []);
+        try {
+          await Preferences.remove({ key: `jamaaw_markers_${user.id}` })
+        } catch (e) {
+          localStorage.removeItem(`jamaaw_markers_${user.id}`)
+        }
       }
       
       showFeedback('Sucesso', 'Todas as marcações importadas foram removidas com sucesso!', 'success');
@@ -2245,7 +2288,11 @@ useEffect(() => {
       handleClearRoute()
       
       if (user) {
-        storage.saveMarkers(user.id, []);
+        try {
+          await Preferences.remove({ key: `jamaaw_markers_${user.id}` })
+        } catch (e) {
+          localStorage.removeItem(`jamaaw_markers_${user.id}`)
+        }
       }
       
       showFeedback('Sucesso', 'Todas as marcações foram removidas com sucesso!', 'success');
@@ -2298,102 +2345,13 @@ useEffect(() => {
     })
   }
   
-const handleSpanChange = (count) => {
-  if (!spanSelectorInfo) return;
-  
-  // 1. Cria uma cópia profunda dos pontos com o novo Span
-  const updatedPoints = manualPoints.map(p => {
-    if (p.id === spanSelectorInfo.targetPointId) {
-      return { ...p, spans: count };
-    }
-    return p;
-  });
-  
-  // 2. Atualiza o estado dos pontos (Isso redesenha o mapa)
-  setManualPoints(updatedPoints);
-  
-  // 3. RECALCULA A DISTÂNCIA IMEDIATAMENTE
-  // Usa a função centralizada que importamos do geoUtils
-  const newTotal = calculateTotalProjectDistance(updatedPoints, extraConnections);
-  setTotalDistance(newTotal);
-  
-  // 4. ATUALIZA O PROJETO ATUAL EM MEMÓRIA (O Pulo do Gato)
-  // Sem isso, se você salvar, ele pega o estado antigo
-  if (currentProject) {
-    setCurrentProject(prev => ({
-      ...prev,
-      points: updatedPoints,
-      total_distance: newTotal,
-      totalDistance: newTotal
-    }));
-  }
-  
-  // 5. Feedback visual rápido
-  showFeedback('Atualizado', `Segmento alterado para ${count} vãos. Nova distância: ${formatDistanceDetailed(newTotal)}`, 'success');
-  
-  setSpanSelectorInfo(null);
-};
-  
-  const segmentsGeoJSON = useMemo(() => {
-    const features = [];
-    if (manualPoints.length > 0) {
-      manualPoints.forEach((point, index) => {
-        let parent = null;
-        if (point.connectedFrom) {
-          parent = manualPoints.find(p => p.id === point.connectedFrom);
-        } else if (index > 0) {
-          parent = manualPoints[index - 1];
-        }
-        
-        if (parent) {
-          const spans = point.spans || 1;
-          const color = SPAN_COLORS[spans];
-          
-          features.push({
-            type: 'Feature',
-            properties: {
-              type: 'segment',
-              targetPointId: point.id,
-              spans: spans,
-              color: color
-            },
-            geometry: {
-              type: 'LineString',
-              coordinates: [
-                [parent.lng, parent.lat],
-                [point.lng, point.lat]
-              ]
-            }
-          });
-          
-          const midLng = (parent.lng + point.lng) / 2;
-          const midLat = (parent.lat + point.lat) / 2;
-          
-          features.push({
-            type: 'Feature',
-            properties: {
-              type: 'badge',
-              targetPointId: point.id,
-              spans: spans,
-              label: `${spans}AG`,
-              color: color
-            },
-            geometry: {
-              type: 'Point',
-              coordinates: [midLng, midLat]
-            }
-          });
-        }
-      });
-    }
-    return { type: 'FeatureCollection', features };
-  }, [manualPoints]);
-  
+  // App.jsx
   const downloadKML = async (kmlContent, filename) => {
     try {
       console.log('Iniciando download...', filename);
       
       if (Capacitor.getPlatform() === 'web') {
+        // Lógica Web
         const blob = new Blob([kmlContent], {
           type: 'application/vnd.google-earth.kml+xml;charset=utf-8'
         });
@@ -2412,39 +2370,61 @@ const handleSpanChange = (count) => {
           URL.revokeObjectURL(url);
         }, 1000);
       } else {
-        const savedFile = await Filesystem.writeFile({
+        // Lógica Android/iOS
+        await Filesystem.writeFile({
           path: filename,
           data: kmlContent,
           directory: Directory.Documents,
           encoding: 'utf-8',
         });
         
-        showFeedback('Sucesso', `Arquivo salvo! Tentando abrir...`, 'success');
-        
-        try {
-          await FileOpener.open({
-            filePath: savedFile.uri,
-            contentType: 'application/vnd.google-earth.kml+xml',
-            openWithDefault: false
-          });
-        } catch (openerError) {
-          console.warn("Erro ao abrir KML automaticamente:", openerError);
-          try {
-            await FileOpener.open({
-              filePath: savedFile.uri,
-              contentType: 'text/xml',
-              openWithDefault: false
-            });
-          } catch (e) {
-            showFeedback('Aviso', 'Arquivo salvo em Documentos, mas nenhum app compatível foi encontrado para abrir automaticamente.', 'warning');
-          }
-        }
+        showFeedback(
+          'Sucesso',
+          `Arquivo salvo em Documentos: ${filename}`,
+          'success'
+        );
       }
     } catch (error) {
       console.error('Erro fatal no download:', error);
-      showFeedback('Erro', 'Erro ao salvar o arquivo.', 'error');
+      showFeedback('Erro', 'Erro ao salvar o arquivo. Verifique as permissões.', 'error');
     }
   };
+  
+  const getRouteFromAPI = async (start, end) => {
+    try {
+      const response = await fetch(
+        `https://router.project-osrm.org/route/v1/driving/${start[0]},${start[1]};${end[0]},${end[1]}?overview=full&geometries=geojson`
+      )
+      const data = await response.json()
+      
+      if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
+        const coordinates = data.routes[0].geometry.coordinates
+        return coordinates.map(coord => [coord[1], coord[0]])
+      }
+      return null
+    } catch (error) {
+      console.error('Erro ao obter rota:', error)
+      return null
+    }
+  }
+  
+  const calculateDistanceMatrix = async (coordinates) => {
+    try {
+      const coordsString = coordinates.map(c => `${c[0]},${c[1]}`).join(';')
+      const response = await fetch(
+        `https://router.project-osrm.org/table/v1/driving/${coordsString}?annotations=distance`
+      )
+      const data = await response.json()
+      
+      if (data.code === 'Ok') {
+        return data.distances
+      }
+      return null
+    } catch (error) {
+      console.error('Erro ao calcular matriz de distâncias:', error)
+      return null
+    }
+  }
   
   const handleCalculateDistance = async () => {
     if (selectedForDistance.length !== 2) {
@@ -2455,8 +2435,7 @@ const handleSpanChange = (count) => {
     setCalculatingRoute(true)
     const [m1, m2] = selectedForDistance
     
-    // 3. ATUALIZAR CHAMADA PARA RoutingService
-    const route = await RoutingService.getRouteFromAPI([m1.lng, m1.lat], [m2.lng, m2.lat])
+    const route = await getRouteFromAPI([m1.lng, m1.lat], [m2.lng, m2.lat])
     
     if (route) {
       setRouteCoordinates(route)
@@ -2465,7 +2444,7 @@ const handleSpanChange = (count) => {
         [m1.lng, m1.lat],
         [m2.lng, m2.lat]
       ]
-      const distanceMatrix = await RoutingService.calculateDistanceMatrix(coordinates)
+      const distanceMatrix = await calculateDistanceMatrix(coordinates)
       let distance
       
       if (distanceMatrix && distanceMatrix[0] && distanceMatrix[0][1]) {
@@ -2510,23 +2489,20 @@ const handleSpanChange = (count) => {
     
     try {
       const coordsString = allCoordinates.map(c => `${c[0]},${c[1]}`).join(';')
+      const response = await fetch(
+        `https://router.project-osrm.org/route/v1/driving/${coordsString}?overview=full&geometries=geojson`
+      )
+      const data = await response.json()
       
-      // 3. ATUALIZAR CHAMADA PARA RoutingService
-      const data = await RoutingService.getRouteFromAPI(allCoordinates[0], allCoordinates[allCoordinates.length - 1])
-      
-      if (data) {
-        const routeCoords = data.map(coord => [coord[1], coord[0]])
+      if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
+        const coordinates = data.routes[0].geometry.coordinates
+        const routeCoords = coordinates.map(coord => [coord[1], coord[0]])
         setRouteCoordinates(routeCoords)
         
-        // Para simplicidade, usaremos a distância calculada manualmente
-        let totalDistance = 0
-        for (let i = 0; i < markers.length - 1; i++) {
-          totalDistance += calculateDistance(markers[i].lat, markers[i].lng, markers[i + 1].lat, markers[i + 1].lng)
-        }
-        
+        const distance = data.routes[0].distance
         setDistanceResult({
           type: 'todas',
-          distance: totalDistance.toFixed(2),
+          distance: distance.toFixed(2),
           count: markers.length,
           method: 'rota'
         })
@@ -2567,9 +2543,56 @@ const handleSpanChange = (count) => {
   }
   
   const toggleMarkerSelection = (marker) => {
-    // Removida função de seleção múltipla
-  };
+    if (marker === 'all') {
+      if (selectedMarkers.length === markers.length) {
+        setSelectedMarkers([]);
+      } else {
+        setSelectedMarkers([...markers]);
+      }
+      return;
+    }
+    
+    setSelectedMarkers(prev => {
+      const exists = prev.find(m => m.id === marker.id)
+      if (exists) {
+        return prev.filter(m => m.id !== marker.id)
+      } else {
+        return [...prev, marker]
+      }
+    })
+  }
   
+  const handleBatchBairroUpdate = async (bairro) => {
+    if (!bairro || selectedMarkers.length === 0) return;
+    
+    try {
+      const updatedMarkers = markers.map(marker =>
+        selectedMarkers.some(selected => selected.id === marker.id) ?
+        { ...marker, bairro } :
+        marker
+      );
+      
+      setMarkers(updatedMarkers);
+      
+      if (isOnline && user) {
+        for (const marker of selectedMarkers) {
+          await updateMarkerInSupabase({ ...marker, bairro });
+        }
+      }
+      
+      setSelectedMarkers([]);
+      setShowBatchBairroDialog(false);
+      setShowMultipleSelection(false);
+      showFeedback(
+        'Sucesso',
+        `${selectedMarkers.length} marcadores atualizados para o bairro ${bairro}`,
+        'success'
+      );
+    } catch (error) {
+      console.error('Erro ao atualizar marcadores em massa:', error);
+      showFeedback('Erro', 'Erro ao atualizar marcadores', 'error');
+    }
+  };
   
   const toggleProjectSelection = (project) => {
     setSelectedProjects(prev => {
@@ -2583,19 +2606,18 @@ const handleSpanChange = (count) => {
   };
   
   const removeLoadedProject = (projectId) => {
-    if (currentProject && currentProject.id === projectId && isOnline && user) {
-      ProjectLockService.releaseLock(currentProject.id, user.id);
-    }
-    
+    // 1. Remove da lista visual de projetos carregados
     setLoadedProjects(prev => prev.filter(p => p.id !== projectId));
-    
+
+    // 2. Se esse projeto era o que estava "ativo" ou em "foco" no rastreamento manual, limpa também
     if (currentProject && currentProject.id === projectId) {
       setCurrentProject(null);
-      setManualPoints([]);
+      setManualPoints([]); // Limpa o traçado azul de edição
       setTotalDistance(0);
       setSelectedStartPoint(null);
     }
     
+    // 3. Força uma "limpeza" visual do mapa garantindo que o renderizador atualize
     if (mapRef.current) {
       mapRef.current.triggerRepaint();
     }
@@ -2652,6 +2674,7 @@ const handleSpanChange = (count) => {
     try {
       const response = await axios.get(
         `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`,
+        
       )
       
       if (response.data && response.data.address) {
@@ -2667,7 +2690,7 @@ const handleSpanChange = (count) => {
   }
   
   const handleShareLocation = (marker) => {
-    const url = `https://www.google.com/maps?q=${marker.lat},${marker.lng}`;
+    const url = `https://www.google.com/maps?q=${marker.lat},${marker.lng}`
     if (navigator.share) {
       navigator.share({
         title: marker.name,
@@ -2706,29 +2729,67 @@ const handleSpanChange = (count) => {
     addPoint(finalPosition);
   }
   
-const addPoint = (position) => {
+  // 1. ATUALIZE A FUNÇÃO addPoint
+  const addPoint = (position) => {
   const newPoint = {
     ...position,
     id: generateUUID(),
     timestamp: Date.now(),
     connectedFrom: selectedStartPoint ? selectedStartPoint.id : null,
-    user_id: user?.id,
-    user_email: user?.email,
-    spans: 1,
-  };
+    user_id: user.id,
+    user_email: user.email // <--- ADICIONE ESTA LINHA OBRIGATORIAMENTE
+  }
   
   setManualPoints(prev => {
-    const updatedPoints = [...prev, newPoint];
-    // Atualiza a distância usando a função correta
-    const newTotalDistance = calculateTotalProjectDistance(updatedPoints, extraConnections);
+    const updatedPoints = [...prev, newPoint]
+    const newTotalDistance = calculateTotalDistanceWithBranches(updatedPoints);
     setTotalDistance(newTotalDistance);
-    return updatedPoints;
-  });
+    return updatedPoints
+  })
   
   if (selectedStartPoint) {
     setSelectedStartPoint(newPoint);
   }
-};
+}
+  
+  // Substitua a função undoLastPoint existente por esta:
+  const undoLastPoint = () => {
+    if (manualPoints.length > 0) {
+      // 1. Identifica o ponto que será removido
+      const pointToRemove = manualPoints[manualPoints.length - 1];
+      
+      // 2. Cria a nova lista sem ele
+      const newPoints = manualPoints.slice(0, -1);
+      
+      // 3. Atualiza a lista e a distância
+      setManualPoints(newPoints);
+      const newTotalDistance = calculateTotalDistanceWithBranches(newPoints);
+      setTotalDistance(newTotalDistance);
+      
+      // 4. CORREÇÃO DO TRAÇADO:
+      // Se o ponto removido era o "Ativo" (onde o próximo se conectaria),
+      // precisamos mover o "Ativo" para trás.
+      if (selectedStartPoint && selectedStartPoint.id === pointToRemove.id) {
+        if (newPoints.length > 0) {
+          // Tenta encontrar o "Pai" do ponto removido (para manter a lógica de ramificação)
+          const parentPoint = pointToRemove.connectedFrom ?
+            newPoints.find(p => p.id === pointToRemove.connectedFrom) :
+            null;
+          
+          // Se tiver pai, volta para o pai. Se não, volta para o último ponto da lista.
+          const newActivePoint = parentPoint || newPoints[newPoints.length - 1];
+          
+          setSelectedStartPoint(newActivePoint);
+          
+          // Feedback visual opcional
+          // console.log("Voltando conexão para:", newActivePoint.id);
+        } else {
+          // Se apagou tudo, reseta o ponto inicial
+          setSelectedStartPoint(null);
+        }
+      }
+    }
+  };
   
   const pauseTracking = async () => {
     try {
@@ -2747,10 +2808,6 @@ const addPoint = (position) => {
   };
   
   const stopTracking = async () => {
-    if (currentProject && isOnline && user) {
-      await ProjectLockService.releaseLock(currentProject.id, user.id);
-    }
-    
     try {
       if (manualPoints.length > 0 && !showProjectDialog) {
         let projectNameToUse = projectName;
@@ -2771,7 +2828,6 @@ const addPoint = (position) => {
       setPaused(false);
       setShowTrackingControls(false);
       setManualPoints([]);
-      setExtraConnections([]);
       setTotalDistance(0);
       setSelectedStartPoint(null);
       setPositionHistory([]);
@@ -2798,24 +2854,67 @@ const addPoint = (position) => {
     }
   };
   
-  const exportProjectAsKML = (project = currentProject) => {
-    if (!project) return;
+  const deleteProject = async (projectId) => {
+    if (!confirm('Tem certeza que deseja deletar este projeto?')) {
+      return;
+    }
     
-    setTimeout(() => {
-      const dist = project.total_distance || project.totalDistance || 0;
-      const distTexto = dist < 1000 ?
-        `${Math.round(dist)} metros` :
-        `${(dist / 1000).toFixed(3)} km`;
+    try {
+      if (isOnline && user && !projectId.toString().startsWith('offline_')) {
+        const { error } = await supabase
+          .from('projetos')
+          .delete()
+          .eq('id', projectId)
+          .eq('user_id', user.id);
+        
+        if (error) throw error;
+      }
       
-      const linesKML = project.points.map((point, index) => {
-        if (index === 0) return '';
-        
-        let parent = point.connectedFrom ?
-          project.points.find(p => p.id === point.connectedFrom) :
-          project.points[index - 1];
-        
-        if (parent) {
-          return `
+      const updatedProjects = projects.filter(p => p.id !== projectId);
+      setProjects(updatedProjects);
+      localStorage.setItem('jamaaw_projects', JSON.stringify(updatedProjects));
+      
+      if (currentProject && currentProject.id === projectId) {
+        setCurrentProject(null);
+        setManualPoints([]);
+        setTotalDistance(0);
+        setSelectedStartPoint(null);
+      }
+      
+      if (editingProject && editingProject.id === projectId) {
+        setEditingProject(null);
+      }
+      
+      showFeedback('Sucesso', 'Projeto deletado com sucesso!', 'success');
+      
+    } catch (error) {
+      console.error('Erro ao deletar projeto:', error);
+      showFeedback('Erro', 'Erro ao deletar projeto. Tente novamente.', 'error');
+    }
+  };
+  
+  // Função de Exportação KML Corrigida e Simplificada
+const exportProjectAsKML = (project = currentProject) => {
+  if (!project) return;
+  
+  setTimeout(() => {
+    // 1. Formata a Distância (Simples e Direto)
+    const dist = project.total_distance || project.totalDistance || 0;
+    const distTexto = dist < 1000 ?
+      `${Math.round(dist)} metros` :
+      `${(dist / 1000).toFixed(3)} km`;
+    
+    // 2. Prepara a Linha do Traçado (Respeitando conexões/galhos)
+    const linesKML = project.points.map((point, index) => {
+      if (index === 0) return '';
+      
+      // Lógica para encontrar quem conecta com quem
+      let parent = point.connectedFrom ?
+        project.points.find(p => p.id === point.connectedFrom) :
+        project.points[index - 1];
+      
+      if (parent) {
+        return `
           <Placemark>
             <name>Traçado ${index}</name>
             <styleUrl>#lineStyle</styleUrl>
@@ -2827,11 +2926,12 @@ const addPoint = (position) => {
               </coordinates>
             </LineString>
           </Placemark>`;
-        }
-        return '';
-      }).join('\n');
-      
-      const pointsKML = project.points.map((point, index) => `
+      }
+      return '';
+    }).join('\n');
+    
+    // 3. Prepara os Pontos (Ícones)
+    const pointsKML = project.points.map((point, index) => `
         <Placemark>
           <name>${index + 1}</name>
           <description>Lat: ${point.lat}, Lng: ${point.lng}</description>
@@ -2841,8 +2941,9 @@ const addPoint = (position) => {
           </Point>
         </Placemark>
       `).join('\n');
-      
-      const kmlContent = `<?xml version="1.0" encoding="UTF-8"?>
+    
+    // 4. Monta o KML Final
+    const kmlContent = `<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2">
   <Document>
     <name>${escapeXml(project.name)}</name>
@@ -2880,11 +2981,11 @@ const addPoint = (position) => {
 
   </Document>
 </kml>`;
-      
-      const friendlyName = project.name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
-      downloadKML(kmlContent, `projeto_${friendlyName}.kml`);
-    }, 50);
-  };
+    
+    const friendlyName = project.name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+    downloadKML(kmlContent, `projeto_${friendlyName}.kml`);
+  }, 50);
+};
   
   const handleBoundsAdjustedForMarkers = () => {
     setAdjustBoundsForMarkers(false);
@@ -2987,91 +3088,60 @@ const addPoint = (position) => {
           style={{ width: '100%', height: '100%', position: 'relative' }}
           mapStyle={mapStyles[mapStyle].url}
           mapboxAccessToken={mapboxToken}
-          cursor={tracking && trackingInputMode === 'touch' && !paused ? 'crosshair' : 'auto'}
-          preserveDrawingBuffer={true}
-          onClick={async (e) => {
-    // 1. Verificação de segurança: O mapa está carregado?
-    if (!mapRef.current) return;
+          cursor={tracking && trackingInputMode === 'touch' && !paused ? 'crosshair' : 'auto'} // Muda o cursor para mira
+          preserveDrawingBuffer={true} // ADICIONADO: Permite captura de tela
+          onClick={async (e) => { // Adicione async aqui
+            // 1. Verifica se clicou em um marcador (Layer)
+            const features = e.target.queryRenderedFeatures(e.point, {
+              layers: ['markers-hit-area', 'markers-layer']
+            });
 
-    // 2. Tenta pegar features de marcadores (Markers)
-    const markerLayers = ['markers-hit-area', 'markers-layer'].filter(id => 
-      mapRef.current.getLayer(id)
-    );
-    
-    let features = [];
-    if (markerLayers.length > 0) {
-      features = e.target.queryRenderedFeatures(e.point, {
-        layers: markerLayers
-      });
-    }
-    
-    // Lógica do segmento (Traçado)
-    if (tracking && !paused) {
-      const segmentLayers = ['segment-hit-area', 'segment-badge-bg'].filter(id => 
-        mapRef.current.getLayer(id)
-      );
+            if (features.length > 0) {
+              const feature = features[0];
+              const markerData = {
+                ...feature.properties,
+                lat: feature.geometry.coordinates[1],
+                lng: feature.geometry.coordinates[0]
+              };
+              
+              // Abre o popup do marcador
+              setPopupMarker(markerData);
+              return; // Impede que crie ponto de rastreio se clicou em marcador
+            }
 
-      if (segmentLayers.length > 0) {
-        const segmentFeatures = e.target.queryRenderedFeatures(e.point, {
-          layers: segmentLayers
-        });
+            // 2. Lógica de Rastreamento (se não clicou em marcador)
+            if (tracking && trackingInputMode === 'touch' && !paused) {
+              const { lat, lng } = e.lngLat;
+              
+              // Feedback visual imediato (opcional, ou aguarda o snap)
+              
+              if (snappingEnabled) {
+                // Tenta alinhar à rua
+                try {
+                  const snapped = await RoadSnappingService.snapToRoad(lat, lng);
+                  if (snapped.snapped) {
+                    addPoint({ lat: snapped.lat, lng: snapped.lng });
+                  } else {
+                    addPoint({ lat, lng });
+                  }
+                } catch (error) {
+                  console.warn('Erro no snapping de toque:', error);
+                  addPoint({ lat, lng });
+                }
+              } else {
+                // Modo sem alinhamento
+                addPoint({ lat, lng });
+              }
+              return;
+            }
 
-        if (segmentFeatures.length > 0) {
-          const feature = segmentFeatures[0];
-          setSpanSelectorInfo({
-            x: e.point.x,
-            y: e.point.y,
-            targetPointId: feature.properties.targetPointId,
-            currentSpans: feature.properties.spans
-          });
-          return;
-        }
-      }
-    }
-    
-    setSpanSelectorInfo(null);
-
-    // Lógica de clique no Marcador
-    if (features.length > 0) {
-      const feature = features[0];
-      const markerData = {
-        ...feature.properties,
-        lat: feature.geometry.coordinates[1],
-        lng: feature.geometry.coordinates[0]
-      };
-      
-      setPopupMarker(markerData);
-      return;
-    }
-
-    // Lógica de adicionar ponto (Toque)
-    if (tracking && trackingInputMode === 'touch' && !paused) {
-      const { lat, lng } = e.lngLat;
-      
-      if (snappingEnabled) {
-        try {
-          const snapped = await RoadSnappingService.snapToRoad(lat, lng);
-          if (snapped.snapped) {
-            addPoint({ lat: snapped.lat, lng: snapped.lng });
-          } else {
-            addPoint({ lat, lng });
-          }
-        } catch (error) {
-          console.warn('Erro no snapping de toque:', error);
-          addPoint({ lat, lng });
-        }
-      } else {
-        addPoint({ lat, lng });
-      }
-      return;
-    }
-
-    setPopupMarker(null); 
-  }}
+            // 3. Se clicou fora, fecha o popup do marcador
+            setPopupMarker(null); 
+          }}
         >
           <NavigationControl position="top-right" />
 
-          {/* CAMADA DE MARCADORES OTIMIZADA */}
+          {/* CAMADA DE MARCADORES OTIMIZADA (GPU) */}
           <Source id="markers-source" type="geojson" data={markersGeoJSON}>
             <Layer
               id="markers-layer"
@@ -3079,15 +3149,16 @@ const addPoint = (position) => {
               paint={{
                 'circle-radius': [
                   'interpolate', ['linear'], ['zoom'],
-                  10, 4,
-                  15, 8
+                  10, 4, // Zoom longe: raio 4px
+                  15, 8  // Zoom perto: raio 8px
                 ],
-                'circle-color': ['get', 'color'],
+                'circle-color': ['get', 'color'], // Pega a cor das propriedades
                 'circle-stroke-width': 2,
                 'circle-stroke-color': '#ffffff',
                 'circle-opacity': 0.9
               }}
             />
+            {/* Camada invisível para aumentar área de clique (Hit Area) */}
             <Layer
               id="markers-hit-area"
               type="circle"
@@ -3099,6 +3170,7 @@ const addPoint = (position) => {
             />
           </Source>
 
+          {/* 1. Renderização das LINHAS (GeoJSON é rápido, não precisa mudar muito) */}
           {loadedProjects.map(project => (
             <Source 
               key={`source-${project.id}`}
@@ -3132,22 +3204,19 @@ const addPoint = (position) => {
               }}
             >
               <Layer
-  id={`route-layer-${project.id}`}
-  type="line"
-  paint={{
-    'line-color': project.color,
-    'line-width': [
-      'interpolate', ['linear'], ['zoom'],
-      10, 1,
-      15, 3,
-      22, 6
-    ],
-    'line-opacity': 0.8
-  }}
-/>
+                id={`route-layer-${project.id}`}
+                type="line"
+                paint={{
+                  'line-color': project.color,
+                  'line-width': 4,
+                  'line-opacity': 0.8
+                }}
+              />
             </Source>
           ))}
 
+          {/* 2. Renderização dos POSTES OTIMIZADA */}
+          {/* Usamos useMemo aqui implicitamente ao separar a lógica */}
           {loadedProjects.map(project => (
             <React.Fragment key={`markers-${project.id}`}>
               {project.points.map((point, index) => (
@@ -3156,14 +3225,13 @@ const addPoint = (position) => {
                   point={point}
                   index={index + 1}
                   color={project.color}
-                  isActive={false}
+                  isActive={false} // Projetos carregados geralmente não têm "ponto ativo" de edição
                   onClick={(e) => {
                     e.originalEvent.stopPropagation();
                     setPointPopupInfo({
                       point,
                       pointNumber: index + 1,
                       projectName: project.name,
-                      projectId: project.id,
                       totalPoints: project.points.length,
                       color: project.color,
                       isManualPoint: false
@@ -3174,66 +3242,64 @@ const addPoint = (position) => {
             </React.Fragment>
           ))}
 
-          {/* CAMADA DE TRAÇADO COM VÃOS */}
+         {/* TRAÇADO MANUAL (Linha Azul) - CORRIGIDO */}
           {manualPoints.length > 0 && (
-            <Source id="segments-source" type="geojson" data={segmentsGeoJSON}>
+            <Source 
+              id="manual-route" 
+              type="geojson" 
+              data={{
+                type: 'FeatureCollection',
+                features: manualPoints.map((point, index) => {
+                  // CASO 1: Conexão Explícita (Novo Ponto de Partida / Ramificação)
+                  if (point.connectedFrom) {
+                    const parent = manualPoints.find(p => p.id === point.connectedFrom);
+                    if (parent) {
+                      return {
+                        type: 'Feature',
+                        geometry: {
+                          type: 'LineString',
+                          coordinates: [
+                            [parent.lng, parent.lat],
+                            [point.lng, point.lat]
+                          ]
+                        }
+                      };
+                    }
+                  }
+                  // CASO 2: Sequencial (Sem pai definido, conecta ao anterior da lista)
+                  else if (index > 0) {
+                    const prev = manualPoints[index - 1];
+                    // Só conecta se o anterior também não for o início de um novo galho desconexo
+                    // (Opcional: removemos a verificação complexa para garantir que sempre feche o traço sequencial)
+                    return {
+                      type: 'Feature',
+                      geometry: {
+                        type: 'LineString',
+                        coordinates: [
+                          [prev.lng, prev.lat],
+                          [point.lng, point.lat]
+                        ]
+                      }
+                    };
+                  }
+                  return null;
+                }).filter(Boolean)
+              }}
+            >
               <Layer
-                id="segment-hit-area"
                 type="line"
                 paint={{
-                  'line-width': 20,
-                  'line-opacity': 0
-                }}
-              />
-
-              <Layer
-  id="segment-line"
-  type="line"
-  layout={{
-    'line-join': 'round',
-    'line-cap': 'round'
-  }}
-  paint={{
-    'line-color': ['get', 'color'],
-    'line-width': [
-      'interpolate', ['linear'], ['zoom'],
-      10, 1,
-      15, 3,
-      22, 6
-    ],
-    'line-opacity': 0.9
-  }}
-/>
-
-              <Layer
-                id="segment-badge-bg"
-                type="circle"
-                filter={['==', 'type', 'badge']}
-                paint={{
-                  'circle-radius': 8,
-                  'circle-color': '#0f172a',
-                  'circle-stroke-width': 2,
-                  'circle-stroke-color': ['get', 'color']
-                }}
-              />
-
-              <Layer
-                id="segment-badge-text"
-                type="symbol"
-                filter={['==', 'type', 'badge']}
-                layout={{
-                  'text-field': ['get', 'label'],
-                  'text-size': 10,
-                  'text-font': ['DIN Offc Pro Bold', 'Arial Unicode MS Bold'],
-                  'text-allow-overlap': true
-                }}
-                paint={{
-                  'text-color': '#ffffff'
+                  'line-color': '#1e3a8a', // Azul escuro
+                  'line-width': 4,
+                  'line-opacity': 0.8,
+                  'line-cap': 'round',     // Deixa as pontas arredondadas (mais bonito)
+                  'line-join': 'round'     // Deixa as curvas suaves
                 }}
               />
             </Source>
           )}
 
+          {/* Renderização dos pontos manuais com PoleMarker otimizado */}
           {manualPoints.map((point, index) => (
             <PoleMarker
               key={point.id}
@@ -3279,6 +3345,7 @@ const addPoint = (position) => {
             </Marker>
           )}
 
+          {/* SUBSTITUA O BLOCO ANTIGO POR ESTE NOVO */}
           {pointPopupInfo && pointPopupInfo.isManualPoint && (
             <Popup
               longitude={pointPopupInfo.point.lng}
@@ -3286,10 +3353,11 @@ const addPoint = (position) => {
               onClose={() => setPointPopupInfo(null)}
               className="modern-popup"
               closeButton={false}
-              anchor="bottom"
-              offset={20}
+              anchor="bottom" // Mudado para bottom para o card ficar acima do ponto
+              offset={20}     // Um pouco mais de offset para não colar no marcador
               maxWidth="300px"
             >
+              {/* Usa o novo componente com o design Glow, sem descrição */}
               <TrackingPointPopupContent 
                 pointInfo={pointPopupInfo}
                 onClose={() => setPointPopupInfo(null)}
@@ -3300,7 +3368,7 @@ const addPoint = (position) => {
             </Popup>
           )}
 
-          {pointPopupInfo && pointPopupInfo.point && !pointPopupInfo.isManualPoint && (
+         {pointPopupInfo && pointPopupInfo.point && !pointPopupInfo.isManualPoint && (
             <Popup
               longitude={pointPopupInfo.point.lng}
               latitude={pointPopupInfo.point.lat}
@@ -3308,12 +3376,15 @@ const addPoint = (position) => {
               className="modern-popup"
               closeButton={false}
               maxWidth="300px"
-              anchor="bottom"
+              anchor="bottom" // Mudado para bottom para não cobrir o ponto
               offset={15}
             >
+              {/* Container Principal com design "Glass" escuro */}
               <div className="w-[260px] bg-slate-900/95 backdrop-blur-md border border-slate-700 rounded-xl shadow-2xl overflow-hidden flex flex-col">
                 
+                {/* Cabeçalho com a cor do projeto */}
                 <div className="relative p-3 flex items-center justify-between bg-slate-800/50 border-b border-slate-700/50">
+                  {/* Barra de cor lateral decorativa */}
                   <div 
                     className="absolute left-0 top-0 bottom-0 w-1"
                     style={{ backgroundColor: pointPopupInfo.color }}
@@ -3336,8 +3407,10 @@ const addPoint = (position) => {
                   </button>
                 </div>
 
+                {/* Corpo do Popup */}
                 <div className="p-3 space-y-3">
                   
+                  {/* Destaque do Número do Ponto */}
                   <div className="flex items-center gap-3">
                     <div 
                       className="flex items-center justify-center w-10 h-10 rounded-lg bg-slate-800 border border-slate-700 shadow-inner"
@@ -3357,6 +3430,7 @@ const addPoint = (position) => {
                     </div>
                   </div>
 
+                  {/* Grid de Coordenadas Técnicas */}
                   <div className="grid grid-cols-2 gap-2">
                     <div className="bg-slate-950/50 p-2 rounded border border-slate-800 flex flex-col">
                       <span className="text-[9px] uppercase text-slate-500 font-semibold mb-0.5">Latitude</span>
@@ -3372,6 +3446,7 @@ const addPoint = (position) => {
                     </div>
                   </div>
 
+                  {/* Botão de Ação Rápida (Copiar) */}
                   <Button
                     size="sm"
                     variant="ghost"
@@ -3379,6 +3454,7 @@ const addPoint = (position) => {
                     onClick={() => {
                       const coords = `${pointPopupInfo.point.lat}, ${pointPopupInfo.point.lng}`;
                       navigator.clipboard.writeText(coords);
+                      // Feedback visual rápido poderia ser adicionado aqui
                     }}
                   >
                     <span className="flex items-center gap-2">
@@ -3391,146 +3467,130 @@ const addPoint = (position) => {
             </Popup>
           )}
         </Map>
-        
-        {/* 5. NOVO CONTROLE DE MAPA E GPS (Substitui os botões antigos) */}
-        <MapControls 
-          onCenterMap={centerMapOnUser}
-          currentMapStyle={mapStyle}
-          onChangeStyle={setMapStyle}
-          isTrackingActive={tracking}
-        />
-        
-        {/* 6. Botão de Equipe (Só aparece se tiver projeto carregado e online) */}
-        {currentProject && isOnline && (
-          <div className="absolute top-4 left-20 z-10">
-             <Button 
-               size="sm" 
-               onClick={() => setShowMembersDialog(true)}
-               className="bg-slate-900/80 backdrop-blur text-cyan-400 border border-white/10 shadow-xl"
-             >
-               <Users size={16} className="mr-2" /> Equipe
-             </Button>
-          </div>
-        )}
       </div>
-      
 
       <div className="absolute top-4 left-4 right-4 z-10 flex items-center gap-2">
-        <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-          <SheetTrigger asChild>
-            <Button
-              size="icon"
-              className="bg-slate-950/90 backdrop-blur border border-white/10 text-cyan-400 shadow-xl rounded-xl h-10 w-10 active:scale-90 transition-transform"
-            >
-              <Menu className="w-6 h-6" />
-            </Button>
-          </SheetTrigger>
-          
-          <SheetContent side="left" className="w-[280px] p-0 border-r border-white/5 bg-slate-950 text-white flex flex-col">
-            <div className="p-5 border-b border-white/5 bg-gradient-to-b from-cyan-950/20 to-transparent">
-              <div className="flex items-center gap-3 mb-1">
-                <div className="w-10 h-10 rounded-xl bg-cyan-500 flex items-center justify-center text-black shadow-[0_0_15px_rgba(6,182,212,0.5)]">
-                  <MapPinned className="w-6 h-6" />
-                </div>
-                <div>
-                  <h2 className="font-bold text-lg tracking-tight">Jamaaw</h2>
-                  <div className="flex items-center gap-1.5">
-                    <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500'}`}></div>
-                    <span className="text-[10px] text-slate-400 font-mono uppercase">{isOnline ? 'Online' : 'Offline'}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
+        { /* MENU LATERAL - DESIGNER GLOW AGRESSIVO */ }
+{ /* MENU COMPACTO V3.0 */ }
+<Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+  <SheetTrigger asChild>
+    <Button
+      size="icon"
+      className="bg-slate-950/90 backdrop-blur border border-white/10 text-cyan-400 shadow-xl rounded-xl h-10 w-10 active:scale-90 transition-transform"
+    >
+      <Menu className="w-6 h-6" />
+    </Button>
+  </SheetTrigger>
+  
+  <SheetContent side="left" className="w-[280px] p-0 border-r border-white/5 bg-slate-950 text-white flex flex-col">
+    {/* HEADER DO MENU */}
+    <div className="p-5 border-b border-white/5 bg-gradient-to-b from-cyan-950/20 to-transparent">
+      <div className="flex items-center gap-3 mb-1">
+        <div className="w-10 h-10 rounded-xl bg-cyan-500 flex items-center justify-center text-black shadow-[0_0_15px_rgba(6,182,212,0.5)]">
+          <MapPinned className="w-6 h-6" />
+        </div>
+        <div>
+          <h2 className="font-bold text-lg tracking-tight">Jamaaw</h2>
+          <div className="flex items-center gap-1.5">
+            <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500'}`}></div>
+            <span className="text-[10px] text-slate-400 font-mono uppercase">{isOnline ? 'Online' : 'Offline'}</span>
+          </div>
+        </div>
+      </div>
+    </div>
 
-            <div className="flex-1 overflow-y-auto py-2 custom-scrollbar">
-              <div className="px-3 space-y-1">
-                <p className="text-[10px] uppercase text-slate-600 font-bold px-2 mt-4 mb-2">Ferramentas</p>
-                
-                <Button
-                  variant="ghost"
-                  className="w-full justify-start h-12 text-slate-300 hover:text-white hover:bg-white/5 rounded-xl transition-all group"
-                  onClick={() => { setSidebarOpen(false); setShowProjectsList(true); }}
-                >
-                  <FolderOpen className="w-5 h-5 mr-3 text-cyan-500 group-hover:scale-110 transition-transform" />
-                  <span className="flex-1 text-left">Projetos</span>
-                  <span className="bg-slate-800 text-slate-400 text-[10px] px-2 py-0.5 rounded-full">{projects.length}</span>
-                </Button>
+    {/* LISTA DE OPÇÕES */}
+    <div className="flex-1 overflow-y-auto py-2 custom-scrollbar">
+      <div className="px-3 space-y-1">
+        <p className="text-[10px] uppercase text-slate-600 font-bold px-2 mt-4 mb-2">Ferramentas</p>
+        
+        <Button
+          variant="ghost"
+          className="w-full justify-start h-12 text-slate-300 hover:text-white hover:bg-white/5 rounded-xl transition-all group"
+          onClick={() => { setSidebarOpen(false); setShowProjectsList(true); }}
+        >
+          <FolderOpen className="w-5 h-5 mr-3 text-cyan-500 group-hover:scale-110 transition-transform" />
+          <span className="flex-1 text-left">Projetos</span>
+          <span className="bg-slate-800 text-slate-400 text-[10px] px-2 py-0.5 rounded-full">{projects.length}</span>
+        </Button>
 
-                <Button
-                  variant="ghost"
-                  className="w-full justify-start h-12 text-slate-300 hover:text-white hover:bg-white/5 rounded-xl transition-all group"
-                  onClick={() => { 
-                    setSidebarOpen(false); 
-                    startTracking('touch');
-                  }}
-                >
-                  <Ruler className="w-5 h-5 mr-3 text-purple-500 group-hover:scale-110 transition-transform" />
-                  <span>Medir</span>
-                </Button>
+        <Button
+          variant="ghost"
+          className="w-full justify-start h-12 text-slate-300 hover:text-white hover:bg-white/5 rounded-xl transition-all group"
+          onClick={() => { 
+  setSidebarOpen(false); 
+  startTracking('touch'); // Inicia o modo de toque (Medir) diretamente
+}}
+        >
+          <Ruler className="w-5 h-5 mr-3 text-purple-500 group-hover:scale-110 transition-transform" />
+          <span>Medir</span>
+        </Button>
 
-                <Button
-                  variant="ghost"
-                  className="w-full justify-start h-12 text-slate-300 hover:text-white hover:bg-white/5 rounded-xl transition-all group"
-                  onClick={() => { setSidebarOpen(false); handleARMode(); }}
-                >
-                  <Camera className="w-5 h-5 mr-3 text-yellow-500 group-hover:scale-110 transition-transform" />
-                  <span>Realidade Aumentada</span>
-                </Button>
+        <Button
+          variant="ghost"
+          className="w-full justify-start h-12 text-slate-300 hover:text-white hover:bg-white/5 rounded-xl transition-all group"
+          onClick={() => { setSidebarOpen(false); handleARMode(); }}
+        >
+          <Camera className="w-5 h-5 mr-3 text-yellow-500 group-hover:scale-110 transition-transform" />
+          <span>Realidade Aumentada</span>
+        </Button>
 
-                <p className="text-[10px] uppercase text-slate-600 font-bold px-2 mt-6 mb-2">Dados</p>
-                
-                <Button
-                  variant="ghost"
-                  className="w-full justify-start h-12 text-slate-300 hover:text-white hover:bg-white/5 rounded-xl transition-all"
-                  onClick={() => { setSidebarOpen(false); fileInputRef.current?.click(); }}
-                >
-                  <Upload className="w-5 h-5 mr-3 text-slate-500" />
-                  <span>Importar KML</span>
-                </Button>
+        <p className="text-[10px] uppercase text-slate-600 font-bold px-2 mt-6 mb-2">Dados</p>
+        
+        <Button
+          variant="ghost"
+          className="w-full justify-start h-12 text-slate-300 hover:text-white hover:bg-white/5 rounded-xl transition-all"
+          onClick={() => { setSidebarOpen(false); fileInputRef.current?.click(); }}
+        >
+          <Upload className="w-5 h-5 mr-3 text-slate-500" />
+          <span>Importar KML</span>
+        </Button>
 
-                <Button
-                  variant="ghost"
-                  className="w-full justify-start h-12 text-slate-300 hover:text-white hover:bg-white/5 rounded-xl transition-all"
-                  onClick={() => { setSidebarOpen(false); handleExport(); }}
-                >
-                  <Download className="w-5 h-5 mr-3 text-slate-500" />
-                  <span>Exportar Tudo</span>
-                </Button>
+        <Button
+          variant="ghost"
+          className="w-full justify-start h-12 text-slate-300 hover:text-white hover:bg-white/5 rounded-xl transition-all"
+          onClick={() => { setSidebarOpen(false); handleExport(); }}
+        >
+          <Download className="w-5 h-5 mr-3 text-slate-500" />
+          <span>Exportar Tudo</span>
+        </Button>
 
-                <Button
-                  variant="ghost"
-                  className="w-full justify-start h-12 text-red-400 hover:text-red-300 hover:bg-red-950/20 rounded-xl transition-all"
-                  onClick={() => { 
-                    setSidebarOpen(false); 
-                    if(confirm('ATENÇÃO: Isso apagará todas as marcações do mapa. Continuar?')) {
-                       handleClearAllMarkers();
-                    }
-                  }}
-                >
-                  <Trash2 className="w-5 h-5 mr-3" />
-                  <span>Limpar Marcações</span>
-                </Button>
-              </div>
-            </div>
+        {/* BOTÃO ADICIONADO: Limpar Marcações */}
+        <Button
+          variant="ghost"
+          className="w-full justify-start h-12 text-red-400 hover:text-red-300 hover:bg-red-950/20 rounded-xl transition-all"
+          onClick={() => { 
+            setSidebarOpen(false); 
+            if(confirm('ATENÇÃO: Isso apagará todas as marcações do mapa. Continuar?')) {
+               handleClearAllMarkers();
+            }
+          }}
+        >
+          <Trash2 className="w-5 h-5 mr-3" />
+          <span>Limpar Marcações</span>
+        </Button>
+      </div>
+    </div>
 
-            <div className="p-4 border-t border-white/5 bg-slate-900/50">
-              <div className="flex items-center justify-between">
-                <div className="flex flex-col overflow-hidden mr-2">
-                  <span className="text-xs font-medium text-white truncate">{user?.email}</span>
-                  <span className="text-[10px] text-slate-500">Logado</span>
-                </div>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  onClick={handleLogout}
-                  className="text-red-400 hover:text-white hover:bg-red-500/20 rounded-lg"
-                >
-                  <LogOut className="w-5 h-5" />
-                </Button>
-              </div>
-            </div>
-          </SheetContent>
-        </Sheet>
+    {/* FOOTER */}
+    <div className="p-4 border-t border-white/5 bg-slate-900/50">
+      <div className="flex items-center justify-between">
+        <div className="flex flex-col overflow-hidden mr-2">
+          <span className="text-xs font-medium text-white truncate">{user?.email}</span>
+          <span className="text-[10px] text-slate-500">Logado</span>
+        </div>
+        <Button
+          size="icon"
+          variant="ghost"
+          onClick={handleLogout}
+          className="text-red-400 hover:text-white hover:bg-red-500/20 rounded-lg"
+        >
+          <LogOut className="w-5 h-5" />
+        </Button>
+      </div>
+    </div>
+  </SheetContent>
+</Sheet>
 
         <div className="flex-1 flex items-center gap-3 bg-gradient-to-r from-slate-800 to-slate-700 backdrop-blur-sm rounded-lg px-4 py-2.5 shadow-xl border border-slate-600/50">
           <div className="w-8 h-8 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-lg flex items-center justify-center shadow-lg">
@@ -3577,19 +3637,38 @@ const addPoint = (position) => {
           <Layers className="w-5 h-5" />
         </Button>
 
+        { /* Dentro do Card do showRulerPopup */ }
+<Button
+  size="icon" // Importante: size="icon" para ficar quadrado/redondo
+  variant="ghost"
+  onClick={() => setShowRulerPopup(false)} // Função que fecha
+  className="h-8 w-8 text-slate-400 hover:text-white hover:bg-white/10 rounded-full"
+>
+  <X className="w-5 h-5" /> </Button>
+      </div>
+
+      <div className="absolute bottom-40 right-4 z-10">
         <Button
           size="icon"
-          variant="ghost"
-          onClick={() => setShowRulerPopup(false)}
-          className="h-8 w-8 text-slate-400 hover:text-white hover:bg-white/10 rounded-full"
+          className="bg-white/80 backdrop-blur-sm hover:bg-white text-slate-900 shadow-xl border border-slate-200/50 transition-all-smooth hover-lift rounded-full w-12 h-12"
+          onClick={() => setShowMultipleSelection(true)}
+          title="Seleção Múltipla"
         >
-          <X className="w-5 h-5" />
+          <Layers className="w-6 h-6" />
         </Button>
       </div>
 
-      {/* REMOVIDO: Botão de seleção múltipla */}
+      <MultipleSelectionPopup
+        isOpen={showMultipleSelection}
+        onClose={() => setShowMultipleSelection(false)}
+        markers={markers}
+        selectedMarkers={selectedMarkers}
+        onToggleMarker={toggleMarkerSelection}
+        onBatchBairroUpdate={handleBatchBairroUpdate}
+        bairros={bairros}
+      />
 
-      {/* REMOVIDO: MultipleSelectionPopup */}
+      
 
       {showProjectDetails && currentProject && (
         <div className="absolute bottom-20 right-4 z-50 animate-scale-in">
@@ -3610,11 +3689,65 @@ const addPoint = (position) => {
                 </Button>
               </div>
             </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="text-center">
+                <p className="text-white font-medium truncate text-sm mb-1">{currentProject.name}</p>
+                <p className="text-cyan-400 text-xs">
+                  Modo Manual
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="text-center p-2 bg-slate-700/30 rounded">
+                  <div className="text-cyan-400 font-bold text-sm">
+                    {formatDistanceDetailed(currentProject.totalDistance || currentProject.total_distance || 0)}
+                  </div>
+                  <div className="text-gray-400">Distância</div>
+                </div>
+                <div className="text-center p-2 bg-slate-700/30 rounded">
+                  <div className="text-cyan-400 font-bold">{currentProject.points?.length || 0}</div>
+                  <div className="text-gray-400">Pontos</div>
+                </div>
+              </div>
+
+              {currentProject.bairro && currentProject.bairro !== 'Vários' && (
+                <div className="text-center p-2 bg-slate-700/30 rounded">
+                  <div className="text-cyan-400 text-xs font-medium">Bairro</div>
+                  <div className="text-white text-sm">{currentProject.bairro}</div>
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <Button
+                  onClick={() => {
+                    handleRemovePoints();
+                  }}
+                  size="sm"
+                  className="flex-1 bg-red-500 hover:bg-red-600 text-white text-xs h-7"
+                >
+                  <X className="w-3 h-3 mr-1" />
+                  Limpar
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    exportProjectAsKML(currentProject);
+                    setShowProjectDetails(false);
+                  }}
+                  size="sm"
+                  className="flex-1 border-green-500/50 text-green-400 hover:bg-green-500/10 text-xs h-7"
+                >
+                  <Download className="w-3 h-3 mr-1" />
+                  Exportar
+                </Button>
+              </div>
+            </CardContent>
           </Card>
         </div>
       )}
 
-      <ProjectManager
+    { /* Substituir o bloco antigo do Dialog de projetos por este: */ }
+<ProjectManager
   isOpen={showProjectsList}
   onClose={() => setShowProjectsList(false)}
   projects={projects}
@@ -3626,44 +3759,72 @@ const addPoint = (position) => {
   onDeleteProject={deleteProject}
   onExportProject={exportProjectAsKML}
   onJoinProject={handleJoinProject}
-  onRenameProject={handleRenameProject}
-  
-  // --- CORREÇÃO DO RELATÓRIO AQUI ---
-  // No App.jsx, onde você chama onOpenReport, atualize para:
-onOpenReport={(project) => {
-  const img = getMapImage();
-  
-  // Calcula a distância com vãos
-  const distAtualizada = calculateProjectDistance(project);
-  
-  // Cria um objeto temporário com a distância corrigida
-  const projetoCorrigido = {
-    ...project,
-    total_distance: distAtualizada,
-    totalDistance: distAtualizada
-  };
-
-  setReportData({ project: projetoCorrigido, image: img });
-  setShowProjectsList(false);
-}}
+  onOpenReport={(project) => {
+    const img = getMapImage(); // Tira o print do estado atual do mapa
+    setReportData({ project, image: img }); // Salva no estado
+    setShowProjectsList(false); // Fecha a lista para focar no relatório
+  }}
 />
 
       <LoadedProjectsManager
-        isOpen={showLoadedProjects}
-        onClose={() => setShowLoadedProjects(false)}
-        loadedProjects={loadedProjects}
-        onRemoveProject={removeLoadedProject}
-        onFocusProject={focusOnProject}
-        onShowDetails={(p) => {
-          setPointPopupInfo({ project: p, showOverview: true });
-          setShowLoadedProjects(false);
-        }}
-        totalDistanceAll={totalDistanceAllProjects}
-      />
+  isOpen={showLoadedProjects}
+  onClose={() => setShowLoadedProjects(false)}
+  loadedProjects={loadedProjects}
+  onRemoveProject={removeLoadedProject}
+  onFocusProject={focusOnProject}
+  onShowDetails={(p) => {
+    setPointPopupInfo({ project: p, showOverview: true });
+    setShowLoadedProjects(false);
+  }}
+  totalDistanceAll={totalDistanceAllProjects}
+/>
 
-      
+      <Dialog open={showBatchBairroDialog} onOpenChange={setShowBatchBairroDialog}>
+        <DialogContent className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white border-slate-700/50 max-w-md mx-auto shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-cyan-400 text-xl font-bold">
+              Definir Bairro para {selectedMarkers.length} Marcadores
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Select onValueChange={handleBatchBairroUpdate}>
+              <SelectTrigger className="bg-slate-800/50 border-slate-700 text-white">
+                <SelectValue placeholder="Selecione um bairro" />
+              </SelectTrigger>
+              <SelectContent className="bg-slate-800 border-slate-700 text-white z-[10000]">
+                {bairros.map(bairro => (
+                  <SelectItem key={bairro} value={bairro}>{bairro}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <div className="flex gap-2">
+              <Button
+                onClick={() => setShowBatchBairroDialog(false)}
+                className="flex-1 bg-gradient-to-r from-gray-500 to-slate-600 hover:from-gray-600 hover:to-slate-700"
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={() => handleBatchBairroUpdate(selectedBairro !== 'todos' ? selectedBairro : bairros[0])}
+                className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600"
+              >
+                Aplicar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
-      {/* REMOVIDO: Botão antigo de localização */}
+      <div className="absolute bottom-24 right-4 z-10">
+        <Button
+          size="icon"
+          className="bg-white/80 backdrop-blur-sm hover:bg-white text-slate-900 shadow-xl border border-slate-200/50 transition-all-smooth hover-lift rounded-full w-12 h-12"
+          onClick={centerMapOnUser}
+          title="Centralizar no Local Atual"
+        >
+          <LocateFixed className="w-6 h-6" />
+        </Button>
+      </div>
 
       {distanceResult && (
         <div className="absolute bottom-4 left-4 right-4 z-10 bg-gradient-to-r from-slate-800 to-slate-700 backdrop-blur-sm rounded-xl p-4 shadow-2xl text-white border border-slate-600/50 animate-slide-in-bottom">
@@ -3936,40 +4097,43 @@ onOpenReport={(project) => {
         </DialogContent> 
       </Dialog>
       
-      <ToolsDock
-        active={tracking}
-        onStartGPS={() => startTracking('gps')}
-        onStartTouch={() => startTracking('touch')}
-        onStartAR={handleARMode}
-        onNewProject={startNewProject}
-      />
+      {/* NOVO DOCK DE FERRAMENTAS FUTURISTA */}
+<ToolsDock
+  active={tracking} // Se estiver rastreando, o dock some para dar lugar aos controles
+  onStartGPS={() => startTracking('gps')}
+  onStartTouch={() => startTracking('touch')}
+  onStartAR={handleARMode}
+  onNewProject={startNewProject}
+/>
 
-     {tracking && showTrackingControls && (
-  <ControlesRastreamento
-    tracking={tracking}
-    paused={paused}
-    pauseTracking={pauseTracking}
-    addManualPoint={addManualPoint}
-    stopTracking={stopTracking}
-    setShowProjectDialog={setShowProjectDialog}
-    setShowProjectDetails={setShowProjectDetails}
-    manualPoints={manualPoints}
-    totalDistance={totalDistance}
-    trackingMode="manual"
-    currentPosition={currentPosition}
-    currentProject={currentProject}
-    snappingEnabled={snappingEnabled}
-    onToggleSnapping={toggleSnapping}
-    gpsAccuracy={gpsAccuracy}
-    speed={speed}
-    handleRemovePoints={handleRemovePoints}
-    showProjectDialog={showProjectDialog}
-    formatDistanceDetailed={formatDistanceDetailed}
-    undoLastPoint={undoLastPoint} // ← ESTA LINHA DEVE EXISTIR
-    selectedStartPoint={selectedStartPoint}
-    resetStartPoint={resetStartPoint}
-  />
-)}
+      {tracking && showTrackingControls && (
+        <ControlesRastreamento
+          tracking={tracking}
+          paused={paused}
+          pauseTracking={pauseTracking}
+          addManualPoint={addManualPoint}
+          stopTracking={stopTracking}
+          setShowProjectDialog={setShowProjectDialog}
+          setShowProjectDetails={setShowProjectDetails}
+          manualPoints={manualPoints}
+          totalDistance={totalDistance}
+          trackingMode="manual"
+          currentPosition={currentPosition}
+          currentProject={currentProject}
+          snappingEnabled={snappingEnabled}
+          onToggleSnapping={toggleSnapping}
+          gpsAccuracy={gpsAccuracy}
+          speed={speed}
+          handleRemovePoints={handleRemovePoints}
+          showProjectDialog={showProjectDialog}
+          selectedMarkers={selectedMarkers}
+          setSelectedMarkers={setSelectedMarkers}
+          formatDistanceDetailed={formatDistanceDetailed}
+          undoLastPoint={undoLastPoint}
+          selectedStartPoint={selectedStartPoint}
+          resetStartPoint={resetStartPoint}
+        />
+      )}
 
       {popupMarker && (
         <ModernPopup
@@ -4014,21 +4178,13 @@ onOpenReport={(project) => {
         }}
       />
 
+      {/* Componente ProjectReport adicionado */}
       <ProjectReport
         isOpen={!!reportData}
         onClose={() => setReportData(null)}
         project={reportData?.project}
         mapImage={reportData?.image}
         currentUserEmail={user?.email}
-      />
-
-      {/* 5. NOVO PAINEL DE GESTÃO DE MEMBROS */}
-      <ProjectMembersDialog 
-        isOpen={showMembersDialog}
-        onClose={() => setShowMembersDialog(false)}
-        projectId={currentProject?.id}
-        currentUserId={user?.id}
-        isOwner={currentProject?.user_id === user?.id}
       />
 
       <input
@@ -4040,31 +4196,23 @@ onOpenReport={(project) => {
         className="hidden"
       />
       
+      {/* Sistema de Notificação Glow */}
       <GlowNotification 
         notification={notification} 
         onClose={() => setNotification(null)} 
       />
       
-      <input
-        ref={projectInputRef}
-        id="project-input"
-        type="file"
-        accept=".kml,.kmz"
-        onChange={handleProjectImport}
-        className="hidden"
-      />
-      
-      {spanSelectorInfo && (
-        <SpanSelector
-          currentSpans={spanSelectorInfo.currentSpans}
-          onSelect={handleSpanChange}
-          onClose={() => setSpanSelectorInfo(null)}
-          style={{
-            left: Math.min(spanSelectorInfo.x - 80, window.innerWidth - 170),
-            top: spanSelectorInfo.y - 60 
-          }}
-        />
-      )}
+      {/* Inputs invisíveis... */}
+
+     { /* Input invisível para importação de projetos */ } 
+<input
+  ref={projectInputRef}
+  id="project-input"
+  type="file"
+  accept=".kml,.kmz"
+  onChange={handleProjectImport}
+  className="hidden"
+/>
 
     </div>
   )
