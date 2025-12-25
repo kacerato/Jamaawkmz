@@ -7,13 +7,87 @@ import autoTable from 'jspdf-autotable';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Capacitor } from '@capacitor/core';
 import { FileOpener } from '@capacitor-community/file-opener';
-import { getStaticMapUrl } from '../utils/MapboxStatic';
 import { calculateTotalProjectDistance } from '../utils/geoUtils';
 
-// --- FUNÇÃO AUXILIAR (Movida para fora para performance e acesso global) ---
+// --- FUNÇÃO DE MAPA ROBUSTA (EMBUTIDA PARA GARANTIR INTEGRIDADE DA URL) ---
+const getRobustStaticMapUrl = (points, pointIndexMap, width = 800, height = 400) => {
+  if (!points || points.length === 0) return null;
+
+  const accessToken = 'pk.eyJ1Ijoia2FjZXJhdG8iLCJhIjoiY21oZG1nNnViMDRybjJub2VvZHV1aHh3aiJ9.l7tCaIPEYqcqDI8_aScm7Q';
+  const styleId = 'mapbox/satellite-streets-v12';
+  const MAX_URL_LENGTH = 7500; // Limite de segurança (Mapbox aceita ~8k)
+
+  // 1. Constrói o GeoJSON do Traçado (MultiLineString)
+  const segments = [];
+  points.forEach((point, index) => {
+    if (point.connectedFrom) {
+      const parent = points.find(p => p.id === point.connectedFrom);
+      if (parent) segments.push([[parent.lng, parent.lat], [point.lng, point.lat]]);
+    } else if (index > 0) {
+      const prev = points[index - 1];
+      if (!point.connectedFrom) segments.push([[prev.lng, prev.lat], [point.lng, point.lat]]);
+    }
+  });
+
+  // Fallback se não houver segmentos lógicos
+  if (segments.length === 0 && points.length > 1) {
+    for(let i=0; i<points.length-1; i++) {
+        segments.push([[points[i].lng, points[i].lat], [points[i+1].lng, points[i+1].lat]]);
+    }
+  }
+
+  const geojson = {
+    type: 'Feature',
+    properties: { 'stroke': '#06b6d4', 'stroke-width': 4, 'stroke-opacity': 0.9 },
+    geometry: { type: 'MultiLineString', coordinates: segments }
+  };
+  
+  const geojsonStr = encodeURIComponent(JSON.stringify(geojson));
+  const overlayGeojson = `geojson(${geojsonStr})`;
+
+  // 2. Adiciona Marcadores com Números (Com verificação de limite)
+  let markers = [];
+  let currentUrlLength = `https://api.mapbox.com/styles/v1/${styleId}/static//auto/${width}x${height}@2x?padding=40&access_token=${accessToken}`.length + overlayGeojson.length;
+
+  // Lógica de Amostragem: Se tiver muitos pontos, pula números para não quebrar
+  // Tenta mostrar todos. Se projected length > max, aumenta o 'step'.
+  let step = 1;
+  const avgMarkerLength = 45; // Comprimento médio de string de um marcador
+  const projectedLength = currentUrlLength + (points.length * avgMarkerLength);
+  
+  if (projectedLength > MAX_URL_LENGTH) {
+    // Calcula um step seguro
+    const spaceAvailable = MAX_URL_LENGTH - currentUrlLength;
+    const markersPossible = Math.floor(spaceAvailable / avgMarkerLength);
+    step = Math.ceil(points.length / markersPossible);
+    // Garante que o step não seja 0
+    if (step < 1) step = 1;
+  }
+
+  points.forEach((p, idx) => {
+    // Sempre mostra o primeiro e o último, e os intermediários baseados no step
+    if (idx === 0 || idx === points.length - 1 || idx % step === 0) {
+        const globalNum = pointIndexMap.get(p.id);
+        // Mapbox aceita 'pin-s-n+{number}' para números até 99, depois vira texto menor ou clipa
+        // Cor: Verde p/ inicio, Vermelho p/ fim, Azul p/ meio
+        let color = '0ea5e9'; // Azul default
+        if (idx === 0) color = '10b981'; // Verde
+        if (idx === points.length - 1) color = 'ef4444'; // Vermelho
+        
+        // Formato: pin-s-n+<numero>+<cor>(lng,lat)
+        markers.push(`pin-s-n+${globalNum}+${color}(${p.lng},${p.lat})`);
+    }
+  });
+
+  const overlays = [overlayGeojson, ...markers].join(',');
+
+  return `https://api.mapbox.com/styles/v1/${styleId}/static/${overlays}/auto/${width}x${height}@2x?padding=40&access_token=${accessToken}`;
+};
+
+// --- FUNÇÃO AUXILIAR DISTÂNCIA ---
 function calcDist(p1, p2) {
   if (!p1 || !p2) return 0;
-  const R = 6371e3; // Raio da Terra em metros
+  const R = 6371e3;
   const φ1 = p1.lat * Math.PI / 180;
   const φ2 = p2.lat * Math.PI / 180;
   const a = Math.sin((p2.lat-p1.lat) * Math.PI / 180/2)**2 + Math.cos(φ1)*Math.cos(φ2) * Math.sin((p2.lng-p1.lng) * Math.PI / 180/2)**2;
@@ -24,22 +98,26 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
   const [staticMapUrl, setStaticMapUrl] = useState(null);
   const [isDownloading, setIsDownloading] = useState(false);
 
-  // --- PROCESSAMENTO DE DADOS (CORRIGIDO) ---
+  // --- PROCESSAMENTO DE DADOS ---
   const stats = useMemo(() => {
     if (!project || !project.points) return null;
+
+    // 1. MAPA DE ÍNDICES GLOBAIS (Fundamental para Poste 1, Poste 2...)
+    const pointIndexMap = new Map();
+    project.points.forEach((p, index) => {
+        pointIndexMap.set(p.id, index + 1); // 1-based index
+    });
 
     const groups = {};
     const userResponsibility = {};
     let totalSpans = 0;
     let maxSpansPerSegment = 0;
 
-    // Calcula a distância total global (para referência)
     const calculatedTotalDistance = calculateTotalProjectDistance(
       project.points || [], 
       project.extra_connections || []
     );
 
-    // Processa os pontos para o relatório diário
     project.points.forEach((p, idx) => {
       const dateObj = new Date(p.timestamp || p.created_at);
       const date = dateObj.toLocaleDateString('pt-BR');
@@ -47,7 +125,7 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
       if (!groups[date]) {
         groups[date] = { 
           points: [], 
-          distance: 0, // Inicializa zerado
+          distance: 0,
           startTime: dateObj, 
           endTime: dateObj,
           users: new Set(),
@@ -58,44 +136,30 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
       const group = groups[date];
       group.points.push(p);
       
-      // Atualiza horários do dia
       if (dateObj < group.startTime) group.startTime = dateObj;
       if (dateObj > group.endTime) group.endTime = dateObj;
 
-      // --- CORREÇÃO: CÁLCULO DE DISTÂNCIA DO SEGMENTO ---
-      // 1. Identifica o ponto anterior (pai)
       let previousPoint = null;
       if (p.connectedFrom) {
-        // Se for uma ramificação, busca pelo ID
         previousPoint = project.points.find(pt => pt.id === p.connectedFrom);
       } else if (idx > 0) {
-        // Se for sequencial, pega o anterior no array
         previousPoint = project.points[idx - 1];
       }
 
-      // 2. Define os vãos (Spans)
-      const spans = (p.spans !== undefined && p.spans !== null && !isNaN(p.spans)) ? 
-                   Math.max(1, Number(p.spans)) : 1;
+      const spans = (p.spans !== undefined && p.spans !== null && !isNaN(p.spans)) ? Math.max(1, Number(p.spans)) : 1;
 
-      // 3. Calcula e acumula se houver um ponto anterior válido
       if (previousPoint) {
         const segmentMeters = calcDist(previousPoint, p);
         const totalSegmentMeters = segmentMeters * spans;
-        
-        // Adiciona à distância do dia
         group.distance += totalSegmentMeters;
       }
-      // ----------------------------------------------------
 
       group.spans += spans;
       totalSpans += spans;
-      
       if (spans > maxSpansPerSegment) maxSpansPerSegment = spans;
 
-      // Responsabilidade
       const user = p.user_email || currentUserEmail || 'Desconhecido';
       group.users.add(user.split('@')[0]); 
-      
       if (!userResponsibility[user]) userResponsibility[user] = 0;
       userResponsibility[user]++;
     });
@@ -103,10 +167,11 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
     return {
       groups,
       userResponsibility,
-      totalDistance: calculatedTotalDistance, // Mantém o total geral preciso
+      totalDistance: calculatedTotalDistance,
       totalSpans,
       maxSpansPerSegment,
       totalPoints: project.points.length,
+      pointIndexMap, // EXPORTANDO O MAPA
       lastUpdate: new Date(project.updated_at || Date.now()).toLocaleString('pt-BR'),
       hasBranches: project.points.some(p => p.connectedFrom),
       hasExtraConnections: project.extra_connections && project.extra_connections.length > 0
@@ -114,11 +179,12 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
   }, [project, currentUserEmail]);
 
   useEffect(() => {
-    if (isOpen && project?.points?.length > 0) {
-      const url = getStaticMapUrl(project.points, 800, 400); 
+    if (isOpen && project?.points?.length > 0 && stats?.pointIndexMap) {
+      // Usando a função robusta interna
+      const url = getRobustStaticMapUrl(project.points, stats.pointIndexMap, 800, 400); 
       setStaticMapUrl(url);
     }
-  }, [isOpen, project]);
+  }, [isOpen, project, stats]);
 
   if (!project || !stats) return null;
 
@@ -161,6 +227,7 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
 
       y += 15;
 
+      // Imagem do Mapa
       if (staticMapUrl) {
         try {
           const response = await fetch(staticMapUrl);
@@ -178,6 +245,8 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
           y += 95;
         } catch (e) {
           console.error("Erro ao baixar mapa", e);
+          doc.setTextColor(239, 68, 68);
+          doc.text("Erro ao carregar imagem do mapa", 15, y + 10);
           y += 20;
         }
       }
@@ -203,51 +272,14 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
       
       y += 45;
 
-      if (stats.hasBranches || stats.hasExtraConnections) {
-        doc.setFillColor(51, 65, 85);
-        doc.roundedRect(15, y, 180, 15, 3, 3, 'F');
-        doc.setFontSize(9);
-        doc.setTextColor(255, 255, 255);
-        
-        let structureText = "ESTRUTURA: ";
-        if (stats.hasBranches) structureText += "Com Ramificações ";
-        if (stats.hasExtraConnections) structureText += "Com Conexões Extras ";
-        
-        doc.text(structureText, 20, y + 10);
-        y += 25;
-      }
-
+      // Detalhamento Diário
       doc.setFontSize(11);
       doc.setTextColor(255, 255, 255);
-      doc.text("EQUIPE TÉCNICA", 15, y);
-      y += 5;
-
-      const teamData = Object.entries(stats.userResponsibility).map(([email, count]) => [
-        email, 
-        count,
-        `${((count / stats.totalPoints) * 100).toFixed(1)}%`
-      ]);
-      
-      autoTable(doc, {
-        startY: y,
-        head: [['RESPONSÁVEL', 'PONTOS', '%']],
-        body: teamData,
-        theme: 'grid',
-        headStyles: { fillColor: [6, 182, 212], textColor: [0, 0, 0], fontStyle: 'bold' },
-        bodyStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], lineColor: [51, 65, 85] },
-        margin: { left: 15, right: 15 }
-      });
-      
-      y = doc.lastAutoTable.finalY + 15;
-
-      doc.setFontSize(11);
-      doc.setTextColor(255, 255, 255);
-      doc.text("DETALHAMENTO DIÁRIO", 15, y);
+      doc.text("DETALHAMENTO DIÁRIO (POSTE A POSTE)", 15, y);
       y += 5;
 
       const detailData = [];
       Object.entries(stats.groups).forEach(([date, groupData]) => {
-        // Cabeçalho do Dia
         detailData.push([
           { 
             content: `${date} - Produção: ${formatDist(groupData.distance)} (${groupData.spans} vãos)`, 
@@ -261,22 +293,23 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
           }
         ]);
         
-        groupData.points.forEach((p, i) => {
+        groupData.points.forEach((p) => {
+          const globalNum = stats.pointIndexMap.get(p.id); // NUMERO DO POSTE GLOBAL
           const spans = (p.spans !== undefined && p.spans !== null && !isNaN(p.spans)) ? 
                        Math.max(1, Number(p.spans)) : 1;
           
           detailData.push([
-            i + 1,
+            `Poste ${globalNum}`, // Mostra "Poste 15"
             new Date(p.timestamp || p.created_at).toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'}),
             `${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}`,
-            `${p.user_email?.split('@')[0] || '---'} (${spans} vão${spans > 1 ? 's' : ''})`
+            `${p.user_email?.split('@')[0] || '---'} (${spans} AG)`
           ]);
         });
       });
 
       autoTable(doc, {
         startY: y,
-        head: [['#', 'HORA', 'COORDENADAS', 'TÉCNICO (VÃOS)']],
+        head: [['POSTE', 'HORA', 'COORDENADAS', 'TÉCNICO (VÃOS)']],
         body: detailData,
         theme: 'grid',
         headStyles: { fillColor: [15, 23, 42], textColor: [34, 211, 238], lineColor: [34, 211, 238] },
@@ -286,12 +319,12 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
         styles: { textColor: [255, 255, 255] }
       });
 
+      // Análise de Vãos por Segmento
       doc.addPage();
       doc.setFillColor(15, 23, 42);
       doc.rect(0, 0, width, height, 'F');
       
       y = 20;
-      
       doc.setFontSize(16);
       doc.setTextColor(34, 211, 238);
       doc.text("ANÁLISE DE VÃOS POR SEGMENTO", 15, y);
@@ -304,8 +337,8 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
       if (project.points && project.points.length > 1) {
         for (let i = 1; i < project.points.length; i++) {
           const current = project.points[i];
-          // Lógica de segmento aqui também para consistência do PDF
           let previous = null;
+          
           if (current.connectedFrom) {
              previous = project.points.find(p => p.id === current.connectedFrom);
           } else {
@@ -320,13 +353,16 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
             const segmentDist = calcDist(previous, current);
             const totalDist = segmentDist * spans;
             
+            // PEGAR NÚMEROS GLOBAIS
+            const prevNum = stats.pointIndexMap.get(previous.id);
+            const currNum = stats.pointIndexMap.get(current.id);
+
             spanAnalysisData.push([
                 segmentCount,
-                `${previous.lat.toFixed(4)}, ${previous.lng.toFixed(4)}`,
-                `${current.lat.toFixed(4)}, ${current.lng.toFixed(4)}`,
-                formatDist(segmentDist),
-                spans,
-                formatDist(totalDist)
+                `Poste ${prevNum} - Poste ${currNum}`, // COLUNA TRECHO
+                formatDist(segmentDist), // Distância Base
+                `${spans} AG`,           // Formato "3 AG"
+                formatDist(totalDist)    // Distância Multiplicada
             ]);
           }
         }
@@ -334,64 +370,22 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
       
       autoTable(doc, {
         startY: y,
-        head: [['SEG', 'PONTO INICIAL', 'PONTO FINAL', 'DIST BASE', 'VÃOS', 'DIST TOTAL']],
+        head: [['#', 'TRECHO', 'DIST BASE', 'VÃOS', 'DIST TOTAL']],
         body: spanAnalysisData,
         theme: 'grid',
         headStyles: { fillColor: [168, 85, 247], textColor: [255, 255, 255], fontStyle: 'bold' },
         bodyStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], lineColor: [51, 65, 85] },
-        margin: { left: 15, right: 15 }
-      });
-      
-      y = doc.lastAutoTable.finalY + 15;
-      
-      doc.setFillColor(30, 41, 59);
-      doc.roundedRect(15, y, 180, 40, 3, 3, 'F');
-      
-      doc.setFontSize(11);
-      doc.setTextColor(255, 255, 255);
-      doc.text("RESUMO DE VÃOS", 20, y + 10);
-      
-      doc.setFontSize(9);
-      doc.setTextColor(168, 85, 247);
-      doc.text(`Total de Vãos: ${stats.totalSpans}`, 20, y + 18);
-      doc.text(`Máximo por Segmento: ${stats.maxSpansPerSegment} vãos`, 20, y + 25);
-      doc.text(`Segmentos: ${segmentCount}`, 100, y + 18);
-      doc.text(`Média por Segmento: ${(stats.totalSpans / (segmentCount || 1)).toFixed(1)} vãos`, 100, y + 25);
-      
-      y += 50;
-
-      doc.setFontSize(11);
-      doc.setTextColor(34, 211, 238);
-      doc.text("INFORMAÇÕES TÉCNICAS", 15, y);
-      
-      y += 5;
-      
-      const techInfo = [
-        [`ID do Projeto:`, project.id],
-        [`Criado por:`, project.user_email || currentUserEmail || 'Desconhecido'],
-        [`Data de Criação:`, new Date(project.created_at).toLocaleString('pt-BR')],
-        [`Última Atualização:`, new Date(project.updated_at || project.created_at).toLocaleString('pt-BR')],
-        [`Precisão Média:`, project.avg_accuracy ? `${project.avg_accuracy.toFixed(1)}m` : 'N/A'],
-        [`Modo de Captura:`, project.tracking_mode || 'manual']
-      ];
-      
-      autoTable(doc, {
-        startY: y,
-        body: techInfo,
-        theme: 'plain',
-        bodyStyles: { 
-          fillColor: [30, 41, 59], 
-          textColor: [255, 255, 255], 
-          lineColor: [51, 65, 85],
-          cellPadding: { top: 4, right: 4, bottom: 4, left: 4 }
-        },
         columnStyles: {
-          0: { textColor: [148, 163, 184], fontStyle: 'bold' },
-          1: { textColor: [255, 255, 255] }
+            0: { cellWidth: 15 },
+            1: { cellWidth: 'auto' },
+            2: { halign: 'right' },
+            3: { halign: 'center' },
+            4: { halign: 'right', fontStyle: 'bold' }
         },
         margin: { left: 15, right: 15 }
       });
 
+      // Rodapé Final
       const pageCount = doc.internal.getNumberOfPages();
       for(let i = 1; i <= pageCount; i++) {
         doc.setPage(i);
@@ -450,11 +444,6 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
                   <span className="text-[10px] font-bold bg-cyan-500/20 text-cyan-400 px-2 py-0.5 rounded uppercase">
                     {project.name}
                   </span>
-                  {stats.hasBranches && (
-                    <span className="text-[10px] font-bold bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded uppercase">
-                      Com Ramificações
-                    </span>
-                  )}
                 </div>
               </div>
               <Button size="icon" variant="ghost" onClick={onClose} className="rounded-full hover:bg-white/10 text-slate-400 -mr-2">
@@ -473,6 +462,10 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
               ) : (
                 <div className="flex items-center justify-center h-full text-xs text-slate-500">Carregando mapa...</div>
               )}
+              {/* Legenda sobre o Mapa */}
+              <div className="absolute bottom-2 right-2 bg-black/60 px-2 py-1 rounded text-[10px] text-white backdrop-blur">
+                 Postes: Verde (Início), Vermelho (Fim), Azul (Intermediários)
+              </div>
             </div>
 
             {/* Cards de Métricas */}
@@ -480,9 +473,6 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
               <div className="bg-gradient-to-br from-slate-800/60 to-slate-900/60 p-4 rounded-2xl border border-cyan-500/20 backdrop-blur-md">
                 <div className="flex items-center justify-between mb-2">
                   <MapPin className="text-cyan-400 w-6 h-6" />
-                  <span className="text-[10px] text-cyan-400/70 font-bold bg-cyan-500/10 px-2 py-0.5 rounded-full">
-                    COM VÃOS
-                  </span>
                 </div>
                 <span className="text-2xl font-bold text-white font-mono tracking-tight">{formatDist(stats.totalDistance)}</span>
                 <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider mt-1 block">Extensão Total</span>
@@ -490,28 +480,12 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
               <div className="bg-gradient-to-br from-slate-800/60 to-slate-900/60 p-4 rounded-2xl border border-purple-500/20 backdrop-blur-md">
                 <div className="flex items-center justify-between mb-2">
                   <Hash className="text-purple-400 w-6 h-6" />
-                  <span className="text-[10px] text-purple-400/70 font-bold bg-purple-500/10 px-2 py-0.5 rounded-full">
-                    SEGMENTOS
-                  </span>
                 </div>
                 <div className="flex items-baseline gap-2">
                   <span className="text-2xl font-bold text-white font-mono tracking-tight">{stats.totalSpans}</span>
-                  <span className="text-sm text-purple-400">vãos</span>
+                  <span className="text-sm text-purple-400">vãos (AG)</span>
                 </div>
                 <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider mt-1 block">Total de Vãos</span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="bg-gradient-to-br from-slate-800/60 to-slate-900/60 p-4 rounded-2xl border border-blue-500/20 backdrop-blur-md">
-                <Activity className="text-blue-400 mb-2 w-6 h-6" />
-                <span className="text-2xl font-bold text-white font-mono tracking-tight">{stats.totalPoints}</span>
-                <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider mt-1 block">Pontos Totais</span>
-              </div>
-              <div className="bg-gradient-to-br from-slate-800/60 to-slate-900/60 p-4 rounded-2xl border border-green-500/20 backdrop-blur-md">
-                <Layers className="text-green-400 mb-2 w-6 h-6" />
-                <span className="text-2xl font-bold text-white font-mono tracking-tight">{stats.maxSpansPerSegment}</span>
-                <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider mt-1 block">Máx por Segmento</span>
               </div>
             </div>
 
@@ -519,11 +493,8 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
             <div className="space-y-4">
               <div className="flex items-center justify-between px-1">
                 <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
-                   <Calendar size={14} /> Histórico de Execução
+                   <Calendar size={14} /> Resumo Diário
                 </h3>
-                <span className="text-[10px] text-slate-500">
-                  {Object.keys(stats.groups).length} dias
-                </span>
               </div>
               
               {Object.entries(stats.groups).map(([date, groupData]) => (
@@ -540,27 +511,10 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
                         </div>
                         <div className="text-right">
                             <div className="text-sm font-bold text-cyan-400 font-mono">{formatDist(groupData.distance)}</div>
-                            <div className="text-[10px] text-slate-500 flex gap-2">
-                              <span>{groupData.points.length} pontos</span>
-                              <span className="text-purple-400">• {groupData.spans} vãos</span>
+                            <div className="text-[10px] text-slate-500">
+                              {groupData.points.length} pontos
                             </div>
                         </div>
-                    </div>
-                    {/* Barra de Progresso Visual */}
-                    <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden mb-3">
-                        <div 
-                            className="bg-gradient-to-r from-cyan-500 to-purple-500 h-full shadow-[0_0_10px_rgba(6,182,212,0.5)]" 
-                            style={{ width: `${Math.max(5, (groupData.distance / (stats.totalDistance || 1)) * 100)}%` }}
-                        ></div>
-                    </div>
-                    {/* Lista de Responsáveis */}
-                    <div className="flex flex-wrap gap-2">
-                        {Array.from(groupData.users).map(user => (
-                            <div key={user} className="flex items-center gap-1.5 bg-slate-950 border border-white/5 rounded-full px-2.5 py-1">
-                                <User size={10} className="text-purple-400" />
-                                <span className="text-[10px] text-slate-300 font-medium">{user}</span>
-                            </div>
-                        ))}
                     </div>
                   </div>
                 </div>
@@ -577,12 +531,9 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
               {isDownloading ? (
                 "Gerando PDF..."
               ) : (
-                <div className="flex items-center gap-2"><Download size={18} /> Baixar e Abrir PDF</div>
+                <div className="flex items-center gap-2"><Download size={18} /> Baixar Relatório PDF</div>
               )}
             </Button>
-            <p className="text-[10px] text-slate-500 text-center mt-2">
-              PDF inclui análise detalhada de vãos e segmentos
-            </p>
           </div>
 
         </div>
