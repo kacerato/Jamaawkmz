@@ -1,9 +1,37 @@
 import React from 'react';
-import { Layers, X, MapPin, Info, Trash2, Eye } from 'lucide-react';
+import { Layers, X, Info, Trash2, Eye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 
-const LoadedProjectsManager = ({
+interface Point {
+  id: string;
+  lat: number;
+  lng: number;
+  timestamp: number;
+  accuracy?: number;
+}
+
+interface Project {
+  id: string;
+  name: string;
+  points: Point[];
+  totalDistance?: number;
+  total_distance?: number;
+  color?: string;
+  // Add other properties if needed
+}
+
+interface LoadedProjectsManagerProps {
+  isOpen: boolean;
+  onClose: () => void;
+  loadedProjects: Project[];
+  onRemoveProject: (id: string) => void;
+  onFocusProject: (project: Project) => void;
+  onShowDetails: (project: Project) => void;
+  totalDistanceAll: number;
+}
+
+const LoadedProjectsManager: React.FC<LoadedProjectsManagerProps> = ({
   isOpen,
   onClose,
   loadedProjects,
@@ -13,7 +41,7 @@ const LoadedProjectsManager = ({
   totalDistanceAll
 }) => {
   
-  const formatDistance = (meters) => {
+  const formatDistance = (meters: number | undefined): string => {
     if (!meters) return "0 m";
     if (meters < 1000) return `${Math.round(meters)} m`;
     return `${(meters / 1000).toFixed(3)} km`;
