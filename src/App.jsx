@@ -3605,8 +3605,7 @@ function App() {
           isTrackingActive={tracking}
         />
         
-        {/* 6. Botão de Equipe (Só aparece se tiver projeto carregado e online) */}
-        {currentProject && isOnline && (
+                {currentProject && isOnline && (
           <div className="absolute top-4 left-20 z-10">
              <Button 
                size="sm" 
@@ -3617,6 +3616,7 @@ function App() {
              </Button>
           </div>
         )}
+
       </div>
       
 
