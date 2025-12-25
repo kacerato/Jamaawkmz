@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { MapPinned, Mail, Lock, Eye, EyeOff, ArrowRight, Chrome, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -17,7 +17,7 @@ export default function Auth({ onAuthSuccess }: AuthProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [feedback, setFeedback] = useState({ msg: '', type: '' });
+  const [feedback, setFeedback] = useState<{ msg: string; type: string }>({ msg: '', type: '' });
   
   // Inicializa o plugin do Google no Mobile
   useEffect(() => {
@@ -44,9 +44,9 @@ export default function Auth({ onAuthSuccess }: AuthProps) {
       if (error) throw error;
       
       setFeedback({ msg: 'Login com Google realizado!', type: 'success' });
-      if (onAuthSuccess) onAuthSuccess(data.user);
+      if (onAuthSuccess && data.user) onAuthSuccess(data.user);
       
-    } catch (error) {
+    } catch (error: any) {
       console.error('Google Auth Error:', error);
       setFeedback({ msg: 'Cancelado ou erro no login Google.', type: 'error' });
     } finally {
@@ -72,15 +72,29 @@ export default function Auth({ onAuthSuccess }: AuthProps) {
       if (isLogin) {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
+        // Fix: Tratar explicitamente o erro de email não confirmado
+        if (!data.user && !error) {
+             throw new Error('Erro desconhecido ao logar.');
+        }
         onAuthSuccess(data.user);
       } else {
-        const { error } = await supabase.auth.signUp({ email, password });
+        const { data, error } = await supabase.auth.signUp({ email, password });
         if (error) throw error;
-        setFeedback({ msg: 'Conta criada! Verifique seu email.', type: 'success' });
-        setTimeout(() => setIsLogin(true), 2000);
+        // Fix: Melhor feedback se precisar confirmar email
+        if (data.user && data.user.identities && data.user.identities.length === 0) {
+             setFeedback({ msg: 'Conta já existe. Tente fazer login.', type: 'warning' });
+        } else {
+             setFeedback({ msg: 'Conta criada! Verifique seu email.', type: 'success' });
+             setTimeout(() => setIsLogin(true), 2000);
+        }
       }
     } catch (error: any) {
-      setFeedback({ msg: error.message, type: 'error' });
+      // Fix: Tratamento específico para "Email not confirmed"
+      if (error.message?.includes('Email not confirmed')) {
+          setFeedback({ msg: 'Email não confirmado. Verifique sua caixa de entrada.', type: 'error' });
+      } else {
+          setFeedback({ msg: error.message, type: 'error' });
+      }
     } finally {
       setLoading(false);
     }
@@ -110,7 +124,9 @@ export default function Auth({ onAuthSuccess }: AuthProps) {
           {/* Feedback Msg */}
           {feedback.msg && (
             <div className={`mb-4 p-3 rounded-xl text-xs font-bold flex items-center gap-2 ${
-              feedback.type === 'error' ? 'bg-red-500/10 text-red-400 border border-red-500/20' : 'bg-green-500/10 text-green-400 border border-green-500/20'
+              feedback.type === 'error' ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
+              feedback.type === 'warning' ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20' :
+              'bg-green-500/10 text-green-400 border border-green-500/20'
             }`}>
               <Zap size={14} /> {feedback.msg}
             </div>
