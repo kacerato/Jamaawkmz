@@ -9,78 +9,72 @@ import { Capacitor } from '@capacitor/core';
 import { FileOpener } from '@capacitor-community/file-opener';
 import { calculateTotalProjectDistance } from '../utils/geoUtils';
 
-// --- FUNÇÃO DE MAPA ROBUSTA (EMBUTIDA PARA GARANTIR INTEGRIDADE DA URL) ---
+// --- FUNÇÃO DE MAPA SUPER ROBUSTA (ANTI-ERRO 422) ---
 const getRobustStaticMapUrl = (points, pointIndexMap, width = 800, height = 400) => {
   if (!points || points.length === 0) return null;
 
   const accessToken = 'pk.eyJ1Ijoia2FjZXJhdG8iLCJhIjoiY21oZG1nNnViMDRybjJub2VvZHV1aHh3aiJ9.l7tCaIPEYqcqDI8_aScm7Q';
   const styleId = 'mapbox/satellite-streets-v12';
-  const MAX_URL_LENGTH = 7500; // Limite de segurança (Mapbox aceita ~8k)
+  
+  // 1. OTIMIZAÇÃO DE COORDENADAS (Reduzir tamanho da string)
+  // Arredonda para 5 casas decimais (aprox 1 metro de precisão, suficiente para imagem estática)
+  const fmt = (n) => Number(n.toFixed(5));
 
-  // 1. Constrói o GeoJSON do Traçado (MultiLineString)
-  const segments = [];
-  points.forEach((point, index) => {
-    if (point.connectedFrom) {
-      const parent = points.find(p => p.id === point.connectedFrom);
-      if (parent) segments.push([[parent.lng, parent.lat], [point.lng, point.lat]]);
-    } else if (index > 0) {
-      const prev = points[index - 1];
-      if (!point.connectedFrom) segments.push([[prev.lng, prev.lat], [point.lng, point.lat]]);
-    }
-  });
+  // 2. AMOSTRAGEM INTELIGENTE DO TRAÇADO (Path Sampling)
+  // Mapbox Static tem limite de URL. Se enviarmos 1000 pontos no GeoJSON, dá erro 422.
+  // Vamos limitar o traçado visual a no máximo ~80 pontos para garantir que caiba.
+  const MAX_PATH_POINTS = 80;
+  const pathStep = Math.ceil(points.length / MAX_PATH_POINTS);
+  
+  const simplifiedPoints = points.filter((_, i) => i === 0 || i === points.length - 1 || i % pathStep === 0);
 
-  // Fallback se não houver segmentos lógicos
-  if (segments.length === 0 && points.length > 1) {
-    for(let i=0; i<points.length-1; i++) {
-        segments.push([[points[i].lng, points[i].lat], [points[i+1].lng, points[i+1].lat]]);
-    }
-  }
+  // Construção Simplificada do GeoJSON (LineString Único para economizar caracteres)
+  // Em vez de MultiLineString complexo, usamos um traçado contínuo simplificado para a thumbnail
+  const coordinates = simplifiedPoints.map(p => [fmt(p.lng), fmt(p.lat)]);
 
   const geojson = {
     type: 'Feature',
-    properties: { 'stroke': '#06b6d4', 'stroke-width': 4, 'stroke-opacity': 0.9 },
-    geometry: { type: 'MultiLineString', coordinates: segments }
+    properties: { 
+      'stroke': '#06b6d4', 
+      'stroke-width': 3, 
+      'stroke-opacity': 0.9 
+    },
+    geometry: { 
+      type: 'LineString', 
+      coordinates: coordinates 
+    }
   };
   
+  // Codifica o GeoJSON
   const geojsonStr = encodeURIComponent(JSON.stringify(geojson));
   const overlayGeojson = `geojson(${geojsonStr})`;
 
-  // 2. Adiciona Marcadores com Números (Com verificação de limite)
-  let markers = [];
-  let currentUrlLength = `https://api.mapbox.com/styles/v1/${styleId}/static//auto/${width}x${height}@2x?padding=40&access_token=${accessToken}`.length + overlayGeojson.length;
-
-  // Lógica de Amostragem: Se tiver muitos pontos, pula números para não quebrar
-  // Tenta mostrar todos. Se projected length > max, aumenta o 'step'.
-  let step = 1;
-  const avgMarkerLength = 45; // Comprimento médio de string de um marcador
-  const projectedLength = currentUrlLength + (points.length * avgMarkerLength);
+  // 3. AMOSTRAGEM DE MARCADORES (Pins)
+  // Limite máximo de ~15 marcadores para não estourar a URL
+  const MAX_MARKERS = 15;
+  const markerStep = Math.ceil(points.length / MAX_MARKERS);
   
-  if (projectedLength > MAX_URL_LENGTH) {
-    // Calcula um step seguro
-    const spaceAvailable = MAX_URL_LENGTH - currentUrlLength;
-    const markersPossible = Math.floor(spaceAvailable / avgMarkerLength);
-    step = Math.ceil(points.length / markersPossible);
-    // Garante que o step não seja 0
-    if (step < 1) step = 1;
-  }
-
+  let markers = [];
+  
   points.forEach((p, idx) => {
-    // Sempre mostra o primeiro e o último, e os intermediários baseados no step
-    if (idx === 0 || idx === points.length - 1 || idx % step === 0) {
+    // Sempre mostra Primeiro, Último e os do passo calculado
+    if (idx === 0 || idx === points.length - 1 || idx % markerStep === 0) {
         const globalNum = pointIndexMap.get(p.id);
-        // Mapbox aceita 'pin-s-n+{number}' para números até 99, depois vira texto menor ou clipa
-        // Cor: Verde p/ inicio, Vermelho p/ fim, Azul p/ meio
-        let color = '0ea5e9'; // Azul default
-        if (idx === 0) color = '10b981'; // Verde
-        if (idx === points.length - 1) color = 'ef4444'; // Vermelho
         
-        // Formato: pin-s-n+<numero>+<cor>(lng,lat)
-        markers.push(`pin-s-n+${globalNum}+${color}(${p.lng},${p.lat})`);
+        // Cores: Verde (Início), Vermelho (Fim), Azul (Meio)
+        let color = '0ea5e9'; 
+        if (idx === 0) color = '10b981'; 
+        if (idx === points.length - 1) color = 'ef4444';
+        
+        // Formato compacto: pin-s-n+<num>+<cor>(lng,lat)
+        // Usamos fmt() para reduzir casas decimais aqui também
+        markers.push(`pin-s-n+${globalNum}+${color}(${fmt(p.lng)},${fmt(p.lat)})`);
     }
   });
 
   const overlays = [overlayGeojson, ...markers].join(',');
 
+  // URL Final
   return `https://api.mapbox.com/styles/v1/${styleId}/static/${overlays}/auto/${width}x${height}@2x?padding=40&access_token=${accessToken}`;
 };
 
@@ -102,10 +96,10 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
   const stats = useMemo(() => {
     if (!project || !project.points) return null;
 
-    // 1. MAPA DE ÍNDICES GLOBAIS (Fundamental para Poste 1, Poste 2...)
+    // 1. MAPA DE ÍNDICES GLOBAIS
     const pointIndexMap = new Map();
     project.points.forEach((p, index) => {
-        pointIndexMap.set(p.id, index + 1); // 1-based index
+        pointIndexMap.set(p.id, index + 1);
     });
 
     const groups = {};
@@ -171,7 +165,7 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
       totalSpans,
       maxSpansPerSegment,
       totalPoints: project.points.length,
-      pointIndexMap, // EXPORTANDO O MAPA
+      pointIndexMap, 
       lastUpdate: new Date(project.updated_at || Date.now()).toLocaleString('pt-BR'),
       hasBranches: project.points.some(p => p.connectedFrom),
       hasExtraConnections: project.extra_connections && project.extra_connections.length > 0
@@ -180,7 +174,7 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
 
   useEffect(() => {
     if (isOpen && project?.points?.length > 0 && stats?.pointIndexMap) {
-      // Usando a função robusta interna
+      // Usando a função robusta
       const url = getRobustStaticMapUrl(project.points, stats.pointIndexMap, 800, 400); 
       setStaticMapUrl(url);
     }
@@ -231,6 +225,7 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
       if (staticMapUrl) {
         try {
           const response = await fetch(staticMapUrl);
+          if (!response.ok) throw new Error(`Mapbox Error: ${response.status}`);
           const blob = await response.blob();
           const base64 = await new Promise((r) => { 
             const reader = new FileReader(); 
@@ -245,10 +240,14 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
           y += 95;
         } catch (e) {
           console.error("Erro ao baixar mapa", e);
+          doc.setFontSize(10);
           doc.setTextColor(239, 68, 68);
-          doc.text("Erro ao carregar imagem do mapa", 15, y + 10);
-          y += 20;
+          doc.text("Não foi possível gerar a pré-visualização do mapa.", 15, y + 10);
+          doc.text("(Muitos pontos para renderização estática)", 15, y + 16);
+          y += 30;
         }
+      } else {
+          y += 10;
       }
 
       // Card Resumo
@@ -294,12 +293,12 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
         ]);
         
         groupData.points.forEach((p) => {
-          const globalNum = stats.pointIndexMap.get(p.id); // NUMERO DO POSTE GLOBAL
+          const globalNum = stats.pointIndexMap.get(p.id);
           const spans = (p.spans !== undefined && p.spans !== null && !isNaN(p.spans)) ? 
                        Math.max(1, Number(p.spans)) : 1;
           
           detailData.push([
-            `Poste ${globalNum}`, // Mostra "Poste 15"
+            `Poste ${globalNum}`,
             new Date(p.timestamp || p.created_at).toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'}),
             `${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}`,
             `${p.user_email?.split('@')[0] || '---'} (${spans} AG)`
@@ -319,7 +318,7 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
         styles: { textColor: [255, 255, 255] }
       });
 
-      // Análise de Vãos por Segmento
+      // Análise de Vãos
       doc.addPage();
       doc.setFillColor(15, 23, 42);
       doc.rect(0, 0, width, height, 'F');
@@ -353,16 +352,15 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
             const segmentDist = calcDist(previous, current);
             const totalDist = segmentDist * spans;
             
-            // PEGAR NÚMEROS GLOBAIS
             const prevNum = stats.pointIndexMap.get(previous.id);
             const currNum = stats.pointIndexMap.get(current.id);
 
             spanAnalysisData.push([
                 segmentCount,
-                `Poste ${prevNum} - Poste ${currNum}`, // COLUNA TRECHO
-                formatDist(segmentDist), // Distância Base
-                `${spans} AG`,           // Formato "3 AG"
-                formatDist(totalDist)    // Distância Multiplicada
+                `Poste ${prevNum} - Poste ${currNum}`,
+                formatDist(segmentDist),
+                `${spans} AG`,
+                formatDist(totalDist)
             ]);
           }
         }
@@ -385,7 +383,7 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
         margin: { left: 15, right: 15 }
       });
 
-      // Rodapé Final
+      // Rodapé
       const pageCount = doc.internal.getNumberOfPages();
       for(let i = 1; i <= pageCount; i++) {
         doc.setPage(i);
@@ -433,7 +431,6 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
         
         <div className="flex flex-col h-full bg-slate-950/95 backdrop-blur-xl border border-cyan-500/30 rounded-3xl overflow-hidden shadow-[0_0_50px_rgba(6,182,212,0.2)]">
           
-          {/* Header */}
           <div className="flex-none p-5 border-b border-white/5 bg-gradient-to-r from-slate-900 to-slate-800">
             <div className="flex justify-between items-start">
               <div>
@@ -452,23 +449,19 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
             </div>
           </div>
 
-          {/* Conteúdo Visual (Dashboard) */}
           <div className="flex-1 overflow-y-auto custom-scrollbar p-5 space-y-6">
             
-            {/* Preview do Mapa */}
             <div className="relative w-full aspect-[21/9] bg-slate-900 rounded-2xl overflow-hidden border border-white/10 shadow-lg group">
               {staticMapUrl ? (
                 <img src={staticMapUrl} className="w-full h-full object-cover opacity-80" alt="Mapa" />
               ) : (
                 <div className="flex items-center justify-center h-full text-xs text-slate-500">Carregando mapa...</div>
               )}
-              {/* Legenda sobre o Mapa */}
               <div className="absolute bottom-2 right-2 bg-black/60 px-2 py-1 rounded text-[10px] text-white backdrop-blur">
                  Postes: Verde (Início), Vermelho (Fim), Azul (Intermediários)
               </div>
             </div>
 
-            {/* Cards de Métricas */}
             <div className="grid grid-cols-2 gap-3">
               <div className="bg-gradient-to-br from-slate-800/60 to-slate-900/60 p-4 rounded-2xl border border-cyan-500/20 backdrop-blur-md">
                 <div className="flex items-center justify-between mb-2">
@@ -489,7 +482,6 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
               </div>
             </div>
 
-            {/* Lista Histórico */}
             <div className="space-y-4">
               <div className="flex items-center justify-between px-1">
                 <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
