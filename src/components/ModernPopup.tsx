@@ -1,19 +1,57 @@
 import { useState } from 'react'
-import { MapPin, Navigation, Ruler, Clock, Edit2, Share2, Heart, X, Download, Layers } from 'lucide-react'
+import { MapPin, Navigation, Ruler, Clock, Edit2, Share2, Heart, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
 import PhotoManager from './PhotoManager' // <--- Importe o novo componente
 
-const ModernPopup = ({ marker, onClose, onEdit, onShare, onFavorite, onCalculateDistance, currentPosition, onUpdateMarker }) => {
+interface Marker {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  photos?: string[];
+  descricao?: string;
+  created_at?: string;
+  rua?: string;
+  [key: string]: any;
+}
+
+interface CurrentPosition {
+  lat: number;
+  lng: number;
+}
+
+interface ModernPopupProps {
+  marker: Marker | null;
+  onClose: () => void;
+  onEdit?: (marker: Marker) => void;
+  onShare?: (marker: Marker) => void;
+  onFavorite?: (markerId: string, isFavorite: boolean) => void;
+  onCalculateDistance?: (marker: Marker) => void;
+  currentPosition?: CurrentPosition | null;
+  onUpdateMarker?: (marker: Marker) => void;
+}
+
+const ModernPopup: React.FC<ModernPopupProps> = ({
+  marker,
+  onClose,
+  onEdit,
+  onShare,
+  onFavorite,
+  onCalculateDistance,
+  currentPosition,
+  onUpdateMarker
+}) => {
   const [isFavorite, setIsFavorite] = useState(false)
   
   const handleFavorite = () => {
+    if (!marker) return;
     setIsFavorite(!isFavorite)
     onFavorite?.(marker.id, !isFavorite)
   }
   
   // Handler para quando fotos forem adicionadas/removidas
-  const handlePhotosUpdated = (newPhotos) => {
+  const handlePhotosUpdated = (newPhotos: string[]) => {
+    if (!marker) return;
     // Cria o objeto marcador atualizado
     const updatedMarker = { ...marker, photos: newPhotos }
     
@@ -40,7 +78,7 @@ const ModernPopup = ({ marker, onClose, onEdit, onShare, onFavorite, onCalculate
     return R * c
   }
   
-  const formatDistanceDetailed = (distanceInMeters) => {
+  const formatDistanceDetailed = (distanceInMeters: number | null | undefined) => {
     if (distanceInMeters === undefined || distanceInMeters === null || isNaN(distanceInMeters)) {
       return "0 m"
     }
@@ -76,7 +114,7 @@ const ModernPopup = ({ marker, onClose, onEdit, onShare, onFavorite, onCalculate
             </p>
             
             {/* Badge de distância */}
-            {distance && (
+            {distance !== null && (
               <div className="mt-2 inline-flex items-center gap-1 bg-gradient-to-r from-green-500 to-emerald-600 text-white px-3 py-1 rounded-full text-xs font-bold shadow-lg">
                 <Navigation className="w-3 h-3" />
                 {formatDistanceDetailed(distance)} de distância
@@ -153,7 +191,7 @@ const ModernPopup = ({ marker, onClose, onEdit, onShare, onFavorite, onCalculate
               {isFavorite ? 'Favorito' : 'Favoritar'}
             </Button>
             
-            {distance && (
+            {distance !== null && (
               <Button
                 variant="outline"
                 onClick={() => onCalculateDistance?.(marker)}

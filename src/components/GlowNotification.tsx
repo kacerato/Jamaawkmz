@@ -1,8 +1,19 @@
-// components/GlowNotification.jsx
+// components/GlowNotification.tsx
 import React, { useEffect, useState } from 'react';
 import { CheckCircle, AlertTriangle, Info, XCircle, X } from 'lucide-react';
 
-const GlowNotification = ({ notification, onClose }) => {
+interface NotificationType {
+  title: string;
+  message: string;
+  type: 'success' | 'error' | 'info' | 'warning';
+}
+
+interface GlowNotificationProps {
+  notification: NotificationType | null;
+  onClose: () => void;
+}
+
+const GlowNotification: React.FC<GlowNotificationProps> = ({ notification, onClose }) => {
   const [isVisible, setIsVisible] = useState(false);
   const [shouldRender, setShouldRender] = useState(false);
   
@@ -34,10 +45,12 @@ const GlowNotification = ({ notification, onClose }) => {
   const styles = {
     success: { border: 'border-green-500/50', bg: 'bg-green-950/90', text: 'text-green-400', icon: <CheckCircle className="w-5 h-5" /> },
     error: { border: 'border-red-500/50', bg: 'bg-red-950/90', text: 'text-red-400', icon: <XCircle className="w-5 h-5" /> },
+    warning: { border: 'border-yellow-500/50', bg: 'bg-yellow-950/90', text: 'text-yellow-400', icon: <AlertTriangle className="w-5 h-5" /> },
     info: { border: 'border-cyan-500/50', bg: 'bg-slate-900/90', text: 'text-cyan-400', icon: <Info className="w-5 h-5" /> }
   };
   
-  const currentStyle = styles[notification?.type || 'info'];
+  const type = notification?.type || 'info';
+  const currentStyle = styles[type] || styles.info;
   
   return (
     <div 
