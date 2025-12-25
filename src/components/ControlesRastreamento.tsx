@@ -1,15 +1,53 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { Play, Pause, Square, MapPin, Save, Navigation, Undo, MousePointerClick, X } from 'lucide-react';
+import { Play, Pause, Square, MapPin, Save, Navigation, Undo, MousePointerClick } from 'lucide-react';
 
-const ControlesRastreamento = ({
-  tracking,
+interface Point {
+  id: string;
+  lat: number;
+  lng: number;
+  timestamp: number;
+  accuracy?: number;
+}
+
+interface Project {
+  id: string;
+  name: string;
+  points: Point[];
+  // Add other properties if needed
+}
+
+interface ControlesRastreamentoProps {
+  tracking: boolean;
+  paused: boolean;
+  pauseTracking: () => void;
+  addManualPoint: () => void;
+  stopTracking: () => void;
+  setShowProjectDialog: (show: boolean) => void;
+  setShowProjectDetails: (show: boolean) => void;
+  manualPoints: Point[];
+  totalDistance: number;
+  trackingMode: string;
+  currentPosition: { lat: number; lng: number } | null;
+  currentProject: Project | null;
+  snappingEnabled: boolean;
+  onToggleSnapping: () => void;
+  gpsAccuracy: number | null;
+  speed: number;
+  handleRemovePoints: () => void;
+  showProjectDialog: boolean;
+  formatDistanceDetailed?: (distance: number) => string;
+  undoLastPoint: () => void;
+  selectedStartPoint: Point | null;
+  resetStartPoint: () => void;
+}
+
+const ControlesRastreamento: React.FC<ControlesRastreamentoProps> = ({
   paused,
   pauseTracking,
   addManualPoint,
   stopTracking,
   setShowProjectDialog,
-  setShowProjectDetails,
   manualPoints,
   totalDistance,
   trackingMode,
@@ -18,13 +56,14 @@ const ControlesRastreamento = ({
   snappingEnabled,
   onToggleSnapping,
   gpsAccuracy,
-  speed,
   handleRemovePoints,
   showProjectDialog,
   formatDistanceDetailed,
-  undoLastPoint, // ← Deve estar aqui
+  undoLastPoint,
   selectedStartPoint,
-  resetStartPoint // ← Deve estar aqui
+  tracking, // Restored
+  speed, // Restored
+  resetStartPoint, // Restored
 }) => {
   
   const safeManualPoints = manualPoints || [];
@@ -33,10 +72,10 @@ const ControlesRastreamento = ({
   const safeGpsAccuracy = gpsAccuracy || 0;
   
   // Referência para o card para capturar movimento
-  const cardRef = useRef(null);
+  const cardRef = useRef<HTMLDivElement>(null);
   
   // Efeito "Context Aware Glow"
-  const handleMouseMove = (e) => {
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!cardRef.current) return;
     const { left, top } = cardRef.current.getBoundingClientRect();
     const x = e.clientX - left;
@@ -46,8 +85,8 @@ const ControlesRastreamento = ({
     cardRef.current.style.setProperty('--mouse-y', `${y}px`);
   };
   
-  const formatDistance = (distanceInMeters) => {
-    if (formatDistanceDetailed) {
+  const formatDistance = (distanceInMeters: number | null | undefined): string => {
+    if (formatDistanceDetailed && distanceInMeters !== undefined && distanceInMeters !== null) {
       return formatDistanceDetailed(distanceInMeters);
     }
     
@@ -76,6 +115,7 @@ const ControlesRastreamento = ({
         onMouseMove={handleMouseMove}
         className="group relative rounded-2xl bg-slate-900 border border-white/10 overflow-hidden shadow-2xl tracking-controls-container"
         style={{
+          // @ts-ignore - CSS custom properties
           '--mouse-x': '50%',
           '--mouse-y': '50%',
         }}
