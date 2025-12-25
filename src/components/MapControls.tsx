@@ -2,7 +2,14 @@ import React, { useState } from 'react';
 import { LocateFixed, Map as MapIcon, Moon, Sun, Globe, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
-const MapControls = ({
+interface MapControlsProps {
+  onCenterMap: () => void;
+  currentMapStyle: string;
+  onChangeStyle: (style: string) => void;
+  isTrackingActive: boolean;
+}
+
+const MapControls: React.FC<MapControlsProps> = ({
   onCenterMap,
   currentMapStyle,
   onChangeStyle,

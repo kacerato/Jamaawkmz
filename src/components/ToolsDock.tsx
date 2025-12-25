@@ -1,10 +1,26 @@
 import React, { useState } from 'react';
 import { 
   Navigation, MousePointerClick, Camera, Plus, 
-  LayoutGrid, X 
+  LayoutGrid, X, LucideIcon
 } from 'lucide-react';
 
-const ToolsDock = ({ 
+interface ToolsDockProps {
+  onStartGPS: () => void;
+  onStartTouch: () => void;
+  onStartAR: () => void;
+  onNewProject: () => void;
+  active: boolean;
+}
+
+interface DockItemProps {
+  icon: LucideIcon;
+  label: string;
+  color: string;
+  onClick: () => void;
+  delay: number;
+}
+
+const ToolsDock: React.FC<ToolsDockProps> = ({
   onStartGPS, 
   onStartTouch, 
   onStartAR, 
@@ -14,7 +30,9 @@ const ToolsDock = ({
   const [isOpen, setIsOpen] = useState(false);
 
   const vibrate = () => {
-    if (navigator.vibrate) navigator.vibrate(10);
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      navigator.vibrate(10);
+    }
   };
 
   const toggleOpen = () => {
@@ -22,13 +40,13 @@ const ToolsDock = ({
     setIsOpen(!isOpen);
   };
 
-  const handleAction = (action) => {
+  const handleAction = (action: () => void) => {
     vibrate();
     setIsOpen(false);
     action();
   };
 
-  const DockItem = ({ icon: Icon, label, color, onClick, delay }) => (
+  const DockItem: React.FC<DockItemProps> = ({ icon: Icon, label, color, onClick, delay }) => (
     <button
       onClick={(e) => {
         e.stopPropagation();

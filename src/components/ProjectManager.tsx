@@ -44,13 +44,12 @@ interface ProjectManagerProps {
   onJoinProject: (projectId: string) => void;
   onRenameProject: (projectId: string, newName: string) => void;
   onOpenReport: (project: Project) => void;
-  onOpenMembers: (project: Project) => void;
 }
 
 const ProjectManager: React.FC<ProjectManagerProps> = ({
   isOpen, onClose, projects, currentUserId,
   onLoadProject, onDeleteProject, onExportProject,
-  onJoinProject, onRenameProject, onOpenReport, onOpenMembers
+  onJoinProject, onRenameProject, onOpenReport
 }) => {
   const [activeTab, setActiveTab] = useState<'mine' | 'shared'>('mine');
   const [joinId, setJoinId] = useState('');
@@ -189,8 +188,6 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({
           </Button>
 
           <div className="flex bg-black/20 rounded-lg p-0.5 border border-white/5">
-            <ActionButton icon={Activity} onClick={() => onOpenMembers(project)} title="Equipe" color="text-slate-400 hover:text-purple-400" />
-            <div className="w-px bg-white/5 my-1"></div>
             <ActionButton icon={ClipboardList} onClick={() => onOpenReport(project)} title="Relatório" color="text-slate-400 hover:text-yellow-400" />
             <div className="w-px bg-white/5 my-1"></div>
             <ActionButton icon={Download} onClick={() => onExportProject(project)} title="Exportar" color="text-slate-400 hover:text-green-400" />

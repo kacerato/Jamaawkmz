@@ -2,23 +2,31 @@ import React, { useEffect, useState, useRef } from 'react';
 import { Ruler, MapPin, Navigation, BarChart3, Loader2 } from 'lucide-react';
 import BairroDetectionService from './BairroDetectionService';
 
-const safeToFixed = (value, decimals = 2) => {
+interface ResumoProjetoProps {
+  manualPoints: any[];
+  totalDistance: number;
+  selectedBairro: string;
+  trackingMode: string;
+  onBairroDetected?: (bairro: string) => void;
+}
+
+const safeToFixed = (value: number | null | undefined, decimals = 2): string => {
   if (value === undefined || value === null || isNaN(value)) {
     return "0".padStart(decimals + 2, '0');
   }
   return Number(value).toFixed(decimals);
 };
 
-const ResumoProjeto = ({
+const ResumoProjeto: React.FC<ResumoProjetoProps> = ({
   manualPoints,
   totalDistance,
   selectedBairro,
   trackingMode,
-  onBairroDetected // Callback opcional se quiser atualizar o estado pai
+  onBairroDetected
 }) => {
   const [bairroDisplay, setBairroDisplay] = useState(selectedBairro || 'Vários');
   const [isDetecting, setIsDetecting] = useState(false);
-  const cardRef = useRef(null);
+  const cardRef = useRef<HTMLDivElement>(null);
   
   const safeManualPoints = manualPoints || [];
   const safeTotalDistance = totalDistance || 0;
@@ -57,7 +65,7 @@ const ResumoProjeto = ({
   }, [safeManualPoints, selectedBairro]);
   
   // Lógica do Efeito Glow (Mouse Move)
-  const handleMouseMove = (e) => {
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!cardRef.current) return;
     const { left, top } = cardRef.current.getBoundingClientRect();
     const x = e.clientX - left;
@@ -73,6 +81,7 @@ const ResumoProjeto = ({
       onMouseMove={handleMouseMove}
       className="group relative rounded-xl bg-slate-900 border border-white/10 overflow-hidden shadow-2xl transition-all duration-300 hover:shadow-cyan-500/20"
       style={{
+        // @ts-ignore - CSS Custom Properties in style
         '--mouse-x': '50%',
         '--mouse-y': '50%',
       }}
