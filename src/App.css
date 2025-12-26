@@ -27,10 +27,12 @@
 
 @layer base {
   * {
-    @apply border-border;
+    /* Fixed border issue by using a standard tailwind class or just border-slate-700/50 since custom variable logic might be flaky in v4 without config */
+    @apply border-slate-700;
   }
   body {
-    @apply bg-background text-foreground;
+    /* Manually setting background color if bg-background fails, but using standard slate-950 is safer */
+    @apply bg-slate-950 text-slate-50;
     font-feature-settings: "rlig" 1, "calt" 1;
   }
 }

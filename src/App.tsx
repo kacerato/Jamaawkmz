@@ -62,6 +62,7 @@ function App() {
   const {
     projects,
     loadedProjects,
+    currentProject,
     manualPoints,
     totalDistance,
     setManualPoints,
@@ -222,6 +223,7 @@ function App() {
             setShowProjectDetails={() => {}} // Placeholder
             trackingMode={trackingMode}
             currentPosition={currentPosition}
+            currentProject={currentProject} // Added missing prop
             snappingEnabled={true}
             onToggleSnapping={() => {}}
             handleRemovePoints={() => {}}
