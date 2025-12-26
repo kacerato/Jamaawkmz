@@ -1,23 +1,24 @@
-import React, { useState, useMemo } from 'react';
-import { 
-  FolderOpen, Download, Trash2, Play, Users, 
-  Copy, Plus, Check, Search, X, Edit3, 
-  Activity, ClipboardList, AlertTriangle, Calendar, MapPin, Hash
+import React, { useState } from 'react';
+import {
+  FolderOpen, Download, Trash2, Play, Users,
+  Copy, Plus, Check, Search, X, Edit3,
+  ClipboardList, AlertTriangle, Calendar, MapPin, Hash
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { 
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter
+import {
+  Dialog, DialogContent, DialogTitle, DialogFooter, DialogHeader
 } from '@/components/ui/dialog';
-import { 
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle 
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle
 } from '@/components/ui/alert-dialog';
 
-const ProjectManager = ({ 
+const ProjectManager = ({
   isOpen, onClose, projects, currentUserId,
   onLoadProject, onDeleteProject, onExportProject,
-  onJoinProject, onRenameProject, onOpenReport, onOpenMembers 
+  onJoinProject, onRenameProject, onOpenReport
+  // onOpenMembers foi removido daqui
 }) => {
   const [activeTab, setActiveTab] = useState('mine');
   const [joinId, setJoinId] = useState('');
@@ -28,7 +29,7 @@ const ProjectManager = ({
 
   const myProjects = projects.filter(p => p.user_id === currentUserId);
   const sharedProjects = projects.filter(p => p.user_id !== currentUserId);
-  
+
   const displayedProjects = (activeTab === 'mine' ? myProjects : sharedProjects)
     .filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
@@ -37,36 +38,33 @@ const ProjectManager = ({
     if (!project || !project.points || project.points.length < 2) {
       return project?.total_distance || project?.totalDistance || 0;
     }
-    
+
     let totalDistance = 0;
-    
-    // Cálculo manual considerando vãos
+
     for (let i = 1; i < project.points.length; i++) {
       const current = project.points[i];
       const previous = project.points[i - 1];
-      
+
       if (current && previous && current.lat && current.lng && previous.lat && previous.lng) {
-        // Função de cálculo de distância (simplificada)
         const lat1 = previous.lat * Math.PI / 180;
         const lat2 = current.lat * Math.PI / 180;
         const dLat = (current.lat - previous.lat) * Math.PI / 180;
         const dLng = (current.lng - previous.lng) * Math.PI / 180;
-        
+
         const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
                  Math.cos(lat1) * Math.cos(lat2) *
                  Math.sin(dLng/2) * Math.sin(dLng/2);
         const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-        const R = 6378137; // Raio da Terra em metros
+        const R = 6378137;
         const dist = R * c;
-        
-        // Multiplicador de vãos
-        const spans = (current.spans !== undefined && current.spans !== null && !isNaN(current.spans)) ? 
+
+        const spans = (current.spans !== undefined && current.spans !== null && !isNaN(current.spans)) ?
                      Math.max(1, Number(current.spans)) : 1;
-        
+
         totalDistance += (dist * spans);
       }
     }
-    
+
     return totalDistance;
   };
 
@@ -80,16 +78,15 @@ const ProjectManager = ({
   const ProjectCard = ({ project }) => {
     const isMine = project.user_id === currentUserId;
     const projectDistance = calculateProjectDistance(project);
-    
-    // Contar vãos totais
+
     const totalSpans = project.points?.reduce((sum, point) => {
-      const spans = (point.spans !== undefined && point.spans !== null && !isNaN(point.spans)) ? 
+      const spans = (point.spans !== undefined && point.spans !== null && !isNaN(point.spans)) ?
                    Math.max(1, Number(point.spans)) : 1;
       return sum + spans;
     }, 0) || 0;
 
-    const glowClass = isMine 
-      ? 'border-cyan-500/20 hover:border-cyan-500/40' 
+    const glowClass = isMine
+      ? 'border-cyan-500/20 hover:border-cyan-500/40'
       : 'border-purple-500/20 hover:border-purple-500/40';
 
     return (
@@ -101,13 +98,13 @@ const ProjectManager = ({
             </div>
           </div>
 
-          <div className="flex-1 min-w-0 pt-0.5"> 
+          <div className="flex-1 min-w-0 pt-0.5">
             <div className="flex items-center gap-2">
               <h3 className="text-sm font-bold text-white truncate group-hover:text-cyan-200 transition-colors" title={project.name}>
                 {project.name}
               </h3>
               {isMine && (
-                <button 
+                <button
                   onClick={(e) => { e.stopPropagation(); setRenameData({ id: project.id, name: project.name }); }}
                   className="opacity-0 group-hover:opacity-100 p-1 text-slate-500 hover:text-cyan-400 transition-all"
                 >
@@ -115,7 +112,7 @@ const ProjectManager = ({
                 </button>
               )}
             </div>
-            
+
             <div className="flex flex-wrap items-center gap-3 mt-2">
               <span className="text-[10px] font-mono text-cyan-200/70 bg-cyan-500/5 px-1.5 py-0.5 rounded border border-cyan-500/10 flex items-center gap-1">
                  <MapPin size={10} /> {(projectDistance/1000).toFixed(2)} km
@@ -129,7 +126,7 @@ const ProjectManager = ({
             </div>
           </div>
 
-          <button 
+          <button
             onClick={(e) => {
                e.stopPropagation();
                navigator.clipboard.writeText(project.id);
@@ -144,26 +141,27 @@ const ProjectManager = ({
         </div>
 
         <div className="flex items-center gap-2 mt-3 pt-3 border-t border-white/5">
-          <Button 
+          <Button
             onClick={() => onLoadProject(project)}
             className={`flex-1 h-8 rounded-lg text-xs font-bold uppercase tracking-wider border-0 shadow-lg active:scale-95 transition-all ${
-              isMine 
-                ? 'bg-cyan-600 hover:bg-cyan-500 text-white' 
+              isMine
+                ? 'bg-cyan-600 hover:bg-cyan-500 text-white'
                 : 'bg-purple-600 hover:bg-purple-500 text-white'
             }`}
           >
             <Play size={10} className="mr-1.5 fill-current" /> Abrir
           </Button>
-          
-          <div className="flex bg-black/20 rounded-lg p-0.5 border border-white/5">
-            <ActionButton icon={Activity} onClick={() => onOpenMembers(project)} title="Equipe" color="text-slate-400 hover:text-purple-400" />
-            <div className="w-px bg-white/5 my-1"></div>
+
+          {/* Container dos botões de ação centralizados */}
+          <div className="flex items-center bg-black/20 rounded-lg p-0.5 border border-white/5 h-8">
+            {/* Botão de Equipe Removido */}
+            
             <ActionButton icon={ClipboardList} onClick={() => onOpenReport(project)} title="Relatório" color="text-slate-400 hover:text-yellow-400" />
-            <div className="w-px bg-white/5 my-1"></div>
+            <div className="w-px h-4 bg-white/5 mx-0.5"></div>
             <ActionButton icon={Download} onClick={() => onExportProject(project)} title="Exportar" color="text-slate-400 hover:text-green-400" />
             {isMine && (
               <>
-                <div className="w-px bg-white/5 my-1"></div>
+                <div className="w-px h-4 bg-white/5 mx-0.5"></div>
                 <ActionButton icon={Trash2} onClick={() => setProjectToDelete(project)} title="Excluir" color="text-slate-500 hover:text-red-400" />
               </>
             )}
@@ -173,8 +171,13 @@ const ProjectManager = ({
     );
   };
 
+  // Botão de Ação Otimizado para centralização
   const ActionButton = ({ icon: Icon, onClick, title, color }) => (
-    <button onClick={onClick} className={`p-1.5 rounded-md transition-all active:scale-90 ${color}`} title={title}>
+    <button 
+      onClick={onClick} 
+      className={`w-7 h-7 flex items-center justify-center rounded-md transition-all active:scale-90 ${color}`} 
+      title={title}
+    >
       <Icon size={14} />
     </button>
   );
@@ -189,14 +192,19 @@ const ProjectManager = ({
                 <DialogTitle className="text-lg font-bold text-white flex items-center gap-2">
                    <FolderOpen className="text-cyan-400" size={20}/> Gerenciador
                 </DialogTitle>
-                <button onClick={onClose} className="bg-slate-800/50 p-1.5 rounded-full text-slate-400 hover:text-white hover:bg-white/10 transition-all">
+                
+                {/* Botão X (Fechar) Centralizado */}
+                <button 
+                  onClick={onClose} 
+                  className="w-8 h-8 rounded-full flex items-center justify-center bg-slate-800/50 text-slate-400 hover:text-white hover:bg-white/10 transition-all"
+                >
                   <X size={18} />
                 </button>
               </div>
 
               <div className="bg-black/30 p-1 rounded-xl flex mb-4 border border-white/5">
                 {['mine', 'shared'].map(tab => (
-                  <button key={tab} onClick={() => setActiveTab(tab)} 
+                  <button key={tab} onClick={() => setActiveTab(tab)}
                     className={`flex-1 py-2 text-[10px] uppercase font-bold rounded-lg transition-all ${
                       activeTab === tab ? 'bg-slate-800 text-white shadow-md' : 'text-slate-500 hover:text-slate-300'
                     }`}
@@ -212,7 +220,7 @@ const ProjectManager = ({
                   className="w-full bg-slate-900/50 border border-white/10 rounded-xl pl-9 pr-3 py-2 text-sm text-white focus:border-cyan-500/50 focus:bg-slate-900 transition-all outline-none"
                 />
               </div>
-              
+
               {activeTab === 'shared' && (
                  <div className="flex gap-2 mt-2">
                     <input value={joinId} onChange={(e) => setJoinId(e.target.value)} placeholder="Cole o ID..." className="flex-1 bg-purple-500/10 border border-purple-500/20 rounded-xl pl-3 py-2 text-sm text-white focus:border-purple-500/50 outline-none" />
@@ -234,7 +242,7 @@ const ProjectManager = ({
           </div>
         </DialogContent>
       </Dialog>
-      
+
       <AlertDialog open={!!projectToDelete} onOpenChange={() => setProjectToDelete(null)}>
         <AlertDialogContent className="bg-slate-900 border border-slate-700 text-white rounded-2xl max-w-xs">
             <AlertDialogHeader>
