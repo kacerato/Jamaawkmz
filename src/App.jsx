@@ -847,6 +847,69 @@ function App() {
     }
   };
   
+  const handleRenameProject = async (projectId, newName) => {
+    await renameProject(projectId, newName);
+
+    if (currentProject && currentProject.id === projectId) {
+      setCurrentProject(prev => ({ ...prev, name: newName }));
+      setProjectName(newName);
+    }
+
+    setLoadedProjects(prev => prev.map(p =>
+      p.id === projectId ? { ...p, name: newName } : p
+    ));
+
+    showFeedback('Sucesso', 'Projeto renomeado', 'success');
+  };
+
+  const deleteProjectFromSupabase = async (projectId) => {
+    if (!user) return false;
+
+    try {
+      const { error } = await supabase
+        .from('projetos')
+        .delete()
+        .eq('id', projectId)
+        .eq('user_id', user.id);
+
+      if (error) throw error;
+      return true;
+    } catch (error) {
+      console.error('Erro ao deletar projeto do Supabase:', error);
+      return false;
+    }
+  };
+
+  const handleJoinProject = async (projectId) => {
+    if (!user || !isOnline) {
+      showFeedback('Erro', 'Você precisa estar online para importar projetos.', 'error');
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase.rpc('join_project', {
+        p_id: projectId
+      });
+
+      if (error) throw error;
+
+      if (data.success) {
+        showFeedback('Sucesso', data.message, 'success');
+        await loadProjects();
+      } else {
+        showFeedback('Erro', data.message, 'error');
+      }
+
+    } catch (error) {
+      console.error("Erro ao importar:", error);
+      if (error.code === '22P02') {
+        showFeedback('Erro', 'ID inválido. Certifique-se de copiar o código completo.', 'error');
+      } else {
+        showFeedback('Erro', 'Erro ao entrar no projeto.', 'error');
+      }
+    }
+  };
+
   const handleLogout = async () => {
     try {
       if (currentProject && isOnline && user) {
