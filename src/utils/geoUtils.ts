@@ -1,21 +1,51 @@
-// src/utils/geoUtils.ts
-import { Point, Connection } from '../types';
+import { Point, Project, Connection, SnappedPoint } from '../types';
 
-// --- CONSTANTES ---
-const R_EARTH = 6378137; // Raio da Terra em metros (WGS-84)
+// --- CONSTANTS ---
+const R_EARTH = 6378137; // Earth Radius in meters (WGS-84)
 
-// --- CLASSES UTILITÁRIAS (Necessárias para o GPS e Build) ---
+// --- ADVANCED GPS FILTER ---
+export class GPSFilter {
+  private minAccuracy: number;
+  private minDistance: number;
+  private lastValidPoint: Point | null;
 
+  constructor(minAccuracy: number = 30, minDistance: number = 0.5) {
+    this.minAccuracy = minAccuracy;
+    this.minDistance = minDistance;
+    this.lastValidPoint = null;
+  }
+
+  isValid(newPoint: Point): boolean {
+    // 1. Reject bad accuracy
+    if (newPoint.accuracy !== undefined && newPoint.accuracy > this.minAccuracy) {
+      return false;
+    }
+    // 2. Reject jitter (tiny movement)
+    if (this.lastValidPoint) {
+      const dist = calculateDistance(
+        this.lastValidPoint.lat, this.lastValidPoint.lng,
+        newPoint.lat, newPoint.lng
+      );
+      if (dist < this.minDistance) {
+        return false;
+      }
+    }
+    this.lastValidPoint = newPoint;
+    return true;
+  }
+}
+
+// --- KALMAN FILTER ---
 export class KalmanFilter {
-  R: number; // Ruído da medição
-  Q: number; // Ruído do processo
-  A: number; // Estado
-  B: number; // Controle
-  C: number; // Medição
-  cov: number;
-  x: number; // Valor filtrado
+  private R: number;
+  private Q: number;
+  private A: number;
+  private B: number;
+  private C: number;
+  private cov: number;
+  private x: number;
 
-  constructor(R = 1, Q = 1, A = 1, B = 0, C = 1) {
+  constructor(R: number = 1, Q: number = 1, A: number = 1, B: number = 0, C: number = 1) {
     this.R = R;
     this.Q = Q;
     this.A = A;
@@ -25,7 +55,7 @@ export class KalmanFilter {
     this.x = NaN;
   }
   
-  filter(z: number, u = 0): number {
+  filter(z: number, u: number = 0): number {
     if (isNaN(this.x)) {
       this.x = (1 / this.C) * z;
       this.cov = (1 / this.C) * this.Q * (1 / this.C);
@@ -40,21 +70,20 @@ export class KalmanFilter {
   }
 }
 
-interface SnappedLocation {
-    lat: number;
-    lng: number;
-    address?: any;
-    snapped: boolean;
-}
-
 export class RoadSnappingService {
-  static async snapToRoad(lat: number, lng: number): Promise<SnappedLocation> {
+  static async snapToRoad(lat: number, lng: number): Promise<SnappedPoint> {
     try {
-      // Usa Nominatim (OSM) para achar a rua mais próxima
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
+
       const response = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`, { headers: { 'User-Agent': 'JamaawApp/1.0' } }
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
+        {
+          headers: { 'User-Agent': 'JamaawApp/1.0' },
+          signal: controller.signal
+        }
       );
-      
+      clearTimeout(timeoutId);
       const data = await response.json();
       
       if (data && data.lat && data.lon) {
@@ -66,18 +95,20 @@ export class RoadSnappingService {
         };
       }
     } catch (error) {
-      console.warn('Erro no snapping de rua:', error);
+      // Silent failure
     }
-    
-    // Fallback: retorna original se falhar
     return { lat, lng, snapped: false };
   }
 }
 
-// --- CÁLCULO GEODÉSICO DE ALTA PRECISÃO ---
+// --- GEODESIC CALCULATION ---
 export const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
-  if (lat1 === undefined || lat1 === null || lon1 === undefined || lon1 === null ||
-      lat2 === undefined || lat2 === null || lon2 === undefined || lon2 === null) return 0;
+  if (lat1 === undefined || lat1 === null ||
+      lon1 === undefined || lon1 === null ||
+      lat2 === undefined || lat2 === null ||
+      lon2 === undefined || lon2 === null) {
+      return 0;
+  }
   
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
@@ -88,62 +119,64 @@ export const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2
   
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R_EARTH * c;
-}
+};
 
-// --- A FUNÇÃO MESTRA DE METRAGEM (BRUTALMENTE OTIMIZADA) ---
-export const calculateTotalProjectDistance = (points: Point[] | null, connections: Connection[] = []): number => {
-  if (!points || !Array.isArray(points) || points.length < 2) return 0;
+// --- CRITICAL TOTAL CALCULATION FUNCTION (FIXED AND OPTIMIZED) ---
+export const calculateTotalProjectDistance = (points: Point[], connections: Connection[] = []): number => {
+  if (!points || points.length < 2) return 0;
   
   let totalDistance = 0;
-  
-  // 1. Mapa de Hash para acesso O(1)
   const pointMap = new Map<string, Point>();
+
+  // Map points for fast access
   for (const p of points) {
     if (p && p.id) {
-        pointMap.set(p.id, p);
+      pointMap.set(p.id, p);
     }
   }
   
-  // 2. Calcula Distância das Ramificações (Árvore Principal)
+  // 1. Sequential Distance / Branches
   for (let i = 0; i < points.length; i++) {
     const point = points[i];
-    if (!point) continue;
+    if (!point || point.lat === undefined || point.lng === undefined) continue;
 
     let parent: Point | undefined | null = null;
     
-    // Prioridade: connectedFrom explícito > Sequencial (se não for gap e não for o primeiro)
-    if (point.connectedFrom && pointMap.has(point.connectedFrom)) {
+    // Find parent point (connection or sequential)
+    if (point.connectedFrom) {
       parent = pointMap.get(point.connectedFrom);
-    } else if (i > 0 && !point.isGap && !point.connectedFrom) {
-      // Fallback legado: sequencial apenas se não tiver connectedFrom definido
+    } else if (i > 0 && !point.isGap) {
       parent = points[i - 1];
     }
     
-    if (parent) {
+    if (parent && parent.lat !== undefined && parent.lng !== undefined) {
       const dist = calculateDistance(parent.lat, parent.lng, point.lat, point.lng);
 
-      // PARSE INT EXPLICITO PARA EVITAR ERROS DE STRING/JSON
-      let spans = Number(point.spans);
-      if (isNaN(spans) || spans < 1) spans = 1;
+      // Spans Multiplier - CRITICAL
+      // Strict null check for spans
+      const spans: number = (point.spans !== undefined && point.spans !== null) ?
+                    Number(point.spans) : 1;
 
-      totalDistance += (dist * spans);
+      // Ensure spans is a valid number
+      const validSpans = isNaN(spans) || spans < 1 ? 1 : Math.max(1, spans);
+
+      totalDistance += (dist * validSpans);
     }
   }
   
-  // 3. Calcula Distância das Conexões Extras (Loops/Anéis)
+  // 2. Extra Connections Distance (Loops)
   if (connections && Array.isArray(connections) && connections.length > 0) {
     for (const conn of connections) {
       const p1 = pointMap.get(conn.fromId);
       const p2 = pointMap.get(conn.toId);
       
-      if (p1 && p2) {
+      if (p1 && p2 && p1.lat !== undefined && p1.lng !== undefined && p2.lat !== undefined && p2.lng !== undefined) {
         const dist = calculateDistance(p1.lat, p1.lng, p2.lat, p2.lng);
+        const spans = (conn.spans !== undefined && conn.spans !== null) ?
+                      Number(conn.spans) : 1;
 
-        // PARSE INT TAMBÉM NAS CONEXÕES
-        let spans = Number(conn.spans);
-        if (isNaN(spans) || spans < 1) spans = 1;
-
-        totalDistance += (dist * spans);
+        const validSpans = isNaN(spans) || spans < 1 ? 1 : Math.max(1, spans);
+        totalDistance += (dist * validSpans);
       }
     }
   }
@@ -151,21 +184,40 @@ export const calculateTotalProjectDistance = (points: Point[] | null, connection
   return totalDistance;
 };
 
-// --- ALIAS PARA COMPATIBILIDADE ---
-export const calculateTotalDistanceWithBranches = calculateTotalProjectDistance;
-export const calculateTotalDistance = calculateTotalProjectDistance;
+// --- AUXILIARY FUNCTION FOR FAST DISTANCE CALCULATION DURING TRACKING ---
+export const calculateTrackingDistance = (points: Point[]): number => {
+  if (!points || points.length < 2) return 0;
 
-// --- FORMATAÇÃO VISUAL E HELPERS ---
+  let totalDistance = 0;
 
-export const safeToFixed = (value: number | string | null | undefined, decimals = 2): string => {
-  if (value === undefined || value === null || (typeof value === 'number' && isNaN(value))) {
-    return "0".padStart(decimals + 2, '0');
+  for (let i = 1; i < points.length; i++) {
+    const current = points[i];
+    const previous = points[i - 1];
+
+    if (current && previous &&
+        current.lat !== undefined && current.lng !== undefined &&
+        previous.lat !== undefined && previous.lng !== undefined) {
+
+      const dist = calculateDistance(previous.lat, previous.lng, current.lat, current.lng);
+      const spans = (current.spans !== undefined && current.spans !== null) ?
+                    Number(current.spans) : 1;
+
+      const validSpans = isNaN(spans) || spans < 1 ? 1 : Math.max(1, spans);
+      totalDistance += (dist * validSpans);
+    }
   }
+
+  return totalDistance;
+};
+
+// --- FORMATTING AND UTILITIES ---
+export const safeToFixed = (value: number | string | undefined | null, decimals: number = 2): string => {
+  if (value === undefined || value === null || isNaN(Number(value))) return "0".padStart(decimals + 2, '0');
   return Number(value).toFixed(decimals);
 };
 
-export const formatDistanceDetailed = (distanceInMeters: number | string | null | undefined): string => {
-  if (distanceInMeters === undefined || distanceInMeters === null || (typeof distanceInMeters === 'number' && isNaN(distanceInMeters))) {
+export const formatDistanceDetailed = (distanceInMeters: number | string | undefined | null): string => {
+  if (distanceInMeters === undefined || distanceInMeters === null || isNaN(Number(distanceInMeters))) {
     return "0 m";
   }
   const distance = Number(distanceInMeters);
@@ -178,8 +230,7 @@ export const formatDistanceDetailed = (distanceInMeters: number | string | null 
 export const generateUUID = (): string => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = Math.random() * 16 | 0,
-      v = c == 'x' ? r : (r & 0x3 | 0x8);
+    const r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
     return v.toString(16);
   });
 };
@@ -187,4 +238,27 @@ export const generateUUID = (): string => {
 export const generateRandomColor = (): string => {
   const colors = ['#1e3a8a', '#3730a3', '#5b21b6', '#7c2d12', '#0f766e', '#b91c1c'];
   return colors[Math.floor(Math.random() * colors.length)];
+};
+
+// --- NEW FUNCTION: REAL-TIME DISTANCE UPDATE ---
+export const updateProjectDistance = (project: Project): Project => {
+  if (!project) return project;
+
+  const { points = [], extra_connections = [] } = project;
+  const totalDistance = calculateTotalProjectDistance(points, extra_connections);
+
+  return {
+    ...project,
+    total_distance: totalDistance,
+    totalDistance: totalDistance // Maintain compatibility
+  };
+};
+
+// --- NEW FUNCTION: SPANS VALIDATION AND NORMALIZATION ---
+export const normalizeSpans = (points: Point[] = []): Point[] => {
+  return points.map(point => ({
+    ...point,
+    spans: (point.spans !== undefined && point.spans !== null && !isNaN(Number(point.spans))) ?
+           Math.max(1, Number(point.spans)) : 1
+  }));
 };
