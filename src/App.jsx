@@ -1,5 +1,4 @@
-import React from 'react';
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import Map, { Marker, Popup, Source, Layer, NavigationControl } from 'react-map-gl'
 import {
   Upload,
@@ -11,7 +10,6 @@ import {
   Edit2,
   Menu,
   LogOut,
-  Heart,
   MapPinned,
   Layers,
   Play,
@@ -20,30 +18,13 @@ import {
   FolderOpen,
   Save,
   Navigation,
-  Clock,
-  Cloud,
-  CloudOff,
-  Archive,
   Camera,
-  Plus,
-  Star,
-  LocateFixed,
-  Info,
-  Undo,
-  FileText,
-  MousePointerClick,
   CheckCircle,
   Users,
-  Hash,
-  ArrowRight,
-  Trash2,
-  Globe,
-  Lock,
-  Unlock,
-  AlertCircle
+  Trash2
 } from 'lucide-react'
 import { Button } from '@/components/ui/button.jsx'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.jsx'
+import { Card, CardHeader, CardTitle } from '@/components/ui/card.jsx'
 import GlowNotification from './components/GlowNotification';
 import ToolsDock from './components/ToolsDock';
 import { Input } from '@/components/ui/input.jsx'
@@ -52,7 +33,7 @@ import LoadedProjectsManager from './components/LoadedProjectsManager';
 import { Textarea } from '@/components/ui/textarea.jsx'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select.jsx'
 import ProjectManager from './components/ProjectManager';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet.jsx'
+import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet.jsx'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog.jsx'
 import { supabase } from './lib/supabase'
 import electricPoleIcon from './assets/electric-pole.png';
@@ -60,7 +41,6 @@ import Auth from './components/Auth'
 import SpanSelector, { SPAN_COLORS } from './components/SpanSelector';
 import JSZip from 'jszip'
 import { Network } from '@capacitor/network'
-import { Preferences } from '@capacitor/preferences'
 import { Filesystem, Directory } from '@capacitor/filesystem'
 import { FileOpener } from '@capacitor-community/file-opener'
 import { Capacitor } from '@capacitor/core'
@@ -70,14 +50,11 @@ import ResumoProjeto from './components/ResumoProjeto'
 import ControlesRastreamento from './components/ControlesRastreamento'
 import ModernPopup from './components/ModernPopup'
 import ImportProgressPopup from './components/ImportProgressPopup'
-import MultipleSelectionPopup from './components/MultipleSelectionPopup'
 import BairroDetectionService from './components/BairroDetectionService'
 import ProjectLockService from './services/ProjectLockService'
 import { useProjects } from './hooks/useProjects';
 import { useMapRef } from './hooks/useMapRef.js';
 
-// 1. NOVOS IMPORTS (UTILITÁRIOS E SERVIÇOS)
-// No início do App.jsx, atualize as importações:
 import {
   calculateDistance,
   generateUUID,
@@ -85,15 +62,12 @@ import {
   safeToFixed,
   formatDistanceDetailed,
   calculateTotalProjectDistance,
-  calculateTrackingDistance, // ADICIONE ESTA LINHA
   KalmanFilter,
   GPSFilter,
-  RoadSnappingService,
-  normalizeSpans // ADICIONE ESTA LINHA TAMBÉM
+  RoadSnappingService
 } from './utils/geoUtils';
 import { RoutingService } from './services/RoutingService';
 
-// 2. NOVOS COMPONENTES VISUAIS
 import MapControls from './components/MapControls';
 import ProjectMembersDialog from './components/ProjectMembersDialog';
 
@@ -120,7 +94,6 @@ const mapStyles = {
   dark: { name: 'Escuro', url: 'mapbox://styles/mapbox/dark-v10' },
 };
 
-// Função para garantir lista única (remove duplicatas por ID)
 const deduplicateProjects = (projectsList) => {
   const uniqueMap = new Map();
   projectsList.sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
@@ -131,42 +104,6 @@ const deduplicateProjects = (projectsList) => {
     }
   });
   return Array.from(uniqueMap.values());
-};
-
-const isValidProject = (project) => {
-  try {
-    return project &&
-      project.id &&
-      project.name &&
-      typeof project.name === 'string' &&
-      project.name.trim().length > 0 &&
-      Array.isArray(project.points) &&
-      project.points.length > 0 &&
-      project.points.every(point =>
-        point &&
-        typeof point.lat === 'number' &&
-        !isNaN(point.lat) &&
-        typeof point.lng === 'number' &&
-        !isNaN(point.lng) &&
-        point.lat >= -90 && point.lat <= 90 &&
-        point.lng >= -180 && point.lng <= 180
-      );
-  } catch (error) {
-    console.warn('Projeto inválido detectado:', project, error);
-    return false;
-  }
-};
-
-const getUniqueProjectName = (baseName, existingProjects) => {
-  let newName = baseName;
-  let counter = 1;
-  
-  while (existingProjects.some(project => project.name === newName)) {
-    newName = `${baseName} (${counter})`;
-    counter++;
-  }
-  
-  return newName;
 };
 
 const calculateTotalDistanceAllProjects = (projects) => {
@@ -180,9 +117,7 @@ const calculateTotalDistanceAllProjects = (projects) => {
   return total;
 };
 
-// Funções de localStorage
 const storage = {
-  // Projetos
   saveProjects: (userId, projects) => {
     localStorage.setItem(`jamaaw_projects_${userId}`, JSON.stringify(projects));
   },
@@ -191,7 +126,6 @@ const storage = {
     return data ? JSON.parse(data) : [];
   },
   
-  // Bairros
   saveBairros: (bairros) => {
     localStorage.setItem('jamaaw_bairros', JSON.stringify(bairros));
   },
@@ -200,7 +134,6 @@ const storage = {
     return data ? JSON.parse(data) : null;
   },
   
-  // Favoritos
   saveFavorites: (userId, favorites) => {
     localStorage.setItem(`jamaaw_favorites_${userId}`, JSON.stringify(favorites));
   },
@@ -209,7 +142,6 @@ const storage = {
     return data ? JSON.parse(data) : null;
   },
   
-  // Marcadores
   saveMarkers: (userId, markers) => {
     localStorage.setItem(`jamaaw_markers_${userId}`, JSON.stringify(markers));
   },
@@ -218,14 +150,12 @@ const storage = {
     return data ? JSON.parse(data) : null;
   },
   
-  // Remover projeto
   deleteProject: (userId, projectId) => {
     const projects = storage.loadProjects(userId);
     const updatedProjects = projects.filter(p => p.id !== projectId);
     storage.saveProjects(userId, updatedProjects);
   },
   
-  // Limpar dados do usuário
   clearUserData: (userId) => {
     localStorage.removeItem(`jamaaw_projects_${userId}`);
     localStorage.removeItem(`jamaaw_favorites_${userId}`);
@@ -233,18 +163,18 @@ const storage = {
   },
 };
 
-// Componente Memoizado do Poste
-// Componente PoleMarker otimizado
 const PoleMarker = React.memo(({ point, index, color, onClick, isActive }) => {
-  // Prevenir renderização de pontos inválidos
-  if (!point || typeof point.lat !== 'number' || typeof point.lng !== 'number') {
+  const lat = Number(point?.lat);
+  const lng = Number(point?.lng);
+
+  if (!point || isNaN(lat) || isNaN(lng)) {
     return null;
   }
   
   return (
     <Marker 
-      longitude={point.lng} 
-      latitude={point.lat}
+      longitude={lng}
+      latitude={lat}
       anchor="bottom"
       onClick={(e) => {
         e.originalEvent.stopPropagation();
@@ -278,7 +208,6 @@ const PoleMarker = React.memo(({ point, index, color, onClick, isActive }) => {
     </Marker>
   );
 }, (prevProps, nextProps) => {
-  // Comparação mais rigorosa para evitar re-render desnecessárias
   return (
     prevProps.point.id === nextProps.point.id &&
     prevProps.color === nextProps.color &&
@@ -288,7 +217,6 @@ const PoleMarker = React.memo(({ point, index, color, onClick, isActive }) => {
   );
 });
 
-// Componente do Card do Projeto
 const ProjectCard = React.memo(({ project, isSelected, onToggle, onLoad, onEdit, onExport, onDelete, tracking }) => {
   const distance = safeToFixed(((project.totalDistance || project.total_distance) || 0) / 1000, 2);
   const date = new Date(project.created_at || project.createdAt || Date.now()).toLocaleDateString('pt-BR');
@@ -384,7 +312,6 @@ const ProjectCard = React.memo(({ project, isSelected, onToggle, onLoad, onEdit,
   );
 });
 
-// Sub-componente para o conteúdo do popup de ponto de rastreamento
 const TrackingPointPopupContent = ({ pointInfo, onClose, onSelectStart, selectedStartPoint, manualPoints }) => {
   const cardRef = useRef(null);
   
@@ -501,7 +428,6 @@ const TrackingPointPopupContent = ({ pointInfo, onClose, onSelectStart, selected
 };
 
 function App() {
-  
   const mapboxToken = 'pk.eyJ1Ijoia2FjZXJhdG8iLCJhIjoiY21oZG1nNnViMDRybjJub2VvZHV1aHh3aiJ9.l7tCaIPEYqcqDI8_aScm7Q';
   const { mapRef, flyToSafe, getMapInstance, isMapReady } = useMapRef();
   const fileInputRef = useRef(null);
@@ -575,28 +501,15 @@ function App() {
   const [importSuccess, setImportSuccess] = useState(false);
   const [importError, setImportError] = useState(null);
   
-  // REMOVIDO: const [selectedMarkers, setSelectedMarkers] = useState([]);
-  
   const [selectedProjects, setSelectedProjects] = useState([]);
-  // REMOVIDO: const [showMultipleSelection, setShowMultipleSelection] = useState(false);
-  
   const [selectedStartPoint, setSelectedStartPoint] = useState(null);
-  
   const [mapScreenshot, setMapScreenshot] = useState(null);
-  
   const [reportData, setReportData] = useState(null);
-  
   const [trackingInputMode, setTrackingInputMode] = useState('gps');
-  
   const [projectLock, setProjectLock] = useState(null);
-  
-  // NOVOS STATES
   const [extraConnections, setExtraConnections] = useState([]);
-  
-  // 4. NOVO STATE PARA GESTÃO DE MEMBROS
   const [showMembersDialog, setShowMembersDialog] = useState(false);
   
-  // ... outros hooks ...
   const {
     projects,
     setProjects,
@@ -604,17 +517,14 @@ function App() {
     renameProject,
     deleteProject
   } = useProjects(user, isOnline);
-  // ...
   
   const kalmanLatRef = useRef(new KalmanFilter(0.1, 0.1));
   const kalmanLngRef = useRef(new KalmanFilter(0.1, 0.1));
   
-  // ADICIONE ISSO: Filtra precisão ruim (>30m) e movimentos minúsculos (<0.5m)
   const gpsFilterRef = useRef(new GPSFilter(30, 0.5));
   
   const totalDistanceAllProjects = calculateTotalDistanceAllProjects(projects);
   
-  // Adicionar esta função de limpeza
   const cleanupMapState = () => {
     setPopupInfo(null);
     setPointPopupInfo(null);
@@ -622,7 +532,6 @@ function App() {
     setRouteCoordinates([]);
     setDistanceResult(null);
     
-    // Forçar uma re-renderização limpa
     if (mapRef.current && mapRef.current.getMap) {
       const map = mapRef.current.getMap();
       if (map) {
@@ -631,18 +540,30 @@ function App() {
     }
   };
   
-  // Chamar cleanup antes de carregar novo projeto
   const loadProject = async (project) => {
     cleanupMapState();
-    // ... resto do código
+
+    if (!project) return;
+
+    if (!project.color) {
+      project.color = generateRandomColor();
+    }
+
+    setLoadedProjects(prev => {
+      if (prev.some(p => p.id === project.id)) {
+        return prev;
+      }
+      return [...prev, project];
+    });
+
+    focusOnProject(project);
+    showFeedback('Projeto Carregado', `Projeto "${project.name}" foi carregado.`, 'success');
   };
   
-  // Função auxiliar para mostrar feedback
   const showFeedback = (title, message, type = 'success') => {
     setNotification({ title, message, type });
   };
   
-  // Função para atualizar ponto do projeto
   const handleUpdateProjectPoint = async (updatedPoint) => {
     const projectId = pointPopupInfo?.projectId;
     const projectToUpdate = loadedProjects.find(p => p.id === projectId) || currentProject;
@@ -683,7 +604,6 @@ function App() {
         showFeedback("Erro", "Erro ao salvar foto na nuvem", "error");
       }
     } else {
-      // Salva localmente no localStorage
       const userProjects = storage.loadProjects(user?.id);
       const updatedUserProjects = userProjects.map(p =>
         p.id === updatedProject.id ? updatedProject : p
@@ -693,7 +613,6 @@ function App() {
     }
   };
   
-  // Procure pela função undoLastPoint no App.jsx e certifique-se que ela existe:
   const undoLastPoint = () => {
     if (manualPoints.length > 0) {
       const pointToRemove = manualPoints[manualPoints.length - 1];
@@ -720,7 +639,6 @@ function App() {
     }
   };
   
-  // Função para capturar imagem do mapa
   const getMapImage = () => {
     if (mapRef.current) {
       try {
@@ -734,7 +652,6 @@ function App() {
     return null;
   };
   
-  // GeoJSON para marcadores
   const markersGeoJSON = useMemo(() => ({
     type: 'FeatureCollection',
     features: filteredMarkers.map(marker => ({
@@ -750,12 +667,10 @@ function App() {
     }))
   }), [filteredMarkers]);
   
-  // Adicione este useEffect após as outras declarações de estado
   useEffect(() => {
-    // Atualiza a distância sempre que manualPoints ou extraConnections mudarem
     if (manualPoints.length > 0) {
       const newDistance = calculateTotalProjectDistance(manualPoints, extraConnections);
-      if (Math.abs(newDistance - totalDistance) > 0.01) { // Evita atualizações desnecessárias
+      if (Math.abs(newDistance - totalDistance) > 0.01) {
         setTotalDistance(newDistance);
       }
     } else {
@@ -763,7 +678,6 @@ function App() {
     }
   }, [manualPoints, extraConnections]);
   
-  // Efeito para manter o lock ativo
   useEffect(() => {
     let interval;
     if (tracking && currentProject && isOnline && user) {
@@ -777,10 +691,6 @@ function App() {
     return () => clearInterval(interval);
   }, [tracking, currentProject, isOnline, user]);
   
-  // Carregar projetos do Supabase
-  
-  
-  // Atualizar bairros dos projetos
   const refreshProjectNeighborhoods = async () => {
     if (!projects || projects.length === 0) return;
     
@@ -823,7 +733,6 @@ function App() {
     
     if (hasUpdates) {
       setProjects(updatedProjectsList);
-      // Atualizar localStorage
       const userProjects = storage.loadProjects(user?.id);
       const mergedProjects = [...userProjects, ...updatedProjectsList];
       const uniqueProjects = deduplicateProjects(mergedProjects);
@@ -832,7 +741,6 @@ function App() {
     }
   };
   
-  // Efeito de Realtime para projeto atual
   useEffect(() => {
     if (!currentProject?.id || !isOnline) return;
     
@@ -912,7 +820,6 @@ function App() {
       const updatedProjects = projects.filter(p => !deletedIds.includes(p.id));
       setProjects(updatedProjects);
       
-      // Atualizar no localStorage
       const userProjects = storage.loadProjects(user?.id);
       const updatedUserProjects = userProjects.filter(p => !deletedIds.includes(p.id));
       storage.saveProjects(user?.id, updatedUserProjects);
@@ -986,46 +893,7 @@ function App() {
     setImportCurrentStep(step);
     setImportCurrentAction(action);
   };
-  
-  // Efeito de Realtime OTIMIZADO
-  useEffect(() => {
-    if (!currentProject?.id || !isOnline) return;
-    
-    console.log(`📡 Conectando Realtime para projeto: ${currentProject.id}`);
-    
-    const channel = supabase
-      .channel(`project-tracking-${currentProject.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'projetos',
-          filter: `id=eq.${currentProject.id}`
-        },
-        (payload) => {
-          console.log("⚡ Atualização Realtime recebida:", payload);
-          const updatedProject = payload.new;
-          
-          setCurrentProject(prev => ({ ...prev, ...updatedProject }));
-          
-          if (updatedProject.points) {
-            setManualPoints(updatedProject.points);
-            setTotalDistance(updatedProject.total_distance);
-          }
-          
-          setProjects(prev => prev.map(p => p.id === updatedProject.id ? updatedProject : p));
-        }
-      )
-      .subscribe();
-    
-    return () => {
-      console.log(`🔌 Desconectando Realtime do projeto: ${currentProject.id}`);
-      supabase.removeChannel(channel);
-    };
-  }, [currentProject?.id, isOnline]);
-  
-  // Importar arquivos KML/KMZ
+
   const handleProjectImport = async (event) => {
     const file = event.target.files[0];
     if (!file) return;
@@ -1217,8 +1085,6 @@ function App() {
     }
   };
   
-  // --- SUBSTITUA A FUNÇÃO saveProject POR ESTA ---
-  // --- SUBSTITUA NO SEU App.jsx ---
   const calculateProjectDistance = useCallback((project) => {
     if (!project || !project.points || project.points.length < 2) {
       return project?.total_distance || project?.totalDistance || 0;
@@ -1235,7 +1101,6 @@ function App() {
         essential: true,
       });
     } else if (currentPosition && navigator.geolocation) {
-      // Fallback: usa geolocation API diretamente
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           const { latitude, longitude } = pos.coords;
@@ -1259,14 +1124,12 @@ function App() {
     try {
       let finalPoints = pointsToSave;
       
-      // Validações
       if (editingProject && finalPoints.length === 0) finalPoints = editingProject.points;
       if (!finalPoints || finalPoints.length === 0) {
         if (!autoSave) showFeedback('Erro', 'Não há pontos para salvar.', 'error');
         return;
       }
       
-      // Normalizar spans (garantir que são números válidos)
       finalPoints = finalPoints.map(point => ({
         ...point,
         spans: (point.spans !== undefined && point.spans !== null && !isNaN(point.spans)) ?
@@ -1283,12 +1146,10 @@ function App() {
         return;
       }
       
-      // 1. Calcula a distância correta considerando spans
       const calculatedTotalDistance = calculateTotalProjectDistance(finalPoints, extraConnections);
       
       const nowISO = new Date().toISOString();
       
-      // 2. PREPARA DADOS PARA O SUPABASE
       const projectData = {
         name: projectNameToUse.trim(),
         points: finalPoints,
@@ -1302,7 +1163,6 @@ function App() {
       
       let savedProject;
       
-      // Lógica de Envio (Update ou Insert)
       if (currentProject || editingProject) {
         const targetId = currentProject?.id || editingProject.id;
         
@@ -1337,24 +1197,20 @@ function App() {
         }
       }
       
-      // 3. ATUALIZAÇÃO LOCAL IMEDIATA
       const localProjectObj = {
         ...savedProject,
         totalDistance: calculatedTotalDistance
       };
       
-      // Atualiza todos os estados
       if (currentProject && currentProject.id === localProjectObj.id) {
         setCurrentProject(localProjectObj);
       }
       
-      // Atualiza a lista de projetos
       setProjects(prev => {
         const filtered = prev.filter(p => p.id !== localProjectObj.id);
         return [localProjectObj, ...filtered];
       });
       
-      // Atualiza projetos carregados
       setLoadedProjects(prev => {
         const exists = prev.find(p => p.id === localProjectObj.id);
         if (exists) {
@@ -1364,16 +1220,13 @@ function App() {
         }
       });
       
-      // Atualiza pontos manuais e distância
       setManualPoints(finalPoints);
       setTotalDistance(calculatedTotalDistance);
       
-      // Salva no Cache
       const userProjects = storage.loadProjects(user?.id);
       const otherProjects = userProjects.filter(p => p.id !== localProjectObj.id);
       storage.saveProjects(user?.id, [localProjectObj, ...otherProjects]);
       
-      // 4. FINALIZA O RASTREAMENTO APÓS SALVAR (NOVO)
       if (!autoSave) {
         setTracking(false);
         setPaused(false);
@@ -1418,7 +1271,6 @@ function App() {
         }
       }
       
-      // Usa o cálculo com vãos ao carregar
       const calculatedDistance = calculateProjectDistance(project);
       
       setCurrentProject(project);
@@ -1450,10 +1302,8 @@ function App() {
     kalmanLngRef.current = new KalmanFilter(0.1, 0.1);
   };
   
-  // Adicione esta função para garantir que os projetos carregados tenham cálculo correto
   useEffect(() => {
     if (loadedProjects.length > 0) {
-      // Atualiza a distância de cada projeto carregado
       const updatedProjects = loadedProjects.map(project => ({
         ...project,
         total_distance: calculateProjectDistance(project),
@@ -1462,11 +1312,8 @@ function App() {
       
       setLoadedProjects(updatedProjects);
     }
-  }, [loadedProjects.length]); //
+  }, [loadedProjects.length]);
   
-  // Função loadProject com sistema de lock e CORREÇÃO DE STATE
-  // Função para validar projetos
-  // Função para validar projetos
   const validateProject = (project) => {
     if (!project || !project.id || !project.name) {
       return false;
@@ -1476,7 +1323,6 @@ function App() {
       return false;
     }
     
-    // Validar cada ponto
     for (const point of project.points) {
       if (!point || typeof point.lat !== 'number' || isNaN(point.lat) ||
         typeof point.lng !== 'number' || isNaN(point.lng)) {
@@ -1487,7 +1333,6 @@ function App() {
     return true;
   };
   
-  // Modificar a função de carregar projeto para usar validação
   const safeLoadProject = async (project) => {
     if (!validateProject(project)) {
       showFeedback('Erro', 'Projeto contém dados inválidos', 'error');
@@ -1583,7 +1428,6 @@ function App() {
   };
   
   useEffect(() => {
-    // Cleanup no unmount
     return () => {
       if (currentProject && isOnline && user) {
         ProjectLockService.releaseLock(currentProject.id, user.id).catch(console.error);
@@ -1644,270 +1488,6 @@ function App() {
     
     return () => subscription.unsubscribe()
   }, [])
-  
-  // Efeito para atualizar distância quando pontos ou conexões mudarem
-  useEffect(() => {
-    if (manualPoints.length > 0) {
-      const newDistance = calculateTotalProjectDistance(manualPoints, extraConnections);
-      if (newDistance !== totalDistance) {
-        setTotalDistance(newDistance);
-        
-        // Atualiza o projeto atual
-        if (currentProject) {
-          setCurrentProject(prev => ({
-            ...prev,
-            total_distance: newDistance,
-            totalDistance: newDistance
-          }));
-        }
-      }
-    }
-  }, [manualPoints, extraConnections]); // Dependências: atualiza quando pontos ou conexões mudamg
-  
-  const createProjectsTable = async () => {
-    try {
-      const { error } = await supabase.rpc('create_projects_table_if_not_exists');
-      if (error) throw error;
-    } catch (error) {
-      console.error('Erro ao criar tabela de projetos:', error);
-    }
-  };
-  
-  const saveProjectToSupabase = async (project) => {
-    if (!user) return null;
-    
-    try {
-      const projectData = {
-        name: project.name,
-        points: project.points,
-        extra_connections: project.extra_connections || [],
-        total_distance: project.totalDistance || project.total_distance,
-        bairro: project.bairro,
-        tracking_mode: 'manual',
-        user_id: user.id
-      };
-      
-      let result;
-      
-      if (project.id && typeof project.id === 'number') {
-        const { data, error } = await supabase
-          .from('projetos')
-          .insert([projectData])
-          .select();
-        
-        if (error) throw error;
-        result = data[0];
-      } else {
-        const { data, error } = await supabase
-          .from('projetos')
-          .update(projectData)
-          .eq('id', project.id)
-          .eq('user_id', user.id)
-          .select();
-        
-        if (error) throw error;
-        result = data[0];
-      }
-      
-      return result;
-    } catch (error) {
-      console.error('Erro ao salvar projeto no Supabase:', error);
-      return null;
-    }
-  };
-  
-  const handleRenameProject = async (projectId, newName) => {
-    await renameProject(projectId, newName);
-    
-    if (currentProject && currentProject.id === projectId) {
-      setCurrentProject(prev => ({ ...prev, name: newName }));
-      setProjectName(newName);
-    }
-    
-    setLoadedProjects(prev => prev.map(p =>
-      p.id === projectId ? { ...p, name: newName } : p
-    ));
-    
-    showFeedback('Sucesso', 'Projeto renomeado', 'success');
-  };
-  
-  const deleteProjectFromSupabase = async (projectId) => {
-    if (!user) return false;
-    
-    try {
-      const { error } = await supabase
-        .from('projetos')
-        .delete()
-        .eq('id', projectId)
-        .eq('user_id', user.id);
-      
-      if (error) throw error;
-      return true;
-    } catch (error) {
-      console.error('Erro ao deletar projeto do Supabase:', error);
-      return false;
-    }
-  };
-  
-  const syncOfflineProjects = async () => {
-    if (!user || !isOnline) return;
-    
-    try {
-      const offlineProjects = storage.loadProjects(user.id);
-      
-      for (const project of offlineProjects) {
-        if (project.id.toString().startsWith('offline_')) {
-          try {
-            const { data, error } = await supabase
-              .from('projetos')
-              .insert([{
-                name: project.name,
-                points: project.points,
-                extra_connections: project.extra_connections || [],
-                total_distance: project.totalDistance || project.total_distance,
-                bairro: project.bairro,
-                tracking_mode: 'manual',
-                user_id: user.id
-              }])
-              .select();
-            
-            if (error) throw error;
-            
-            const updatedProject = { ...project, id: data[0].id };
-            const userProjects = storage.loadProjects(user.id);
-            const updatedUserProjects = userProjects.map(p =>
-              p.id === project.id ? updatedProject : p
-            );
-            storage.saveProjects(user.id, updatedUserProjects);
-            
-            console.log('Projeto offline sincronizado:', project.name);
-            
-          } catch (projectError) {
-            console.error('Erro ao sincronizar projeto offline:', projectError);
-          }
-        }
-      }
-      
-      await loadProjects();
-      
-    } catch (error) {
-      console.error('Erro na sincronização offline:', error);
-    }
-  };
-  
-  // Efeito para carregar projetos
-  useEffect(() => {
-    if (user) {
-      loadProjects();
-    }
-  }, [user, isOnline]);
-  
-  useEffect(() => {
-    if (isOnline && user) {
-      syncOfflineProjects();
-    }
-  }, [isOnline, user]);
-  
-  useEffect(() => {
-    const loadBairros = async () => {
-      const savedBairros = storage.loadBairros();
-      if (savedBairros) {
-        setBairros(savedBairros);
-      }
-    };
-    loadBairros();
-  }, [])
-  
-  useEffect(() => {
-    if (user) {
-      const loadFavorites = async () => {
-        const savedFavorites = storage.loadFavorites(user.id);
-        if (savedFavorites) {
-          setFavorites(savedFavorites);
-        }
-      };
-      loadFavorites();
-    }
-  }, [user])
-  
-  useEffect(() => {
-    let watchId = null
-    
-    if (navigator.geolocation) {
-      watchId = navigator.geolocation.watchPosition(
-        (position) => {
-          const { latitude, longitude, accuracy, speed } = position.coords;
-          
-          // 1. Cria objeto do ponto bruto com a precisão
-          const rawPoint = { lat: latitude, lng: longitude, accuracy };
-          
-          // 2. FILTRO DE QUALIDADE: Só aceita se passar nos critérios
-          if (gpsFilterRef.current.isValid(rawPoint)) {
-            
-            // 3. Se aprovado, passa pelo Kalman (suavização)
-            const smoothedLat = kalmanLatRef.current.filter(latitude);
-            const smoothedLng = kalmanLngRef.current.filter(longitude);
-            
-            const smoothedPosition = {
-              lat: smoothedLat,
-              lng: smoothedLng
-            };
-            
-            // 4. Atualiza posição e dados reais
-            setCurrentPosition(smoothedPosition);
-            setGpsAccuracy(accuracy);
-            setSpeed(speed || 0);
-            
-            setPositionHistory(prev => {
-              const newHistory = [...prev, {
-                lat: smoothedLat,
-                lng: smoothedLng,
-                timestamp: Date.now(),
-                accuracy: accuracy
-              }].slice(-10);
-              return newHistory;
-            });
-          } else {
-            // 5. Se foi rejeitado (sinal ruim), apenas atualiza a precisão na tela
-            // mas NÃO move o boneco nem cria rastro sujo.
-            console.log(`GPS fraco (${accuracy}m) ou parado. Ignorando salto.`);
-            setGpsAccuracy(accuracy);
-          }
-        },
-        (error) => {
-          console.error('Erro ao obter localização:', error);
-          if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(
-              (position) => {
-                const { latitude, longitude } = position.coords;
-                setCurrentPosition({
-                  lat: latitude,
-                  lng: longitude
-                });
-              },
-              (error) => console.error('Erro ao obter localização fallback:', error),
-              {
-                enableHighAccuracy: false,
-                timeout: 10000,
-                maximumAge: 30000
-              }
-            );
-          }
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 15000,
-          maximumAge: 0 // Força leitura nova, não aceita cache
-        }
-      )
-    }
-    
-    return () => {
-      if (watchId) {
-        navigator.geolocation.clearWatch(watchId);
-      }
-    };
-  }, [tracking, paused])
   
   const saveBairros = async (newBairros) => {
     setBairros(newBairros);
@@ -2106,638 +1686,6 @@ function App() {
     }
   }
   
-  const handleJoinProject = async (projectId) => {
-    if (!user || !isOnline) {
-      showFeedback('Erro', 'Você precisa estar online para importar projetos.', 'error');
-      return;
-    }
-    
-    try {
-      const { data, error } = await supabase.rpc('join_project', {
-        p_id: projectId
-      });
-      
-      if (error) throw error;
-      
-      if (data.success) {
-        showFeedback('Sucesso', data.message, 'success');
-        await loadProjects();
-      } else {
-        showFeedback('Erro', data.message, 'error');
-      }
-      
-    } catch (error) {
-      console.error("Erro ao importar:", error);
-      if (error.code === '22P02') {
-        showFeedback('Erro', 'ID inválido. Certifique-se de copiar o código completo.', 'error');
-      } else {
-        showFeedback('Erro', 'Erro ao entrar no projeto.', 'error');
-      }
-    }
-  };
-  
-  const handleFileImport = async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-    
-    setImportProgress(0);
-    setShowImportProgress(true);
-    setImportCurrentAction('Processando arquivo...');
-    setUploading(true);
-    
-    try {
-      let kmlText;
-      if (file.name.endsWith('.kmz')) {
-        const zip = new(JSZip.default || JSZip)();
-        const contents = await zip.loadAsync(file);
-        const kmlFile = Object.keys(contents.files).find(name => name.endsWith('.kml'));
-        if (!kmlFile) throw new Error('KML não encontrado no KMZ');
-        kmlText = await contents.files[kmlFile].async('text');
-      } else {
-        kmlText = await file.text();
-      }
-      
-      const parser = new DOMParser();
-      const xmlDoc = parser.parseFromString(kmlText, 'text/xml');
-      const placemarks = Array.from(xmlDoc.getElementsByTagName('Placemark'));
-      
-      const newMarkers = placemarks.map((placemark, i) => {
-        const coordsText = placemark.getElementsByTagName('coordinates')[0]?.textContent?.trim();
-        if (!coordsText) return null;
-        
-        const [lng, lat] = coordsText.split(',').map(Number);
-        if (isNaN(lat) || isNaN(lng)) return null;
-        
-        return {
-          id: generateUUID(),
-          name: placemark.getElementsByTagName('name')[0]?.textContent || `Ponto ${i + 1}`,
-          lat,
-          lng,
-          descricao: placemark.getElementsByTagName('description')[0]?.textContent || '',
-          bairro: '',
-          created_at: new Date().toISOString(),
-          user_id: user?.id
-        };
-      }).filter(Boolean);
-      
-      setMarkers(prev => [...prev, ...newMarkers]);
-      
-      if (user) {
-        storage.saveMarkers(user.id, newMarkers);
-      }
-      
-      if (isOnline && user && newMarkers.length > 0) {
-        setImportCurrentAction('Sincronizando com a nuvem...');
-        const batchSize = 50;
-        for (let i = 0; i < newMarkers.length; i += batchSize) {
-          const batch = newMarkers.slice(i, i + batchSize);
-          await supabase.from('marcacoes').insert(batch);
-        }
-      }
-      
-      setImportProgress(100);
-      setImportSuccess(true);
-      
-      setTimeout(() => setShowImportProgress(false), 1500);
-      
-    } catch (error) {
-      console.error('Erro na importação:', error);
-      setImportError('Falha ao ler o arquivo.');
-    } finally {
-      setUploading(false);
-      if (event.target) event.target.value = '';
-    }
-  };
-  
-  const handleClearImportedMarkers = async () => {
-    if (!confirm('Tem certeza que deseja limpar todas as marcações importadas? Esta ação não pode ser desfeita.')) {
-      return;
-    }
-    
-    try {
-      if (isOnline && user) {
-        const { error } = await supabase
-          .from('marcacoes')
-          .delete()
-          .eq('user_id', user.id)
-        
-        if (error && error.code !== '42P01') {
-          console.error('Erro ao limpar marcações:', error)
-          showFeedback('Erro', 'Erro ao limpar marcações do servidor', 'error');
-          return
-        }
-      }
-      
-      setMarkers([])
-      setFilteredMarkers([])
-      handleClearRoute()
-      
-      if (user) {
-        storage.saveMarkers(user.id, []);
-      }
-      
-      showFeedback('Sucesso', 'Todas as marcações importadas foram removidas com sucesso!', 'success');
-    } catch (error) {
-      console.error('Erro ao limpar marcações:', error)
-      showFeedback('Erro', 'Erro ao limpar marcações', 'error');
-    }
-  }
-  
-  const handleClearAllMarkers = async () => {
-    if (!confirm('Tem certeza que deseja limpar todas as marcações? Esta ação não pode ser desfeita.')) {
-      return
-    }
-    
-    try {
-      if (isOnline && user) {
-        const { error } = await supabase
-          .from('marcacoes')
-          .delete()
-          .eq('user_id', user.id)
-        
-        if (error && error.code !== '42P01') {
-          console.error('Erro ao limpar marcações:', error)
-          showFeedback('Erro', 'Erro ao limpar marcações do servidor', 'error');
-          return
-        }
-      }
-      
-      setMarkers([])
-      setFilteredMarkers([])
-      handleClearRoute()
-      
-      if (user) {
-        storage.saveMarkers(user.id, []);
-      }
-      
-      showFeedback('Sucesso', 'Todas as marcações foram removidas com sucesso!', 'success');
-    } catch (error) {
-      console.error('Erro ao limpar marcações:', error)
-      showFeedback('Erro', 'Erro ao limpar marcações', 'error');
-    }
-  }
-  
-  const handleExport = () => {
-    if (markers.length === 0) {
-      showFeedback('Erro', 'Não há marcações para exportar.', 'error');
-      return
-    }
-    
-    const kml = `<?xml version="1.0" encoding="UTF-8"?>
-<kml xmlns="http://www.opengis.net/kml/2.2">
-  <Document>
-    <name>Marcações Jamaaw</name>
-    ${markers.map(marker => `
-    <Placemark>
-      <name>${escapeXml(marker.name)}</name>
-      <description>${escapeXml(marker.descricao || '')}</description>
-      <Point>
-        <coordinates>${marker.lng},${marker.lat},0</coordinates>
-      </Point>
-    </Placemark>`).join('')}
-  </Document>
-</kml>`
-    
-    downloadKML(kml, 'marcacoes-jamaaw.kml')
-  }
-  
-  const escapeXml = (unsafe) => {
-    return unsafe.replace(/[<>&'"]/g, (c) => {
-      switch (c) {
-        case '<':
-          return '&lt;'
-        case '>':
-          return '&gt;'
-        case '&':
-          return '&amp;'
-        case '\'':
-          return '&apos;'
-        case '"':
-          return '&quot;'
-        default:
-          return c
-      }
-    })
-  }
-  
-  const handleSpanChange = (count) => {
-    if (!spanSelectorInfo) return;
-    
-    // 1. Cria uma cópia profunda dos pontos com o novo Span
-    const updatedPoints = manualPoints.map(p => {
-      if (p.id === spanSelectorInfo.targetPointId) {
-        return { ...p, spans: count };
-      }
-      return p;
-    });
-    
-    // 2. Atualiza o estado dos pontos (Isso redesenha o mapa)
-    setManualPoints(updatedPoints);
-    
-    // 3. RECALCULA A DISTÂNCIA IMEDIATAMENTE
-    // Usa a função centralizada que importamos do geoUtils
-    const newTotal = calculateTotalProjectDistance(updatedPoints, extraConnections);
-    setTotalDistance(newTotal);
-    
-    // 4. ATUALIZA O PROJETO ATUAL EM MEMÓRIA (O Pulo do Gato)
-    // Sem isso, se você salvar, ele pega o estado antigo
-    if (currentProject) {
-      setCurrentProject(prev => ({
-        ...prev,
-        points: updatedPoints,
-        total_distance: newTotal,
-        totalDistance: newTotal
-      }));
-    }
-    
-    // 5. Feedback visual rápido
-    showFeedback('Atualizado', `Segmento alterado para ${count} vãos. Nova distância: ${formatDistanceDetailed(newTotal)}`, 'success');
-    
-    setSpanSelectorInfo(null);
-  };
-  
-  const segmentsGeoJSON = useMemo(() => {
-    const features = [];
-    if (manualPoints.length > 0) {
-      manualPoints.forEach((point, index) => {
-        let parent = null;
-        if (point.connectedFrom) {
-          parent = manualPoints.find(p => p.id === point.connectedFrom);
-        } else if (index > 0) {
-          parent = manualPoints[index - 1];
-        }
-        
-        if (parent) {
-          const spans = point.spans || 1;
-          const color = SPAN_COLORS[spans];
-          
-          features.push({
-            type: 'Feature',
-            properties: {
-              type: 'segment',
-              targetPointId: point.id,
-              spans: spans,
-              color: color
-            },
-            geometry: {
-              type: 'LineString',
-              coordinates: [
-                [parent.lng, parent.lat],
-                [point.lng, point.lat]
-              ]
-            }
-          });
-          
-          const midLng = (parent.lng + point.lng) / 2;
-          const midLat = (parent.lat + point.lat) / 2;
-          
-          features.push({
-            type: 'Feature',
-            properties: {
-              type: 'badge',
-              targetPointId: point.id,
-              spans: spans,
-              label: `${spans}AG`,
-              color: color
-            },
-            geometry: {
-              type: 'Point',
-              coordinates: [midLng, midLat]
-            }
-          });
-        }
-      });
-    }
-    return { type: 'FeatureCollection', features };
-  }, [manualPoints]);
-  
-  const downloadKML = async (kmlContent, filename) => {
-    try {
-      console.log('Iniciando download...', filename);
-      
-      if (Capacitor.getPlatform() === 'web') {
-        const blob = new Blob([kmlContent], {
-          type: 'application/vnd.google-earth.kml+xml;charset=utf-8'
-        });
-        
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        a.style.display = 'none';
-        
-        document.body.appendChild(a);
-        a.click();
-        
-        setTimeout(() => {
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-        }, 1000);
-      } else {
-        const savedFile = await Filesystem.writeFile({
-          path: filename,
-          data: kmlContent,
-          directory: Directory.Documents,
-          encoding: 'utf-8',
-        });
-        
-        showFeedback('Sucesso', `Arquivo salvo! Tentando abrir...`, 'success');
-        
-        try {
-          await FileOpener.open({
-            filePath: savedFile.uri,
-            contentType: 'application/vnd.google-earth.kml+xml',
-            openWithDefault: false
-          });
-        } catch (openerError) {
-          console.warn("Erro ao abrir KML automaticamente:", openerError);
-          try {
-            await FileOpener.open({
-              filePath: savedFile.uri,
-              contentType: 'text/xml',
-              openWithDefault: false
-            });
-          } catch (e) {
-            showFeedback('Aviso', 'Arquivo salvo em Documentos, mas nenhum app compatível foi encontrado para abrir automaticamente.', 'warning');
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Erro fatal no download:', error);
-      showFeedback('Erro', 'Erro ao salvar o arquivo.', 'error');
-    }
-  };
-  
-  const generateProjectSegmentsGeoJSON = useCallback((project) => {
-    if (!project || !project.points || project.points.length < 2) {
-      return { type: 'FeatureCollection', features: [] };
-    }
-    
-    const features = [];
-    const pointMap = new Map();
-    for (const p of project.points) pointMap.set(p.id, p);
-    
-    // 1. Distância Sequencial / Ramificações
-    for (let i = 0; i < project.points.length; i++) {
-      const point = project.points[i];
-      let parent = null;
-      
-      if (point.connectedFrom) {
-        parent = pointMap.get(point.connectedFrom);
-      } else if (i > 0) {
-        parent = project.points[i - 1];
-      }
-      
-      if (parent) {
-        const spans = point.spans || 1;
-        const color = SPAN_COLORS[spans] || '#06b6d4';
-        
-        // Linha do segmento
-        features.push({
-          type: 'Feature',
-          properties: {
-            type: 'segment',
-            targetPointId: point.id,
-            spans: spans,
-            color: color,
-            projectId: project.id
-          },
-          geometry: {
-            type: 'LineString',
-            coordinates: [
-              [parent.lng, parent.lat],
-              [point.lng, point.lat]
-            ]
-          }
-        });
-        
-        // Badge do vão (no meio do segmento)
-        const midLng = (parent.lng + point.lng) / 2;
-        const midLat = (parent.lat + point.lat) / 2;
-        
-        features.push({
-          type: 'Feature',
-          properties: {
-            type: 'badge',
-            targetPointId: point.id,
-            spans: spans,
-            label: `${spans}AG`,
-            color: color,
-            projectId: project.id
-          },
-          geometry: {
-            type: 'Point',
-            coordinates: [midLng, midLat]
-          }
-        });
-      }
-    }
-    
-    return { type: 'FeatureCollection', features };
-  }, []);
-  
-  const handleCalculateDistance = async () => {
-    if (selectedForDistance.length !== 2) {
-      showFeedback('Erro', 'Selecione exatamente 2 marcadores', 'error');
-      return
-    }
-    
-    setCalculatingRoute(true)
-    const [m1, m2] = selectedForDistance
-    
-    // 3. ATUALIZAR CHAMADA PARA RoutingService
-    const route = await RoutingService.getRouteFromAPI([m1.lng, m1.lat], [m2.lng, m2.lat])
-    
-    if (route) {
-      setRouteCoordinates(route)
-      
-      const coordinates = [
-        [m1.lng, m1.lat],
-        [m2.lng, m2.lat]
-      ]
-      const distanceMatrix = await RoutingService.calculateDistanceMatrix(coordinates)
-      let distance
-      
-      if (distanceMatrix && distanceMatrix[0] && distanceMatrix[0][1]) {
-        distance = distanceMatrix[0][1]
-      } else {
-        distance = calculateDistance(m1.lat, m1.lng, m2.lat, m2.lng)
-      }
-      
-      setDistanceResult({
-        type: 'dois',
-        distance: distance.toFixed(2),
-        markers: [m1.name, m2.name],
-        method: 'rota'
-      })
-    } else {
-      const distance = calculateDistance(m1.lat, m1.lng, m2.lat, m2.lng)
-      setRouteCoordinates([
-        [m1.lat, m1.lng],
-        [m2.lat, m2.lng]
-      ])
-      setDistanceResult({
-        type: 'dois',
-        distance: distance.toFixed(2),
-        markers: [m1.name, m2.name],
-        method: 'linha reta'
-      })
-    }
-    
-    setCalculatingRoute(false)
-    setSidebarOpen(false)
-  }
-  
-  const handleCalculateAllDistances = async () => {
-    if (markers.length < 2) {
-      showFeedback('Erro', 'É necessário ter pelo menos 2 marcadores', 'error');
-      return
-    }
-    
-    setCalculatingRoute(true)
-    
-    const allCoordinates = markers.map(m => [m.lng, m.lat])
-    
-    try {
-      const coordsString = allCoordinates.map(c => `${c[0]},${c[1]}`).join(';')
-      
-      // 3. ATUALIZAR CHAMADA PARA RoutingService
-      const data = await RoutingService.getRouteFromAPI(allCoordinates[0], allCoordinates[allCoordinates.length - 1])
-      
-      if (data) {
-        const routeCoords = data.map(coord => [coord[1], coord[0]])
-        setRouteCoordinates(routeCoords)
-        
-        // Para simplicidade, usaremos a distância calculada manualmente
-        let totalDistance = 0
-        for (let i = 0; i < markers.length - 1; i++) {
-          totalDistance += calculateDistance(markers[i].lat, markers[i].lng, markers[i + 1].lat, markers[i + 1].lng)
-        }
-        
-        setDistanceResult({
-          type: 'todas',
-          distance: totalDistance.toFixed(2),
-          count: markers.length,
-          method: 'rota'
-        })
-      } else {
-        throw new Error('Rota não encontrada')
-      }
-    } catch (error) {
-      console.error('Erro ao calcular rota:', error)
-      
-      let totalDistance = 0
-      const routeCoords = []
-      
-      for (let i = 0; i < markers.length - 1; i++) {
-        const m1 = markers[i]
-        const m2 = markers[i + 1]
-        totalDistance += calculateDistance(m1.lat, m1.lng, m2.lat, m2.lng)
-        routeCoords.push([m1.lat, m1.lng])
-      }
-      routeCoords.push([markers[markers.length - 1].lat, markers[markers.length - 1].lng])
-      
-      setRouteCoordinates(routeCoords)
-      setDistanceResult({
-        type: 'todas',
-        distance: totalDistance.toFixed(2),
-        count: markers.length,
-        method: 'linha reta'
-      })
-    }
-    
-    setCalculatingRoute(false)
-    setSidebarOpen(false)
-  }
-  
-  const handleClearRoute = () => {
-    setRouteCoordinates([])
-    setDistanceResult(null)
-    setSelectedForDistance([])
-  }
-  
-  const toggleMarkerSelection = (marker) => {
-    // Removida função de seleção múltipla
-  };
-  
-  
-  const toggleProjectSelection = (project) => {
-    setSelectedProjects(prev => {
-      const exists = prev.find(p => p.id === project.id);
-      if (exists) {
-        return prev.filter(p => p.id !== project.id);
-      } else {
-        return [...prev, project];
-      }
-    });
-  };
-  
-  const removeLoadedProject = (projectId) => {
-    if (currentProject && currentProject.id === projectId && isOnline && user) {
-      ProjectLockService.releaseLock(currentProject.id, user.id);
-    }
-    
-    setLoadedProjects(prev => prev.filter(p => p.id !== projectId));
-    
-    if (currentProject && currentProject.id === projectId) {
-      setCurrentProject(null);
-      setManualPoints([]);
-      setTotalDistance(0);
-      setSelectedStartPoint(null);
-    }
-    
-    if (mapRef.current) {
-      mapRef.current.triggerRepaint();
-    }
-  };
-  
-  const handleEditMarker = useCallback((marker) => {
-    setEditingMarker(marker);
-    setShowEditDialog(true);
-  }, []);
-  
-  const handleSaveEdit = async () => {
-    if (!editingMarker) return
-    
-    if (isOnline) {
-      const success = await updateMarkerInSupabase(editingMarker)
-      if (success) {
-        setMarkers(prev => prev.map(m => m.id === editingMarker.id ? editingMarker : m))
-        setShowEditDialog(false)
-        setEditingMarker(null)
-      } else {
-        showFeedback('Erro', 'Erro ao salvar alterações', 'error');
-      }
-    } else {
-      setMarkers(prev => prev.map(m => m.id === editingMarker.id ? editingMarker : m))
-      setSyncPending(true)
-      setShowEditDialog(false)
-      setEditingMarker(null)
-    }
-  }
-  
-  const handleDeleteMarker = async () => {
-    if (!editingMarker) return
-    
-    if (confirm(`Deseja realmente deletar "${editingMarker.name}"?`)) {
-      if (isOnline) {
-        const success = await deleteMarkerFromSupabase(editingMarker.id)
-        if (success) {
-          setMarkers(prev => prev.filter(m => m.id !== editingMarker.id))
-          setShowEditDialog(false)
-          setEditingMarker(null)
-        } else {
-          showFeedback('Erro', 'Erro ao deletar marcação', 'error');
-        }
-      } else {
-        setMarkers(prev => prev.filter(m => m.id !== editingMarker.id))
-        setSyncPending(true)
-        setShowEditDialog(false)
-        setEditingMarker(null)
-      }
-    }
-  }
-  
   const detectStreetName = async (lat, lng) => {
     try {
       const response = await axios.get(
@@ -2809,7 +1757,6 @@ function App() {
     
     setManualPoints(prev => {
       const updatedPoints = [...prev, newPoint];
-      // Atualiza a distância usando a função correta
       const newTotalDistance = calculateTotalProjectDistance(updatedPoints, extraConnections);
       setTotalDistance(newTotalDistance);
       return updatedPoints;
@@ -2838,15 +1785,12 @@ function App() {
   
   const stopTracking = async () => {
     try {
-      // Se há pontos manuais e não está pausado
       if (manualPoints.length > 0 && !paused) {
         let projectNameToUse = projectName;
         
-        // Se estiver continuando um projeto existente
         if (currentProject) {
           projectNameToUse = currentProject.name;
           
-          // Atualiza o projeto existente com os novos pontos
           const allPoints = [...(currentProject.points || []), ...manualPoints];
           const calculatedTotalDistance = calculateTotalProjectDistance(allPoints, extraConnections);
           
@@ -2858,13 +1802,11 @@ function App() {
             updated_at: new Date().toISOString()
           };
           
-          // Atualiza o projeto nos estados
           setCurrentProject(updatedProject);
           setLoadedProjects(prev =>
             prev.map(p => p.id === updatedProject.id ? updatedProject : p)
           );
           
-          // Salva no Supabase se online
           if (isOnline && user) {
             const { error } = await supabase
               .from('projetos')
@@ -2880,7 +1822,6 @@ function App() {
           
           showFeedback('Atualizado', 'Projeto atualizado com novos pontos', 'success');
         } else {
-          // Cria um novo projeto
           projectNameToUse = projectName.trim() || `Rastreamento ${new Date().toLocaleString('pt-BR')}`;
           const calculatedTotalDistance = calculateTotalProjectDistance(manualPoints, extraConnections);
           
@@ -2917,11 +1858,9 @@ function App() {
             color: savedProject.color || generateRandomColor()
           };
           
-          // Adiciona aos projetos carregados para manter o traçado visível
           setLoadedProjects(prev => [...prev, localProjectObj]);
           setProjects(prev => [localProjectObj, ...prev]);
           
-          // Salva no Cache
           const userProjects = storage.loadProjects(user?.id);
           const otherProjects = userProjects.filter(p => p.id !== localProjectObj.id);
           storage.saveProjects(user?.id, [localProjectObj, ...otherProjects]);
@@ -2930,7 +1869,6 @@ function App() {
         }
       }
       
-      // Libera o lock do projeto
       if (currentProject && isOnline && user) {
         await ProjectLockService.releaseLock(currentProject.id, user.id);
       }
@@ -2939,7 +1877,6 @@ function App() {
       console.error('Erro ao salvar automaticamente:', error);
       showFeedback('Atenção', 'Traçado não foi salvo automaticamente', 'warning');
     } finally {
-      // Limpa apenas os estados de rastreamento, mantendo projetos carregados
       setTracking(false);
       setPaused(false);
       setShowTrackingControls(false);
@@ -2950,7 +1887,6 @@ function App() {
       setPositionHistory([]);
       setGpsAccuracy(null);
       setSpeed(0);
-      // NÃO limpa o currentProject aqui - ele precisa ficar para mostrar os traçados
       setProjectName('');
     }
   };
@@ -3069,8 +2005,6 @@ function App() {
     setAdjustBoundsForProject(false);
   };
   
-  
-  
   const handleARMode = async () => {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       showFeedback('Erro', 'Seu navegador não suporta acesso à câmera para realidade aumentada.', 'error');
@@ -3158,7 +2092,7 @@ function App() {
   mapboxAccessToken={mapboxToken}
   cursor={tracking && trackingInputMode === 'touch' && !paused ? 'crosshair' : 'grab'}
   preserveDrawingBuffer={true}
-  cooperativeGestures={true}
+  cooperativeGestures={false}
   attributionControl={false}
   maxPitch={0}
   minZoom={10}
@@ -3172,17 +2106,15 @@ function App() {
     console.error('Erro no mapa:', e);
   }}
 
-    interactiveLayerIds={[  // Especifique quais layers são interativas
+    interactiveLayerIds={[
       'markers-hit-area',
       'segment-hit-area',
       'segment-badge-bg'
     ]}
   
           onClick={async (e) => {
-    // 1. Verificação de segurança: O mapa está carregado?
     if (!mapRef.current) return;
 
-    // 2. Tenta pegar features de marcadores (Markers)
     const markerLayers = ['markers-hit-area', 'markers-layer'].filter(id => 
       mapRef.current.getLayer(id)
     );
@@ -3194,7 +2126,6 @@ function App() {
       });
     }
     
-    // Lógica do segmento (Traçado)
     if (tracking && !paused) {
       const segmentLayers = ['segment-hit-area', 'segment-badge-bg'].filter(id => 
         mapRef.current.getLayer(id)
@@ -3220,7 +2151,6 @@ function App() {
     
     setSpanSelectorInfo(null);
 
-    // Lógica de clique no Marcador
     if (features.length > 0) {
       const feature = features[0];
       const markerData = {
@@ -3233,7 +2163,6 @@ function App() {
       return;
     }
 
-    // Lógica de adicionar ponto (Toque)
     if (tracking && trackingInputMode === 'touch' && !paused) {
       const { lat, lng } = e.lngLat;
       
@@ -3260,7 +2189,6 @@ function App() {
         >
           <NavigationControl position="top-right" />
 
-          {/* CAMADA DE MARCADORES OTIMIZADA */}
           <Source id="markers-source" type="geojson" data={markersGeoJSON}>
             <Layer
               id="markers-layer"
@@ -3288,7 +2216,6 @@ function App() {
             />
           </Source>
 
-         {/* CAMADA DE TRAÇADOS PARA PROJETOS CARREGADOS (COM VÃOS) */}
 {loadedProjects.map(project => {
   if (!project.points || project.points.length < 2) return null;
   
@@ -3301,7 +2228,6 @@ function App() {
       type="geojson" 
       data={segmentsData}
     >
-      {/* Linhas dos segmentos */}
       <Layer
         id={`segment-line-${project.id}`}
         type="line"
@@ -3321,7 +2247,6 @@ function App() {
         }}
       />
       
-      {/* Background dos badges */}
       <Layer
         id={`segment-badge-bg-${project.id}`}
         type="circle"
@@ -3334,7 +2259,6 @@ function App() {
         }}
       />
       
-      {/* Texto dos badges */}
       <Layer
         id={`segment-badge-text-${project.id}`}
         type="symbol"
@@ -3379,7 +2303,6 @@ function App() {
             </React.Fragment>
           ))}
 
-          {/* CAMADA DE TRAÇADO COM VÃOS */}
           {manualPoints.length > 0 && (
             <Source id="segments-source" type="geojson" data={segmentsGeoJSON}>
               <Layer
@@ -3597,7 +2520,6 @@ function App() {
           )}
         </Map>
         
-        {/* 5. NOVO CONTROLE DE MAPA E GPS (Substitui os botões antigos) */}
         <MapControls 
           onCenterMap={centerMapOnUser}
           currentMapStyle={mapStyle}
@@ -3792,10 +2714,6 @@ function App() {
         </Button>
       </div>
 
-      {/* REMOVIDO: Botão de seleção múltipla */}
-
-      {/* REMOVIDO: MultipleSelectionPopup */}
-
       {showProjectDetails && currentProject && (
         <div className="absolute bottom-20 right-4 z-50 animate-scale-in">
           <Card className="bg-gradient-to-br from-slate-800/95 to-slate-700/95 backdrop-blur-sm border-slate-600/50 shadow-2xl text-white w-64">
@@ -3833,15 +2751,11 @@ function App() {
   onJoinProject={handleJoinProject}
   onRenameProject={handleRenameProject}
   
-  // --- CORREÇÃO DO RELATÓRIO AQUI ---
-  // No App.jsx, onde você chama onOpenReport, atualize para:
 onOpenReport={(project) => {
   const img = getMapImage();
   
-  // Calcula a distância com vãos
   const distAtualizada = calculateProjectDistance(project);
   
-  // Cria um objeto temporário com a distância corrigida
   const projetoCorrigido = {
     ...project,
     total_distance: distAtualizada,
@@ -3865,10 +2779,6 @@ onOpenReport={(project) => {
         }}
         totalDistanceAll={totalDistanceAllProjects}
       />
-
-      
-
-      {/* REMOVIDO: Botão antigo de localização */}
 
       {distanceResult && (
         <div className="absolute bottom-4 left-4 right-4 z-10 bg-gradient-to-r from-slate-800 to-slate-700 backdrop-blur-sm rounded-xl p-4 shadow-2xl text-white border border-slate-600/50 animate-slide-in-bottom">
@@ -4170,7 +3080,7 @@ onOpenReport={(project) => {
     handleRemovePoints={handleRemovePoints}
     showProjectDialog={showProjectDialog}
     formatDistanceDetailed={formatDistanceDetailed}
-    undoLastPoint={undoLastPoint} // ← ESTA LINHA DEVE EXISTIR
+    undoLastPoint={undoLastPoint}
     selectedStartPoint={selectedStartPoint}
     resetStartPoint={resetStartPoint}
   />
@@ -4227,7 +3137,6 @@ onOpenReport={(project) => {
         currentUserEmail={user?.email}
       />
 
-      {/* 5. NOVO PAINEL DE GESTÃO DE MEMBROS */}
 <ProjectMembersDialog 
   isOpen={showMembersDialog}
   onClose={() => setShowMembersDialog(false)}
