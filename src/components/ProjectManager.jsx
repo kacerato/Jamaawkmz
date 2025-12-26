@@ -14,11 +14,13 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle
 } from '@/components/ui/alert-dialog';
 
+// 1. IMPORTAÇÃO DA LÓGICA CENTRALIZADA (CORREÇÃO DO CÁLCULO)
+import { calculateTotalProjectDistance } from '../utils/geoUtils';
+
 const ProjectManager = ({
   isOpen, onClose, projects, currentUserId,
   onLoadProject, onDeleteProject, onExportProject,
   onJoinProject, onRenameProject, onOpenReport
-  // onOpenMembers foi removido daqui
 }) => {
   const [activeTab, setActiveTab] = useState('mine');
   const [joinId, setJoinId] = useState('');
@@ -33,40 +35,8 @@ const ProjectManager = ({
   const displayedProjects = (activeTab === 'mine' ? myProjects : sharedProjects)
     .filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
-  // Função para calcular distância com vãos
-  const calculateProjectDistance = (project) => {
-    if (!project || !project.points || project.points.length < 2) {
-      return project?.total_distance || project?.totalDistance || 0;
-    }
-
-    let totalDistance = 0;
-
-    for (let i = 1; i < project.points.length; i++) {
-      const current = project.points[i];
-      const previous = project.points[i - 1];
-
-      if (current && previous && current.lat && current.lng && previous.lat && previous.lng) {
-        const lat1 = previous.lat * Math.PI / 180;
-        const lat2 = current.lat * Math.PI / 180;
-        const dLat = (current.lat - previous.lat) * Math.PI / 180;
-        const dLng = (current.lng - previous.lng) * Math.PI / 180;
-
-        const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                 Math.cos(lat1) * Math.cos(lat2) *
-                 Math.sin(dLng/2) * Math.sin(dLng/2);
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-        const R = 6378137;
-        const dist = R * c;
-
-        const spans = (current.spans !== undefined && current.spans !== null && !isNaN(current.spans)) ?
-                     Math.max(1, Number(current.spans)) : 1;
-
-        totalDistance += (dist * spans);
-      }
-    }
-
-    return totalDistance;
-  };
+  // A função local 'calculateProjectDistance' foi removida para evitar discrepâncias.
+  // Agora usamos calculateTotalProjectDistance importado de geoUtils.
 
   const confirmDelete = () => {
     if (projectToDelete) {
@@ -77,7 +47,13 @@ const ProjectManager = ({
 
   const ProjectCard = ({ project }) => {
     const isMine = project.user_id === currentUserId;
-    const projectDistance = calculateProjectDistance(project);
+    
+    // 2. USO DA FUNÇÃO CENTRALIZADA
+    // Garante que o cálculo seja idêntico ao do Relatório e do App.jsx
+    const projectDistance = calculateTotalProjectDistance(
+      project.points, 
+      project.extra_connections || []
+    );
 
     const totalSpans = project.points?.reduce((sum, point) => {
       const spans = (point.spans !== undefined && point.spans !== null && !isNaN(point.spans)) ?
@@ -152,10 +128,7 @@ const ProjectManager = ({
             <Play size={10} className="mr-1.5 fill-current" /> Abrir
           </Button>
 
-          {/* Container dos botões de ação centralizados */}
           <div className="flex items-center bg-black/20 rounded-lg p-0.5 border border-white/5 h-8">
-            {/* Botão de Equipe Removido */}
-            
             <ActionButton icon={ClipboardList} onClick={() => onOpenReport(project)} title="Relatório" color="text-slate-400 hover:text-yellow-400" />
             <div className="w-px h-4 bg-white/5 mx-0.5"></div>
             <ActionButton icon={Download} onClick={() => onExportProject(project)} title="Exportar" color="text-slate-400 hover:text-green-400" />
@@ -171,7 +144,6 @@ const ProjectManager = ({
     );
   };
 
-  // Botão de Ação Otimizado para centralização
   const ActionButton = ({ icon: Icon, onClick, title, color }) => (
     <button 
       onClick={onClick} 
@@ -193,7 +165,6 @@ const ProjectManager = ({
                    <FolderOpen className="text-cyan-400" size={20}/> Gerenciador
                 </DialogTitle>
                 
-                {/* Botão X (Fechar) Centralizado */}
                 <button 
                   onClick={onClose} 
                   className="w-8 h-8 rounded-full flex items-center justify-center bg-slate-800/50 text-slate-400 hover:text-white hover:bg-white/10 transition-all"

@@ -94,7 +94,6 @@ import { RoutingService } from './services/RoutingService';
 
 // 2. NOVOS COMPONENTES VISUAIS
 import MapControls from './components/MapControls';
-import ProjectMembersDialog from './components/ProjectMembersDialog';
 
 import 'mapbox-gl/dist/mapbox-gl.css'
 import './App.css'
@@ -575,8 +574,6 @@ function App() {
   // NOVOS STATES
   const [extraConnections, setExtraConnections] = useState([]);
   
-  // 4. NOVO STATE PARA GESTÃO DE MEMBROS
-  const [showMembersDialog, setShowMembersDialog] = useState(false);
   
   // ... outros hooks ...
   const {
@@ -3400,18 +3397,7 @@ const addPoint = (position) => {
           isTrackingActive={tracking}
         />
         
-        {/* 6. Botão de Equipe (Só aparece se tiver projeto carregado e online) */}
-        {currentProject && isOnline && (
-          <div className="absolute top-4 left-20 z-10">
-             <Button 
-               size="sm" 
-               onClick={() => setShowMembersDialog(true)}
-               className="bg-slate-900/80 backdrop-blur text-cyan-400 border border-white/10 shadow-xl"
-             >
-               <Users size={16} className="mr-2" /> Equipe
-             </Button>
-          </div>
-        )}
+        
       </div>
       
 
@@ -4020,15 +4006,6 @@ onOpenReport={(project) => {
         project={reportData?.project}
         mapImage={reportData?.image}
         currentUserEmail={user?.email}
-      />
-
-      {/* 5. NOVO PAINEL DE GESTÃO DE MEMBROS */}
-      <ProjectMembersDialog 
-        isOpen={showMembersDialog}
-        onClose={() => setShowMembersDialog(false)}
-        projectId={currentProject?.id}
-        currentUserId={user?.id}
-        isOwner={currentProject?.user_id === user?.id}
       />
 
       <input
