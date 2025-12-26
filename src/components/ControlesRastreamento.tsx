@@ -1,7 +1,21 @@
 import React, { useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Play, Pause, Square, MapPin, Save, Navigation, Undo, MousePointerClick } from 'lucide-react';
-import { Project, Point } from '../types';
+
+interface Point {
+  id: string;
+  lat: number;
+  lng: number;
+  timestamp: number;
+  accuracy?: number;
+}
+
+interface Project {
+  id: string;
+  name: string;
+  points: Point[];
+  // Add other properties if needed
+}
 
 interface ControlesRastreamentoProps {
   tracking: boolean;
@@ -47,12 +61,9 @@ const ControlesRastreamento: React.FC<ControlesRastreamentoProps> = ({
   formatDistanceDetailed,
   undoLastPoint,
   selectedStartPoint,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  tracking,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  speed,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  resetStartPoint,
+  tracking, // Restored
+  speed, // Restored
+  resetStartPoint, // Restored
 }) => {
   
   const safeManualPoints = manualPoints || [];
