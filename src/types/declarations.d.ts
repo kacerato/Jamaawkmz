@@ -23,33 +23,6 @@ declare module '@/components/ui/navigation-menu';
 declare module '@/components/ui/progress';
 declare module '@/components/ui/toggle';
 declare module '@/components/ui/toggle-group';
-declare module '@/components/ui/sheet';
 declare module '@/components/ui/card';
-declare module '@/components/ui/textarea';
 declare module '@/lib/utils';
 declare module '@/lib/supabase';
-
-declare module '@/components/*' {
-  const content: any;
-  export default content;
-}
-
-declare module './components/*' {
-  const content: any;
-  export default content;
-}
-
-declare module '../components/*' {
-  const content: any;
-  export default content;
-}
-
-declare module '*.jsx' {
-  const content: any;
-  export default content;
-}
-
-declare module '*.png' {
-    const value: any;
-    export = value;
-}
