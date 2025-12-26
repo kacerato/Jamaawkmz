@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import {
-  FolderOpen, Download, Trash2, Play,
+  FolderOpen, Download, Trash2, Play, Users,
   Copy, Plus, Check, Search, X, Edit3,
-  ClipboardList, AlertTriangle, Calendar, MapPin, Hash, LucideIcon
+  Activity, ClipboardList, AlertTriangle, Calendar, MapPin, Hash, LucideIcon
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -169,7 +169,7 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({
                setCopiedId(project.id);
                setTimeout(() => setCopiedId(null), 2000);
             }}
-            className="flex items-center justify-center p-1.5 rounded-md hover:bg-white/5 text-slate-500 hover:text-white transition-colors"
+            className="p-1.5 rounded-md hover:bg-white/5 text-slate-500 hover:text-white transition-colors"
             title="Copiar ID"
           >
             {copiedId === project.id ? <Check size={14} className="text-green-400" /> : <Copy size={14} />}
@@ -189,6 +189,8 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({
           </Button>
 
           <div className="flex bg-black/20 rounded-lg p-0.5 border border-white/5">
+            <ActionButton icon={Activity} onClick={() => onOpenMembers(project)} title="Equipe" color="text-slate-400 hover:text-purple-400" />
+            <div className="w-px bg-white/5 my-1"></div>
             <ActionButton icon={ClipboardList} onClick={() => onOpenReport(project)} title="Relatório" color="text-slate-400 hover:text-yellow-400" />
             <div className="w-px bg-white/5 my-1"></div>
             <ActionButton icon={Download} onClick={() => onExportProject(project)} title="Exportar" color="text-slate-400 hover:text-green-400" />
@@ -205,11 +207,7 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({
   };
 
   const ActionButton = ({ icon: Icon, onClick, title, color }: { icon: LucideIcon; onClick: () => void; title: string; color: string }) => (
-    <button 
-      onClick={onClick} 
-      className={`flex items-center justify-center w-8 h-8 rounded-md transition-all active:scale-90 ${color}`} 
-      title={title}
-    >
+    <button onClick={onClick} className={`p-1.5 rounded-md transition-all active:scale-90 ${color}`} title={title}>
       <Icon size={14} />
     </button>
   );
@@ -224,10 +222,7 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({
                 <DialogTitle className="text-lg font-bold text-white flex items-center gap-2">
                    <FolderOpen className="text-cyan-400" size={20}/> Gerenciador
                 </DialogTitle>
-                <button 
-                  onClick={onClose} 
-                  className="flex items-center justify-center w-8 h-8 rounded-full bg-slate-800/50 text-slate-400 hover:text-white hover:bg-white/10 transition-all"
-                >
+                <button onClick={onClose} className="bg-slate-800/50 p-1.5 rounded-full text-slate-400 hover:text-white hover:bg-white/10 transition-all">
                   <X size={18} />
                 </button>
               </div>
