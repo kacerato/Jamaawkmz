@@ -1,3 +1,4 @@
+// src/components/ProjectReport.jsx
 import React, { useState, useEffect, useMemo } from 'react';
 import { FileText, Download, X, MapPin, Activity, Calendar, User, Clock, Hash, Layers } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -10,13 +11,15 @@ import { FileOpener } from '@capacitor-community/file-opener';
 import { getStaticMapUrl } from '../utils/MapboxStatic';
 import { calculateTotalProjectDistance } from '../utils/geoUtils';
 
-// --- FUNÇÃO AUXILIAR (Movida para fora para performance e acesso global) ---
+// --- FUNÇÃO AUXILIAR ---
 function calcDist(p1, p2) {
   if (!p1 || !p2) return 0;
   const R = 6371e3; // Raio da Terra em metros
   const φ1 = p1.lat * Math.PI / 180;
   const φ2 = p2.lat * Math.PI / 180;
-  const a = Math.sin((p2.lat-p1.lat) * Math.PI / 180/2)**2 + Math.cos(φ1)*Math.cos(φ2) * Math.sin((p2.lng-p1.lng) * Math.PI / 180/2)**2;
+  const Δφ = (p2.lat - p1.lat) * Math.PI / 180;
+  const Δλ = (p2.lng - p1.lng) * Math.PI / 180;
+  const a = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2) * Math.sin(Δλ/2)**2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
@@ -24,7 +27,17 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
   const [staticMapUrl, setStaticMapUrl] = useState(null);
   const [isDownloading, setIsDownloading] = useState(false);
 
-  // --- PROCESSAMENTO DE DADOS (CORRIGIDO) ---
+  // 1. MAPA DE ÍNDICES GLOBAIS (todos os postes numerados sequencialmente)
+  const globalPointIndexMap = useMemo(() => {
+    if (!project?.points) return {};
+    const map = {};
+    project.points.forEach((point, index) => {
+      map[point.id] = index + 1; // Poste 1, 2, 3...
+    });
+    return map;
+  }, [project]);
+
+  // 2. DADOS ESTATÍSTICOS com índices globais
   const stats = useMemo(() => {
     if (!project || !project.points) return null;
 
@@ -33,13 +46,13 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
     let totalSpans = 0;
     let maxSpansPerSegment = 0;
 
-    // Calcula a distância total global (para referência)
+    // Distância total global
     const calculatedTotalDistance = calculateTotalProjectDistance(
       project.points || [], 
       project.extra_connections || []
     );
 
-    // Processa os pontos para o relatório diário
+    // Processa os pontos
     project.points.forEach((p, idx) => {
       const dateObj = new Date(p.timestamp || p.created_at);
       const date = dateObj.toLocaleDateString('pt-BR');
@@ -47,7 +60,7 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
       if (!groups[date]) {
         groups[date] = { 
           points: [], 
-          distance: 0, // Inicializa zerado
+          distance: 0,
           startTime: dateObj, 
           endTime: dateObj,
           users: new Set(),
@@ -58,34 +71,26 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
       const group = groups[date];
       group.points.push(p);
       
-      // Atualiza horários do dia
+      // Horários
       if (dateObj < group.startTime) group.startTime = dateObj;
       if (dateObj > group.endTime) group.endTime = dateObj;
 
-      // --- CORREÇÃO: CÁLCULO DE DISTÂNCIA DO SEGMENTO ---
-      // 1. Identifica o ponto anterior (pai)
+      // Cálculo de distância do segmento
       let previousPoint = null;
       if (p.connectedFrom) {
-        // Se for uma ramificação, busca pelo ID
         previousPoint = project.points.find(pt => pt.id === p.connectedFrom);
       } else if (idx > 0) {
-        // Se for sequencial, pega o anterior no array
         previousPoint = project.points[idx - 1];
       }
 
-      // 2. Define os vãos (Spans)
       const spans = (p.spans !== undefined && p.spans !== null && !isNaN(p.spans)) ? 
                    Math.max(1, Number(p.spans)) : 1;
 
-      // 3. Calcula e acumula se houver um ponto anterior válido
       if (previousPoint) {
         const segmentMeters = calcDist(previousPoint, p);
         const totalSegmentMeters = segmentMeters * spans;
-        
-        // Adiciona à distância do dia
         group.distance += totalSegmentMeters;
       }
-      // ----------------------------------------------------
 
       group.spans += spans;
       totalSpans += spans;
@@ -103,7 +108,7 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
     return {
       groups,
       userResponsibility,
-      totalDistance: calculatedTotalDistance, // Mantém o total geral preciso
+      totalDistance: calculatedTotalDistance,
       totalSpans,
       maxSpansPerSegment,
       totalPoints: project.points.length,
@@ -113,12 +118,20 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
     };
   }, [project, currentUserEmail]);
 
+  // 3. GERAÇÃO DA IMAGEM DO MAPA COM LABELS
   useEffect(() => {
     if (isOpen && project?.points?.length > 0) {
-      const url = getStaticMapUrl(project.points, 800, 400); 
+      // Prepara pontos com labels para o mapa estático
+      const pointsWithLabels = project.points.map(point => ({
+        ...point,
+        // Adiciona o número global como label (1, 2, 3...)
+        label: globalPointIndexMap[point.id]?.toString() || ''
+      }));
+      
+      const url = getStaticMapUrl(pointsWithLabels, 800, 400);
       setStaticMapUrl(url);
     }
-  }, [isOpen, project]);
+  }, [isOpen, project, globalPointIndexMap]);
 
   if (!project || !stats) return null;
 
@@ -161,6 +174,7 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
 
       y += 15;
 
+      // Imagem do mapa
       if (staticMapUrl) {
         try {
           const response = await fetch(staticMapUrl);
@@ -240,6 +254,7 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
       
       y = doc.lastAutoTable.finalY + 15;
 
+      // 4. TABELA DETALHAMENTO DIÁRIO (com número global)
       doc.setFontSize(11);
       doc.setTextColor(255, 255, 255);
       doc.text("DETALHAMENTO DIÁRIO", 15, y);
@@ -261,12 +276,16 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
           }
         ]);
         
-        groupData.points.forEach((p, i) => {
+        // Agora usa o número global do poste
+        groupData.points.forEach((p) => {
           const spans = (p.spans !== undefined && p.spans !== null && !isNaN(p.spans)) ? 
                        Math.max(1, Number(p.spans)) : 1;
           
+          // Número global do poste (1, 2, 3...)
+          const globalPostNumber = globalPointIndexMap[p.id];
+          
           detailData.push([
-            i + 1,
+            globalPostNumber, // Usa o número global aqui
             new Date(p.timestamp || p.created_at).toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'}),
             `${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}`,
             `${p.user_email?.split('@')[0] || '---'} (${spans} vão${spans > 1 ? 's' : ''})`
@@ -276,7 +295,7 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
 
       autoTable(doc, {
         startY: y,
-        head: [['#', 'HORA', 'COORDENADAS', 'TÉCNICO (VÃOS)']],
+        head: [['POSTE', 'HORA', 'COORDENADAS', 'TÉCNICO (VÃOS)']], // Alterado de '#' para 'POSTE'
         body: detailData,
         theme: 'grid',
         headStyles: { fillColor: [15, 23, 42], textColor: [34, 211, 238], lineColor: [34, 211, 238] },
@@ -286,6 +305,7 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
         styles: { textColor: [255, 255, 255] }
       });
 
+      // 5. NOVA PÁGINA - ANÁLISE DE VÃOS POR SEGMENTO
       doc.addPage();
       doc.setFillColor(15, 23, 42);
       doc.rect(0, 0, width, height, 'F');
@@ -304,12 +324,13 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
       if (project.points && project.points.length > 1) {
         for (let i = 1; i < project.points.length; i++) {
           const current = project.points[i];
-          // Lógica de segmento aqui também para consistência do PDF
           let previous = null;
+          
+          // Lógica de conexão
           if (current.connectedFrom) {
-             previous = project.points.find(p => p.id === current.connectedFrom);
+            previous = project.points.find(p => p.id === current.connectedFrom);
           } else {
-             previous = project.points[i - 1];
+            previous = project.points[i - 1];
           }
 
           if (previous) {
@@ -317,29 +338,43 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
                         Math.max(1, Number(current.spans)) : 1;
             
             segmentCount++;
+            
+            // Calcula distâncias
             const segmentDist = calcDist(previous, current);
             const totalDist = segmentDist * spans;
             
+            // Obtém números globais dos postes
+            const startPostNumber = globalPointIndexMap[previous.id];
+            const endPostNumber = globalPointIndexMap[current.id];
+            
+            // Formata a linha com números de postes
             spanAnalysisData.push([
-                segmentCount,
-                `${previous.lat.toFixed(4)}, ${previous.lng.toFixed(4)}`,
-                `${current.lat.toFixed(4)}, ${current.lng.toFixed(4)}`,
-                formatDist(segmentDist),
-                spans,
-                formatDist(totalDist)
+              segmentCount,
+              `Poste ${startPostNumber} - Poste ${endPostNumber}`, // TRECHO formatado
+              formatDist(segmentDist),
+              `${spans} AG`, // Vãos formatados
+              formatDist(totalDist)
             ]);
           }
         }
       }
       
+      // Tabela com nova estrutura
       autoTable(doc, {
         startY: y,
-        head: [['SEG', 'PONTO INICIAL', 'PONTO FINAL', 'DIST BASE', 'VÃOS', 'DIST TOTAL']],
+        head: [['SEG', 'TRECHO', 'DIST BASE', 'VÃOS', 'DIST TOTAL']], // Cabeçalhos atualizados
         body: spanAnalysisData,
         theme: 'grid',
         headStyles: { fillColor: [168, 85, 247], textColor: [255, 255, 255], fontStyle: 'bold' },
         bodyStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], lineColor: [51, 65, 85] },
-        margin: { left: 15, right: 15 }
+        margin: { left: 15, right: 15 },
+        columnStyles: {
+          0: { cellWidth: 15 }, // SEG
+          1: { cellWidth: 60 }, // TRECHO (maior largura)
+          2: { cellWidth: 35 }, // DIST BASE
+          3: { cellWidth: 25 }, // VÃOS
+          4: { cellWidth: 35 }  // DIST TOTAL
+        }
       });
       
       y = doc.lastAutoTable.finalY + 15;
@@ -392,6 +427,7 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
         margin: { left: 15, right: 15 }
       });
 
+      // Rodapé
       const pageCount = doc.internal.getNumberOfPages();
       for(let i = 1; i <= pageCount; i++) {
         doc.setPage(i);
@@ -463,7 +499,7 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
             </div>
           </div>
 
-          {/* Conteúdo Visual (Dashboard) */}
+          {/* Conteúdo Visual */}
           <div className="flex-1 overflow-y-auto custom-scrollbar p-5 space-y-6">
             
             {/* Preview do Mapa */}
@@ -546,7 +582,7 @@ const ProjectReport = ({ isOpen, onClose, project, mapImage, currentUserEmail })
                             </div>
                         </div>
                     </div>
-                    {/* Barra de Progresso Visual */}
+                    {/* Barra de Progresso */}
                     <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden mb-3">
                         <div 
                             className="bg-gradient-to-r from-cyan-500 to-purple-500 h-full shadow-[0_0_10px_rgba(6,182,212,0.5)]" 
