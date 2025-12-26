@@ -61,9 +61,6 @@ const ControlesRastreamento: React.FC<ControlesRastreamentoProps> = ({
   formatDistanceDetailed,
   undoLastPoint,
   selectedStartPoint,
-  tracking, // Restored
-  speed, // Restored
-  resetStartPoint, // Restored
 }) => {
   
   const safeManualPoints = manualPoints || [];
