@@ -1,15 +1,22 @@
 import React, { useEffect, useState } from 'react';
-import { GripHorizontal, X, Check, ChevronsUp } from 'lucide-react';
+import { X, ChevronsUp } from 'lucide-react';
 
 // Cores vibrantes para diferenciar visualmente no mapa escuro
-export const SPAN_COLORS = {
+export const SPAN_COLORS: Record<number, string> = {
   1: '#3b82f6', // Azul Elétrico (1 Fio/Cabo)
   2: '#10b981', // Verde Neon (2 Fios)
   3: '#f59e0b', // Laranja Solar (3 Fios)
   4: '#8b5cf6', // Roxo Cyber (4+ Fios)
 };
 
-const SpanSelector = ({ currentSpans = 1, onSelect, onClose }) => {
+interface SpanSelectorProps {
+  currentSpans?: number;
+  onSelect: (count: number) => void;
+  onClose: () => void;
+  style?: React.CSSProperties;
+}
+
+const SpanSelector: React.FC<SpanSelectorProps> = ({ currentSpans = 1, onSelect, onClose }) => {
   const [isVisible, setIsVisible] = useState(false);
   
   // Animação de entrada suave

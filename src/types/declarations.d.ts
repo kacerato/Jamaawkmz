@@ -1,28 +1,4 @@
-declare module '@/components/ui/button';
-declare module '@/components/ui/input';
-declare module '@/components/ui/dialog';
-declare module '@/components/ui/alert-dialog';
-declare module '@/components/ui/tabs';
-declare module '@/components/ui/scroll-area';
-declare module '@/components/ui/separator';
-declare module '@/components/ui/tooltip';
-declare module '@/components/ui/popover';
-declare module '@/components/ui/label';
-declare module '@/components/ui/select';
-declare module '@/components/ui/switch';
-declare module '@/components/ui/slider';
-declare module '@/components/ui/checkbox';
-declare module '@/components/ui/radio-group';
-declare module '@/components/ui/accordion';
-declare module '@/components/ui/collapsible';
-declare module '@/components/ui/context-menu';
-declare module '@/components/ui/dropdown-menu';
-declare module '@/components/ui/hover-card';
-declare module '@/components/ui/menubar';
-declare module '@/components/ui/navigation-menu';
-declare module '@/components/ui/progress';
-declare module '@/components/ui/toggle';
-declare module '@/components/ui/toggle-group';
-declare module '@/components/ui/card';
-declare module '@/lib/utils';
-declare module '@/lib/supabase';
+declare module '*.png' {
+  const value: string;
+  export default value;
+}

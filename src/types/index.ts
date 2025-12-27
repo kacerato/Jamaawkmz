@@ -6,6 +6,18 @@ export interface User {
   full_name?: string;
 }
 
+export interface MarkerData {
+  id: string;
+  lat: number;
+  lng: number;
+  name: string;
+  descricao?: string;
+  bairro?: string;
+  color?: string;
+  user_id?: string;
+  created_at?: string;
+}
+
 export interface Point {
   id: string;
   lat: number;
@@ -13,7 +25,8 @@ export interface Point {
   timestamp: number;
   created_by?: string;
   user_id?: string;
-  connectedFrom?: string;
+  user_email?: string;
+  connectedFrom?: string | null;
   spans?: number;
   isGap?: boolean;
   photos?: string[];
@@ -36,8 +49,12 @@ export interface Project {
   updated_at?: string;
   points: Point[];
   connections?: Connection[];
+  extra_connections?: Connection[];
   totalDistance?: number;
   total_distance?: number;
+  bairro?: string;
+  color?: string;
+  tracking_mode?: string;
 }
 
 export interface Member {
@@ -50,4 +67,10 @@ export interface Member {
     points: number;
     distance: number;
   };
+}
+
+export interface LockStatus {
+  isLocked: boolean;
+  lockedBy?: string;
+  lockedAt?: number;
 }
