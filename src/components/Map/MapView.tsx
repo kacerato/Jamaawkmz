@@ -1,193 +1,63 @@
-import React, { useMemo, useRef } from 'react';
-import Map, {
-  Marker,
-  Source,
-  Layer,
-  NavigationControl,
-  MapRef,
-  MapLayerMouseEvent
-} from 'react-map-gl';
-import { Project, Point, MarkerData } from '../../types';
-import type { FeatureCollection } from 'geojson';
+import React, { forwardRef } from 'react';
+import Map, { Marker, Popup, Source, Layer, NavigationControl, MapRef } from 'react-map-gl';
+import { X, MapPin } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import PoleMarker from './PoleMarker';
+import TrackingPointPopupContent from './TrackingPointPopupContent';
 
-// @ts-ignore
-import electricPoleIcon from '../../assets/electric-pole.png';
-
-// Import CSS locally or ensure it's in global
-import 'mapbox-gl/dist/mapbox-gl.css';
-
-// --- Interfaces ---
-
-export interface PoleMarkerProps {
-  point: Point;
-  index: number;
-  color?: string;
-  isActive: boolean;
-  onClick: (e: React.MouseEvent) => void;
-}
-
-export interface MapViewProps {
-  mapboxToken: string;
-  mapStyle: string;
-  initialViewState: {
-    longitude: number;
-    latitude: number;
-    zoom: number;
-  };
-
-  // Data
-  markers: MarkerData[];
-  loadedProjects: Project[];
-  manualPoints: Point[];
-  currentPosition: { lat: number; lng: number } | null;
-  selectedStartPoint: Point | null;
-  routeCoordinates?: number[][]; // [lat, lng] array
-
-  // State
+interface MapViewProps {
+  initialViewState: any;
+  mapStyleUrl: string;
+  mapboxAccessToken: string;
   tracking: boolean;
-  trackingInputMode: 'gps' | 'touch' | 'manual';
+  trackingInputMode: string;
   paused: boolean;
-  snappingEnabled?: boolean;
-
-  // Handlers
-  onMapClick: (e: MapLayerMouseEvent) => void;
-  onMarkerClick: (marker: MarkerData) => void;
-  onPointClick: (point: Point, project?: Project, index?: number) => void;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  onMapLoad?: (e: any) => void;
+  onMapClick: (e: any) => void;
+  markersGeoJSON: any;
+  loadedProjects: any[];
+  manualPoints: any[];
+  segmentsGeoJSON: any;
+  routeCoordinates: number[][];
+  currentPosition: { lat: number; lng: number } | null;
+  pointPopupInfo: any;
+  setPointPopupInfo: (info: any) => void;
+  selectedStartPoint: any;
+  onSelectStart: (point: any) => void;
 }
 
-// --- Sub-components ---
-
-// Memoized Pole Marker
-const PoleMarker = React.memo(({ point, index, color, onClick, isActive }: PoleMarkerProps) => {
-  return (
-    <Marker
-      longitude={point.lng}
-      latitude={point.lat}
-      anchor="bottom"
-      onClick={(e) => {
-        e.originalEvent.stopPropagation();
-        onClick(e as unknown as React.MouseEvent);
-      }}
-    >
-      <div className="pole-marker-container" style={{ willChange: 'transform' }}>
-        <img
-          src={electricPoleIcon}
-          alt={`Ponto ${index}`}
-          className="pole-image"
-          loading="lazy"
-          style={{ pointerEvents: 'none', width: '24px', height: '24px' }}
-        />
-
-        <div
-          className={`pole-number-plate ${isActive ? 'pole-active' : ''}`}
-          style={{
-            borderColor: color || '#1e3a8a',
-            color: color || '#1e3a8a',
-            backgroundColor: 'white',
-            borderWidth: '1px',
-            borderStyle: 'solid',
-            borderRadius: '50%',
-            width: '16px',
-            height: '16px',
-            fontSize: '10px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            position: 'absolute',
-            bottom: '-5px',
-            right: '-5px'
-          }}
-        >
-          {index}
-        </div>
-      </div>
-    </Marker>
-  );
-}, (prev, next) => {
-  return (
-    prev.point.id === next.point.id &&
-    prev.color === next.color &&
-    prev.isActive === next.isActive
-  );
-});
-
-// --- Main Map Component ---
-
-const MapView = React.memo((props: MapViewProps) => {
-  const mapRef = useRef<MapRef>(null);
-
-  // Memoize Markers GeoJSON
-  const markersGeoJSON = useMemo<FeatureCollection>(() => ({
-    type: 'FeatureCollection',
-    features: props.markers.map(marker => ({
-      type: 'Feature',
-      geometry: { type: 'Point', coordinates: [marker.lng, marker.lat] },
-      properties: {
-        id: marker.id,
-        name: marker.name,
-        bairro: marker.bairro,
-        descricao: marker.descricao,
-        color: marker.color || '#ef4444'
-      }
-    }))
-  }), [props.markers]);
-
-  // Memoize Segments GeoJSON (Current Track)
-  const segmentsGeoJSON = useMemo<FeatureCollection>(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const features: any[] = [];
-    if (props.manualPoints.length > 0) {
-      props.manualPoints.forEach((point, index) => {
-        let parent: Point | undefined;
-        if (point.connectedFrom) {
-          parent = props.manualPoints.find(p => p.id === point.connectedFrom);
-        } else if (index > 0) {
-          parent = props.manualPoints[index - 1];
-        }
-
-        if (parent) {
-          const spans = point.spans || 1;
-          const color = spans === 1 ? '#00ff00' : spans === 2 ? '#ffff00' : '#ff0000';
-
-          features.push({
-            type: 'Feature',
-            properties: {
-              type: 'segment',
-              targetPointId: point.id,
-              spans: spans,
-              color: color
-            },
-            geometry: {
-              type: 'LineString',
-              coordinates: [
-                [parent.lng, parent.lat],
-                [point.lng, point.lat]
-              ]
-            }
-          });
-        }
-      });
-    }
-    return { type: 'FeatureCollection', features };
-  }, [props.manualPoints]);
-
+const MapView = forwardRef<MapRef, MapViewProps>(({
+  initialViewState,
+  mapStyleUrl,
+  mapboxAccessToken,
+  tracking,
+  trackingInputMode,
+  paused,
+  onMapClick,
+  markersGeoJSON,
+  loadedProjects,
+  manualPoints,
+  segmentsGeoJSON,
+  routeCoordinates,
+  currentPosition,
+  pointPopupInfo,
+  setPointPopupInfo,
+  selectedStartPoint,
+  onSelectStart
+}, ref) => {
   return (
     <Map
-      ref={mapRef}
-      initialViewState={props.initialViewState}
+      ref={ref}
+      initialViewState={initialViewState}
       style={{ width: '100%', height: '100%', position: 'relative' }}
-      mapStyle={props.mapStyle}
-      mapboxAccessToken={props.mapboxToken}
-      cursor={props.tracking && props.trackingInputMode === 'touch' && !props.paused ? 'crosshair' : 'auto'}
+      mapStyle={mapStyleUrl}
+      mapboxAccessToken={mapboxAccessToken}
+      cursor={tracking && trackingInputMode === 'touch' && !paused ? 'crosshair' : 'auto'}
       preserveDrawingBuffer={true}
-      onClick={props.onMapClick}
-      onLoad={props.onMapLoad}
+      onClick={onMapClick}
     >
       <NavigationControl position="top-right" />
 
-      {/* Markers Layer (Vector) */}
+      {/* CAMADA DE MARCADORES OTIMIZADA */}
       <Source id="markers-source" type="geojson" data={markersGeoJSON}>
         <Layer
           id="markers-layer"
@@ -215,8 +85,7 @@ const MapView = React.memo((props: MapViewProps) => {
         />
       </Source>
 
-      {/* Loaded Projects Routes */}
-      {props.loadedProjects.map(project => (
+      {loadedProjects.map(project => (
         <Source
           key={`source-${project.id}`}
           id={`route-${project.id}`}
@@ -229,25 +98,22 @@ const MapView = React.memo((props: MapViewProps) => {
                 geometry: {
                   type: 'LineString',
                   coordinates: project.points
-                    .filter(point => !point.connectedFrom)
-                    .map(point => [point.lng, point.lat])
-                },
-                properties: {}
+                    .filter((point: any) => !point.connectedFrom)
+                    .map((point: any) => [point.lng, point.lat])
+                }
               },
               ...project.points
-                .filter(point => point.connectedFrom)
-                .map(point => {
-                  const parent = project.points.find(p => p.id === point.connectedFrom);
+                .filter((point: any) => point.connectedFrom)
+                .map((point: any) => {
+                  const parent = project.points.find((p: any) => p.id === point.connectedFrom);
                   return parent ? {
                     type: 'Feature',
                     geometry: {
                       type: 'LineString',
                       coordinates: [[parent.lng, parent.lat], [point.lng, point.lat]]
-                    },
-                    properties: {}
+                    }
                   } : null;
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                }).filter(Boolean) as any
+                }).filter(Boolean)
             ]
           }}
         >
@@ -255,72 +121,131 @@ const MapView = React.memo((props: MapViewProps) => {
             id={`route-layer-${project.id}`}
             type="line"
             paint={{
-              'line-color': project.color || '#3b82f6',
-              'line-width': 3,
+              'line-color': project.color,
+              'line-width': [
+                'interpolate', ['linear'], ['zoom'],
+                10, 1,
+                15, 3,
+                22, 6
+              ],
               'line-opacity': 0.8
             }}
           />
         </Source>
       ))}
 
-      {/* Loaded Projects Points (React Markers) */}
-      {props.loadedProjects.map(project => (
+      {loadedProjects.map(project => (
         <React.Fragment key={`markers-${project.id}`}>
-          {project.points.map((point, index) => (
+          {project.points.map((point: any, index: number) => (
             <PoleMarker
               key={point.id}
               point={point}
               index={index + 1}
               color={project.color}
               isActive={false}
-              onClick={() => props.onPointClick(point, project, index + 1)}
+              onClick={(e) => {
+                e.originalEvent.stopPropagation();
+                setPointPopupInfo({
+                  point,
+                  pointNumber: index + 1,
+                  projectName: project.name,
+                  projectId: project.id,
+                  totalPoints: project.points.length,
+                  color: project.color,
+                  isManualPoint: false
+                });
+              }}
             />
           ))}
         </React.Fragment>
       ))}
 
-      {/* Current Track Segments */}
-      {props.manualPoints.length > 0 && (
+      {/* CAMADA DE TRAÇADO COM VÃOS */}
+      {manualPoints.length > 0 && (
         <Source id="segments-source" type="geojson" data={segmentsGeoJSON}>
           <Layer
             id="segment-hit-area"
             type="line"
-            paint={{ 'line-width': 20, 'line-opacity': 0 }}
+            paint={{
+              'line-width': 20,
+              'line-opacity': 0
+            }}
           />
+
           <Layer
             id="segment-line"
             type="line"
-            layout={{ 'line-join': 'round', 'line-cap': 'round' }}
+            layout={{
+              'line-join': 'round',
+              'line-cap': 'round'
+            }}
             paint={{
               'line-color': ['get', 'color'],
-              'line-width': 3,
+              'line-width': [
+                'interpolate', ['linear'], ['zoom'],
+                10, 1,
+                15, 3,
+                22, 6
+              ],
               'line-opacity': 0.9
+            }}
+          />
+
+          <Layer
+            id="segment-badge-bg"
+            type="circle"
+            filter={['==', 'type', 'badge']}
+            paint={{
+              'circle-radius': 8,
+              'circle-color': '#0f172a',
+              'circle-stroke-width': 2,
+              'circle-stroke-color': ['get', 'color']
+            }}
+          />
+
+          <Layer
+            id="segment-badge-text"
+            type="symbol"
+            filter={['==', 'type', 'badge']}
+            layout={{
+              'text-field': ['get', 'label'],
+              'text-size': 10,
+              'text-font': ['DIN Offc Pro Bold', 'Arial Unicode MS Bold'],
+              'text-allow-overlap': true
+            }}
+            paint={{
+              'text-color': '#ffffff'
             }}
           />
         </Source>
       )}
 
-      {/* Current Track Points */}
-      {props.manualPoints.map((point, index) => (
+      {manualPoints.map((point, index) => (
         <PoleMarker
           key={point.id}
           point={point}
           index={index + 1}
           color="#1e3a8a"
-          isActive={props.selectedStartPoint?.id === point.id}
-          onClick={() => props.onPointClick(point, undefined, index + 1)}
+          isActive={selectedStartPoint && selectedStartPoint.id === point.id}
+          onClick={(e) => {
+            e.originalEvent.stopPropagation();
+            setPointPopupInfo({
+              point,
+              pointNumber: index + 1,
+              isManualPoint: true,
+              totalPoints: manualPoints.length
+            });
+          }}
         />
       ))}
 
-      {/* Calculated Route */}
-      {props.routeCoordinates && props.routeCoordinates.length > 0 && (
+      {routeCoordinates.length > 0 && (
         <Source id="calculated-route" type="geojson" data={{
           type: 'Feature',
           geometry: {
             type: 'LineString',
-            coordinates: props.routeCoordinates.map(c => [c[1], c[0]])
-          },
-          properties: {}
+            coordinates: routeCoordinates.map(c => [c[1], c[0]])
+          }
         }}>
           <Layer
             id="calculated-route-layer"
@@ -334,15 +259,123 @@ const MapView = React.memo((props: MapViewProps) => {
         </Source>
       )}
 
-      {/* Current Position Marker */}
-      {props.currentPosition && (
-        <Marker longitude={props.currentPosition.lng} latitude={props.currentPosition.lat}>
-          <div className="current-position-marker" style={{
-            width: '16px', height: '16px', backgroundColor: '#3b82f6', borderRadius: '50%', border: '2px solid white', boxShadow: '0 0 10px rgba(0,0,0,0.3)'
-          }} />
+      {currentPosition && (
+        <Marker longitude={currentPosition.lng} latitude={currentPosition.lat}>
+          <div className="current-position-marker" />
         </Marker>
       )}
 
+      {pointPopupInfo && pointPopupInfo.isManualPoint && (
+        <Popup
+          longitude={pointPopupInfo.point.lng}
+          latitude={pointPopupInfo.point.lat}
+          onClose={() => setPointPopupInfo(null)}
+          className="modern-popup"
+          closeButton={false}
+          anchor="bottom"
+          offset={20}
+          maxWidth="300px"
+        >
+          <TrackingPointPopupContent
+            pointInfo={pointPopupInfo}
+            onClose={() => setPointPopupInfo(null)}
+            onSelectStart={onSelectStart}
+            selectedStartPoint={selectedStartPoint}
+            manualPoints={manualPoints}
+          />
+        </Popup>
+      )}
+
+      {pointPopupInfo && pointPopupInfo.point && !pointPopupInfo.isManualPoint && (
+        <Popup
+          longitude={pointPopupInfo.point.lng}
+          latitude={pointPopupInfo.point.lat}
+          onClose={() => setPointPopupInfo(null)}
+          className="modern-popup"
+          closeButton={false}
+          maxWidth="300px"
+          anchor="bottom"
+          offset={15}
+        >
+          <div className="w-[260px] bg-slate-900/95 backdrop-blur-md border border-slate-700 rounded-xl shadow-2xl overflow-hidden flex flex-col">
+
+            <div className="relative p-3 flex items-center justify-between bg-slate-800/50 border-b border-slate-700/50">
+              <div
+                className="absolute left-0 top-0 bottom-0 w-1"
+                style={{ backgroundColor: pointPopupInfo.color }}
+              />
+
+              <div className="pl-2 flex flex-col overflow-hidden">
+                <span className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">
+                  Projeto
+                </span>
+                <span className="text-sm font-bold text-white truncate leading-tight" title={pointPopupInfo.projectName}>
+                  {pointPopupInfo.projectName}
+                </span>
+              </div>
+
+              <button
+                onClick={() => setPointPopupInfo(null)}
+                className="h-6 w-6 flex items-center justify-center rounded-full bg-slate-700 text-slate-400 hover:bg-slate-600 hover:text-white transition-colors"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+
+            <div className="p-3 space-y-3">
+
+              <div className="flex items-center gap-3">
+                <div
+                  className="flex items-center justify-center w-10 h-10 rounded-lg bg-slate-800 border border-slate-700 shadow-inner"
+                >
+                  <span
+                    className="text-lg font-bold"
+                    style={{ color: pointPopupInfo.color }}
+                  >
+                    {pointPopupInfo.pointNumber}
+                  </span>
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-xs text-slate-300 font-medium">Ponto de Traçado</span>
+                  <span className="text-[10px] text-slate-500">
+                    Total de {pointPopupInfo.totalPoints} pontos
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-slate-950/50 p-2 rounded border border-slate-800 flex flex-col">
+                  <span className="text-[9px] uppercase text-slate-500 font-semibold mb-0.5">Latitude</span>
+                  <span className="font-mono text-xs text-cyan-400 font-medium truncate">
+                    {pointPopupInfo.point.lat?.toFixed(7)}
+                  </span>
+                </div>
+                <div className="bg-slate-950/50 p-2 rounded border border-slate-800 flex flex-col">
+                  <span className="text-[9px] uppercase text-slate-500 font-semibold mb-0.5">Longitude</span>
+                  <span className="font-mono text-xs text-cyan-400 font-medium truncate">
+                    {pointPopupInfo.point.lng?.toFixed(7)}
+                  </span>
+                </div>
+              </div>
+
+              <Button
+                size="sm"
+                variant="ghost"
+                className="w-full h-7 text-xs border border-dashed border-slate-700 text-slate-400 hover:text-white hover:bg-slate-800 hover:border-slate-500 transition-all"
+                onClick={() => {
+                  const coords = `${pointPopupInfo.point.lat}, ${pointPopupInfo.point.lng}`;
+                  navigator.clipboard.writeText(coords);
+                }}
+              >
+                <span className="flex items-center gap-2">
+                  <MapPin className="w-3 h-3" /> Copiar Coordenadas
+                </span>
+              </Button>
+
+            </div>
+          </div>
+        </Popup>
+      )}
     </Map>
   );
 });

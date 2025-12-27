@@ -40,6 +40,44 @@ export class KalmanFilter {
   }
 }
 
+// ADICIONADO: Classe GPSFilter exportada
+export class GPSFilter {
+  minAccuracy: number;
+  minMovement: number;
+  lastValidPoint: { lat: number; lng: number } | null;
+
+  constructor(minAccuracy = 30, minMovement = 0.5) {
+    this.minAccuracy = minAccuracy;
+    this.minMovement = minMovement;
+    this.lastValidPoint = null;
+  }
+
+  isValid(point: { lat: number; lng: number; accuracy: number }): boolean {
+    if (point.accuracy > this.minAccuracy) {
+      return false;
+    }
+
+    if (!this.lastValidPoint) {
+      this.lastValidPoint = point;
+      return true;
+    }
+
+    const dist = calculateDistance(
+      this.lastValidPoint.lat,
+      this.lastValidPoint.lng,
+      point.lat,
+      point.lng
+    );
+
+    if (dist >= this.minMovement) {
+      this.lastValidPoint = point;
+      return true;
+    }
+
+    return false;
+  }
+}
+
 interface SnappedLocation {
     lat: number;
     lng: number;
@@ -89,6 +127,13 @@ export const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R_EARTH * c;
 }
+
+export const normalizeSpans = (spans: any): number => {
+  if (spans !== undefined && spans !== null && !isNaN(Number(spans))) {
+    return Math.max(1, Number(spans));
+  }
+  return 1;
+};
 
 // --- A FUNÇÃO MESTRA DE METRAGEM (BRUTALMENTE OTIMIZADA) ---
 export const calculateTotalProjectDistance = (points: Point[] | null, connections: Connection[] = []): number => {
@@ -187,4 +232,14 @@ export const generateUUID = (): string => {
 export const generateRandomColor = (): string => {
   const colors = ['#1e3a8a', '#3730a3', '#5b21b6', '#7c2d12', '#0f766e', '#b91c1c'];
   return colors[Math.floor(Math.random() * colors.length)];
+};
+
+// ADICIONADO: calculateTrackingDistance (simples, sequencial, para fallback)
+export const calculateTrackingDistance = (points: Point[]): number => {
+  if (!points || points.length < 2) return 0;
+  let dist = 0;
+  for (let i = 1; i < points.length; i++) {
+    dist += calculateDistance(points[i - 1].lat, points[i - 1].lng, points[i].lat, points[i].lng);
+  }
+  return dist;
 };

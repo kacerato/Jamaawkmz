@@ -1,24 +1,15 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
-import { Project, Point, Connection, LockStatus } from '../types';
+import { Project, Point, Connection, User, LockStatus } from '../types';
+import { calculateTotalProjectDistance, generateRandomColor, normalizeSpans } from '../utils/geoUtils';
 import ProjectLockService from '../services/ProjectLockService';
-import {
-  calculateTotalProjectDistance,
-  generateRandomColor,
-  normalizeSpans
-} from '../utils/geoUtils';
 
-// Define strict types for storage to avoid 'any'
-interface StorageInterface {
-  loadProjects: (userId: string) => Project[];
-  saveProjects: (userId: string, projects: Project[]) => void;
-}
-
-const storage: StorageInterface = {
-  saveProjects: (userId, projects) => {
+// Simple Storage Helper
+const storage = {
+  saveProjects: (userId: string, projects: Project[]) => {
     localStorage.setItem(`jamaaw_projects_${userId}`, JSON.stringify(projects));
   },
-  loadProjects: (userId) => {
+  loadProjects: (userId: string): Project[] => {
     const data = localStorage.getItem(`jamaaw_projects_${userId}`);
     return data ? JSON.parse(data) : [];
   }
@@ -26,14 +17,9 @@ const storage: StorageInterface = {
 
 const deduplicateProjects = (projectsList: Project[]): Project[] => {
   const uniqueMap = new Map();
-  // Sort by update/create time desc
-  const sorted = [...projectsList].sort((a, b) => {
-    const timeA = new Date(a.updated_at || a.created_at || 0).getTime();
-    const timeB = new Date(b.updated_at || b.created_at || 0).getTime();
-    return timeB - timeA;
-  });
+  projectsList.sort((a, b) => new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime());
 
-  sorted.forEach(p => {
+  projectsList.forEach(p => {
     if (!uniqueMap.has(p.id)) {
       uniqueMap.set(p.id, p);
     }
@@ -41,7 +27,7 @@ const deduplicateProjects = (projectsList: Project[]): Project[] => {
   return Array.from(uniqueMap.values());
 };
 
-export const useProjectSync = (user: { id: string; email?: string } | null, isOnline: boolean) => {
+export const useProjectSync = (user: User | null, isOnline: boolean) => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loadedProjects, setLoadedProjects] = useState<Project[]>([]);
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
@@ -123,7 +109,7 @@ export const useProjectSync = (user: { id: string; email?: string } | null, isOn
 
           if (updatedProject.points) {
             setManualPoints(updatedProject.points);
-            setTotalDistance(updatedProject.total_distance);
+            setTotalDistance(updatedProject.total_distance || 0);
           }
 
           setProjects(prev => prev.map(p => p.id === updatedProject.id ? updatedProject : p));
@@ -173,8 +159,16 @@ export const useProjectSync = (user: { id: string; email?: string } | null, isOn
     if (!user) return null;
 
     try {
-      // Normalize spans
-      const finalPoints = normalizeSpans(points);
+      // Normalize spans - using ANY to bypass type check on normalizeSpans which expects `any` but gets `Point[]`
+      // Wait, normalizeSpans expects `spans: any` and returns `number`.
+      // It seems I was using it wrong in the original file.
+      // Let's fix the logic: Iterate points and normalize spans property.
+
+      const finalPoints = points.map(p => ({
+        ...p,
+        spans: normalizeSpans(p.spans)
+      }));
+
       const calculatedDistance = calculateTotalProjectDistance(finalPoints, connections);
       const nowISO = new Date().toISOString();
 
@@ -271,27 +265,29 @@ export const useProjectSync = (user: { id: string; email?: string } | null, isOn
   const deleteProject = useCallback(async (projectId: string | number) => {
     if (!user) return;
 
+    const idStr = String(projectId);
+
     // Optimistic update
-    setProjects(prev => prev.filter(p => p.id !== projectId));
-    setLoadedProjects(prev => prev.filter(p => p.id !== projectId));
+    setProjects(prev => prev.filter(p => p.id !== idStr));
+    setLoadedProjects(prev => prev.filter(p => p.id !== idStr));
 
     // Local Storage
     const userProjects = storage.loadProjects(user.id);
-    const updatedUserProjects = userProjects.filter(p => p.id !== projectId);
+    const updatedUserProjects = userProjects.filter(p => p.id !== idStr);
     storage.saveProjects(user.id, updatedUserProjects);
 
-    if (currentProject?.id === projectId) {
+    if (currentProject?.id === idStr) {
       setCurrentProject(null);
       setManualPoints([]);
       setTotalDistance(0);
       setExtraConnections([]);
     }
 
-    if (isOnline && !projectId.toString().startsWith('offline_')) {
+    if (isOnline && !idStr.startsWith('offline_')) {
       const { error } = await supabase
         .from('projetos')
         .delete()
-        .eq('id', projectId)
+        .eq('id', idStr)
         .eq('user_id', user.id);
 
       if (error) console.error("Error deleting project from Supabase:", error);

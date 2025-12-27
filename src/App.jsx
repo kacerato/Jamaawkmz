@@ -1,6 +1,5 @@
 import React from 'react';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import Map, { Marker, Popup, Source, Layer, NavigationControl } from 'react-map-gl'
 import {
   Upload,
   MapPin,
@@ -55,7 +54,6 @@ import ProjectManager from './components/ProjectManager';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet.jsx'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog.jsx'
 import { supabase } from './lib/supabase'
-import electricPoleIcon from './assets/electric-pole.png';
 import Auth from './components/Auth'
 import SpanSelector, { SPAN_COLORS } from './components/SpanSelector';
 import JSZip from 'jszip'
@@ -74,6 +72,7 @@ import MultipleSelectionPopup from './components/MultipleSelectionPopup'
 import BairroDetectionService from './components/BairroDetectionService'
 import ProjectLockService from './services/ProjectLockService'
 import { useProjects } from './hooks/useProjects';
+import MapView from './components/Map/MapView';
 
 // 1. NOVOS IMPORTS (UTILITÁRIOS E SERVIÇOS)
 // No início do App.jsx, atualize as importações:
@@ -231,255 +230,6 @@ const storage = {
   },
 };
 
-// Componente Memoizado do Poste
-const PoleMarker = React.memo(({ point, index, color, onClick, isActive }) => {
-  return (
-    <Marker 
-      longitude={point.lng} 
-      latitude={point.lat}
-      anchor="bottom"
-      onClick={onClick}
-    >
-      <div className="pole-marker-container" style={{ willChange: 'transform' }}>
-        <img 
-          src={electricPoleIcon} 
-          alt={`Ponto ${index}`} 
-          className="pole-image"
-          loading="lazy"
-          style={{ pointerEvents: 'none' }}
-        />
-        
-        <div 
-          className={`pole-number-plate ${isActive ? 'pole-active' : ''}`}
-          style={{ 
-            borderColor: color, 
-            color: color
-          }}
-        >
-          {index}
-        </div>
-      </div>
-    </Marker>
-  );
-}, (prevProps, nextProps) => {
-  return (
-    prevProps.point.id === nextProps.point.id &&
-    prevProps.color === nextProps.color &&
-    prevProps.isActive === nextProps.isActive
-  );
-});
-
-// Componente do Card do Projeto
-const ProjectCard = React.memo(({ project, isSelected, onToggle, onLoad, onEdit, onExport, onDelete, tracking }) => {
-  const distance = safeToFixed(((project.totalDistance || project.total_distance) || 0) / 1000, 2);
-  const date = new Date(project.created_at || project.createdAt || Date.now()).toLocaleDateString('pt-BR');
-  
-  return (
-    <div className={`modern-project-card ${isSelected ? 'selected' : ''}`}>
-      <div className="card-header-row">
-        <input
-          type="checkbox"
-          checked={isSelected}
-          onChange={() => onToggle(project)}
-          className="mt-1 w-4 h-4 text-cyan-500 bg-slate-800 border-slate-600 rounded focus:ring-cyan-500 focus:ring-offset-0 cursor-pointer"
-        />
-        <div className="flex-1 min-w-0">
-          <h3 className="font-bold text-white text-sm leading-tight truncate mb-1" title={project.name}>
-            {project.name}
-          </h3>
-          <p className="text-[10px] text-slate-500">
-            Criado em {date}
-          </p>
-        </div>
-      </div>
-
-      <div className="card-stats-row">
-        <span className="stat-pill distance" title="Distância Total">
-          {distance} km
-        </span>
-        <span className="stat-pill points" title="Quantidade de Pontos">
-          {project.points.length} pts
-        </span>
-        <span className="stat-pill bairro" title="Bairro">
-          {project.bairro || 'Vários'}
-        </span>
-      </div>
-
-      <div className="card-actions-footer">
-        <Button
-          size="sm"
-          onClick={() => {
-            if (tracking) {
-              showFeedback('Erro', 'Pare o rastreamento atual primeiro.', 'error');
-              return;
-            }
-            onLoad(project);
-          }}
-          disabled={tracking}
-          className="flex-1 action-btn-mini bg-cyan-500 hover:bg-cyan-600 text-white shadow-lg shadow-cyan-500/20 border-0"
-        >
-          <Play className="w-3 h-3 mr-1.5 fill-current" />
-          Carregar
-        </Button>
-
-        <div className="flex gap-1">
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={(e) => {
-              e.stopPropagation();
-              onEdit(project);
-            }}
-            className="action-btn-mini w-8 px-0 text-blue-400 hover:bg-blue-500/10 hover:text-blue-300"
-          >
-            <Edit2 className="w-3.5 h-3.5" />
-          </Button>
-          
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => onExport(project)}
-            className="action-btn-mini w-8 px-0 text-green-400 hover:bg-green-500/10 hover:text-green-300"
-          >
-            <Download className="w-3.5 h-3.5" />
-          </Button>
-          
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => onDelete(project.id)}
-            className="action-btn-mini w-8 px-0 text-red-400 hover:bg-red-500/10 hover:text-red-300"
-          >
-            <X className="w-3.5 h-3.5" />
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}, (prevProps, nextProps) => {
-  return (
-    prevProps.isSelected === nextProps.isSelected &&
-    prevProps.project.id === nextProps.project.id &&
-    prevProps.project.name === nextProps.project.name &&
-    prevProps.tracking === nextProps.tracking
-  );
-});
-
-// Sub-componente para o conteúdo do popup de ponto de rastreamento
-const TrackingPointPopupContent = ({ pointInfo, onClose, onSelectStart, selectedStartPoint, manualPoints }) => {
-  const cardRef = useRef(null);
-  
-  const handleMouseMove = (e) => {
-    if (!cardRef.current) return;
-    const { left, top } = cardRef.current.getBoundingClientRect();
-    const x = e.clientX - left;
-    const y = e.clientY - top;
-    
-    cardRef.current.style.setProperty('--mouse-x', `${x}px`);
-    cardRef.current.style.setProperty('--mouse-y', `${y}px`);
-  };
-  
-  const pointIndex = manualPoints.findIndex(p => p.id === pointInfo.point.id) + 1;
-  
-  return (
-    <div 
-      ref={cardRef}
-      onMouseMove={handleMouseMove}
-      className="group relative rounded-2xl bg-slate-900 border border-white/10 overflow-hidden shadow-2xl w-[280px]"
-      style={{
-        '--mouse-x': '50%',
-        '--mouse-y': '50%',
-      }}
-    >
-      <div 
-        className="pointer-events-none absolute -inset-px rounded-2xl opacity-0 transition duration-300 group-hover:opacity-100"
-        style={{
-          background: `radial-gradient(600px circle at var(--mouse-x) var(--mouse-y), rgba(6, 182, 212, 0.15), transparent 40%)`,
-        }}
-      />
-
-      <div 
-        className="pointer-events-none absolute -inset-px rounded-2xl opacity-0 transition duration-300 group-hover:opacity-100"
-        style={{
-          background: `radial-gradient(400px circle at var(--mouse-x) var(--mouse-y), rgba(6, 182, 212, 0.6), transparent 40%)`,
-          maskImage: 'linear-gradient(black, black) content-box, linear-gradient(black, black)',
-          WebkitMaskImage: 'linear-gradient(black, black) content-box, linear-gradient(black, black)',
-          maskComposite: 'exclude',
-          WebkitMaskComposite: 'xor',
-          padding: '1.5px'
-        }}
-      />
-
-      <div className="relative p-4 bg-slate-900/80 backdrop-blur-xl h-full rounded-2xl">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center w-8 h-8 rounded-full bg-cyan-500/20 border border-cyan-500/30 shadow-[0_0_10px_rgba(6,182,212,0.2)]">
-              <span className="text-cyan-400 font-bold text-sm">{pointIndex}</span>
-            </div>
-            <div>
-              <h3 className="font-bold text-white text-sm leading-none">
-                Ponto de Rastreio
-              </h3>
-              <p className="text-[10px] text-cyan-400/80 font-mono mt-0.5">
-                ID: {pointInfo.point.id.slice(0, 8)}...
-              </p>
-            </div>
-          </div>
-          <Button
-            onClick={onClose}
-            size="sm"
-            variant="ghost"
-            className="h-8 w-8 p-0 text-slate-400 hover:text-white hover:bg-slate-800/50 rounded-full"
-          >
-            <X className="w-4 h-4" />
-          </Button>
-        </div>
-
-        <div className="grid grid-cols-2 gap-2 mb-4">
-          <div className="bg-slate-950/50 p-2 rounded-lg border border-slate-800/50 flex flex-col">
-            <span className="text-[9px] uppercase text-slate-500 font-semibold mb-0.5 flex items-center gap-1">
-              <MapPin className="w-3 h-3" /> Latitude
-            </span>
-            <span className="font-mono text-xs text-cyan-50 font-medium truncate">
-              {pointInfo.point.lat?.toFixed(6)}
-            </span>
-          </div>
-          <div className="bg-slate-950/50 p-2 rounded-lg border border-slate-800/50 flex flex-col">
-            <span className="text-[9px] uppercase text-slate-500 font-semibold mb-0.5 flex items-center gap-1">
-              <MapPin className="w-3 h-3" /> Longitude
-            </span>
-            <span className="font-mono text-xs text-cyan-50 font-medium truncate">
-              {pointInfo.point.lng?.toFixed(6)}
-            </span>
-          </div>
-        </div>
-
-        <Button
-          onClick={() => {
-            onSelectStart(pointInfo.point);
-            onClose();
-          }}
-          className={`w-full h-10 text-xs font-bold uppercase tracking-wider transition-all duration-300 border ${
-            selectedStartPoint && selectedStartPoint.id === pointInfo.point.id
-            ? 'bg-green-500/20 border-green-500/50 text-green-400 cursor-default shadow-[0_0_15px_rgba(34,197,94,0.15)]'
-            : 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400 hover:bg-cyan-500/30 hover:border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.15)]'
-          }`}
-          disabled={selectedStartPoint && selectedStartPoint.id === pointInfo.point.id}
-        >
-          {selectedStartPoint && selectedStartPoint.id === pointInfo.point.id ? (
-            <>
-              <CheckCircle className="w-4 h-4 mr-2" /> Ponto Inicial Atual
-            </>
-          ) : (
-            <>
-              <Navigation className="w-4 h-4 mr-2 fill-current" /> Usar como Início
-            </>
-          )}
-        </Button>
-      </div>
-    </div>
-  );
-};
 
 function App() {
   
@@ -2974,420 +2724,108 @@ const addPoint = (position) => {
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-slate-900">
       <div className="absolute inset-0 z-0">
-        <Map
+        <MapView
           ref={mapRef}
           initialViewState={{
             longitude: -35.7353,
             latitude: -9.6658,
             zoom: 13
           }}
-          style={{ width: '100%', height: '100%', position: 'relative' }}
-          mapStyle={mapStyles[mapStyle].url}
+          mapStyleUrl={mapStyles[mapStyle].url}
           mapboxAccessToken={mapboxToken}
-          cursor={tracking && trackingInputMode === 'touch' && !paused ? 'crosshair' : 'auto'}
-          preserveDrawingBuffer={true}
-          onClick={async (e) => {
-    // 1. Verificação de segurança: O mapa está carregado?
-    if (!mapRef.current) return;
+          tracking={tracking}
+          trackingInputMode={trackingInputMode}
+          paused={paused}
+          onMapClick={async (e) => {
+            // 1. Verificação de segurança: O mapa está carregado?
+            if (!mapRef.current) return;
 
-    // 2. Tenta pegar features de marcadores (Markers)
-    const markerLayers = ['markers-hit-area', 'markers-layer'].filter(id => 
-      mapRef.current.getLayer(id)
-    );
-    
-    let features = [];
-    if (markerLayers.length > 0) {
-      features = e.target.queryRenderedFeatures(e.point, {
-        layers: markerLayers
-      });
-    }
-    
-    // Lógica do segmento (Traçado)
-    if (tracking && !paused) {
-      const segmentLayers = ['segment-hit-area', 'segment-badge-bg'].filter(id => 
-        mapRef.current.getLayer(id)
-      );
+            // 2. Tenta pegar features de marcadores (Markers)
+            const markerLayers = ['markers-hit-area', 'markers-layer'].filter(id =>
+              mapRef.current.getLayer(id)
+            );
 
-      if (segmentLayers.length > 0) {
-        const segmentFeatures = e.target.queryRenderedFeatures(e.point, {
-          layers: segmentLayers
-        });
+            let features = [];
+            if (markerLayers.length > 0) {
+              features = e.target.queryRenderedFeatures(e.point, {
+                layers: markerLayers
+              });
+            }
 
-        if (segmentFeatures.length > 0) {
-          const feature = segmentFeatures[0];
-          setSpanSelectorInfo({
-            x: e.point.x,
-            y: e.point.y,
-            targetPointId: feature.properties.targetPointId,
-            currentSpans: feature.properties.spans
-          });
-          return;
-        }
-      }
-    }
-    
-    setSpanSelectorInfo(null);
+            // Lógica do segmento (Traçado)
+            if (tracking && !paused) {
+              const segmentLayers = ['segment-hit-area', 'segment-badge-bg'].filter(id =>
+                mapRef.current.getLayer(id)
+              );
 
-    // Lógica de clique no Marcador
-    if (features.length > 0) {
-      const feature = features[0];
-      const markerData = {
-        ...feature.properties,
-        lat: feature.geometry.coordinates[1],
-        lng: feature.geometry.coordinates[0]
-      };
-      
-      setPopupMarker(markerData);
-      return;
-    }
-
-    // Lógica de adicionar ponto (Toque)
-    if (tracking && trackingInputMode === 'touch' && !paused) {
-      const { lat, lng } = e.lngLat;
-      
-      if (snappingEnabled) {
-        try {
-          const snapped = await RoadSnappingService.snapToRoad(lat, lng);
-          if (snapped.snapped) {
-            addPoint({ lat: snapped.lat, lng: snapped.lng });
-          } else {
-            addPoint({ lat, lng });
-          }
-        } catch (error) {
-          console.warn('Erro no snapping de toque:', error);
-          addPoint({ lat, lng });
-        }
-      } else {
-        addPoint({ lat, lng });
-      }
-      return;
-    }
-
-    setPopupMarker(null); 
-  }}
-        >
-          <NavigationControl position="top-right" />
-
-          {/* CAMADA DE MARCADORES OTIMIZADA */}
-          <Source id="markers-source" type="geojson" data={markersGeoJSON}>
-            <Layer
-              id="markers-layer"
-              type="circle"
-              paint={{
-                'circle-radius': [
-                  'interpolate', ['linear'], ['zoom'],
-                  10, 4,
-                  15, 8
-                ],
-                'circle-color': ['get', 'color'],
-                'circle-stroke-width': 2,
-                'circle-stroke-color': '#ffffff',
-                'circle-opacity': 0.9
-              }}
-            />
-            <Layer
-              id="markers-hit-area"
-              type="circle"
-              paint={{
-                'circle-radius': 20,
-                'circle-color': 'transparent',
-                'circle-opacity': 0
-              }}
-            />
-          </Source>
-
-          {loadedProjects.map(project => (
-            <Source 
-              key={`source-${project.id}`}
-              id={`route-${project.id}`} 
-              type="geojson" 
-              data={{
-                type: 'FeatureCollection',
-                features: [
-                  {
-                    type: 'Feature',
-                    geometry: {
-                      type: 'LineString',
-                      coordinates: project.points
-                        .filter(point => !point.connectedFrom)
-                        .map(point => [point.lng, point.lat])
-                    }
-                  },
-                  ...project.points
-                    .filter(point => point.connectedFrom)
-                    .map(point => {
-                      const parent = project.points.find(p => p.id === point.connectedFrom);
-                      return parent ? {
-                        type: 'Feature',
-                        geometry: {
-                          type: 'LineString',
-                          coordinates: [[parent.lng, parent.lat], [point.lng, point.lat]]
-                        }
-                      } : null;
-                    }).filter(Boolean)
-                ]
-              }}
-            >
-              <Layer
-  id={`route-layer-${project.id}`}
-  type="line"
-  paint={{
-    'line-color': project.color,
-    'line-width': [
-      'interpolate', ['linear'], ['zoom'],
-      10, 1,
-      15, 3,
-      22, 6
-    ],
-    'line-opacity': 0.8
-  }}
-/>
-            </Source>
-          ))}
-
-          {loadedProjects.map(project => (
-            <React.Fragment key={`markers-${project.id}`}>
-              {project.points.map((point, index) => (
-                <PoleMarker
-                  key={point.id}
-                  point={point}
-                  index={index + 1}
-                  color={project.color}
-                  isActive={false}
-                  onClick={(e) => {
-                    e.originalEvent.stopPropagation();
-                    setPointPopupInfo({
-                      point,
-                      pointNumber: index + 1,
-                      projectName: project.name,
-                      projectId: project.id,
-                      totalPoints: project.points.length,
-                      color: project.color,
-                      isManualPoint: false
-                    });
-                  }}
-                />
-              ))}
-            </React.Fragment>
-          ))}
-
-          {/* CAMADA DE TRAÇADO COM VÃOS */}
-          {manualPoints.length > 0 && (
-            <Source id="segments-source" type="geojson" data={segmentsGeoJSON}>
-              <Layer
-                id="segment-hit-area"
-                type="line"
-                paint={{
-                  'line-width': 20,
-                  'line-opacity': 0
-                }}
-              />
-
-              <Layer
-  id="segment-line"
-  type="line"
-  layout={{
-    'line-join': 'round',
-    'line-cap': 'round'
-  }}
-  paint={{
-    'line-color': ['get', 'color'],
-    'line-width': [
-      'interpolate', ['linear'], ['zoom'],
-      10, 1,
-      15, 3,
-      22, 6
-    ],
-    'line-opacity': 0.9
-  }}
-/>
-
-              <Layer
-                id="segment-badge-bg"
-                type="circle"
-                filter={['==', 'type', 'badge']}
-                paint={{
-                  'circle-radius': 8,
-                  'circle-color': '#0f172a',
-                  'circle-stroke-width': 2,
-                  'circle-stroke-color': ['get', 'color']
-                }}
-              />
-
-              <Layer
-                id="segment-badge-text"
-                type="symbol"
-                filter={['==', 'type', 'badge']}
-                layout={{
-                  'text-field': ['get', 'label'],
-                  'text-size': 10,
-                  'text-font': ['DIN Offc Pro Bold', 'Arial Unicode MS Bold'],
-                  'text-allow-overlap': true
-                }}
-                paint={{
-                  'text-color': '#ffffff'
-                }}
-              />
-            </Source>
-          )}
-
-          {manualPoints.map((point, index) => (
-            <PoleMarker
-              key={point.id}
-              point={point}
-              index={index + 1}
-              color="#1e3a8a"
-              isActive={selectedStartPoint && selectedStartPoint.id === point.id}
-              onClick={(e) => {
-                e.originalEvent.stopPropagation();
-                setPointPopupInfo({
-                  point,
-                  pointNumber: index + 1,
-                  isManualPoint: true,
-                  totalPoints: manualPoints.length
+              if (segmentLayers.length > 0) {
+                const segmentFeatures = e.target.queryRenderedFeatures(e.point, {
+                  layers: segmentLayers
                 });
-              }}
-            />
-          ))}
 
-          {routeCoordinates.length > 0 && (
-            <Source id="calculated-route" type="geojson" data={{
-              type: 'Feature',
-              geometry: {
-                type: 'LineString',
-                coordinates: routeCoordinates.map(c => [c[1], c[0]])
+                if (segmentFeatures.length > 0) {
+                  const feature = segmentFeatures[0];
+                  setSpanSelectorInfo({
+                    x: e.point.x,
+                    y: e.point.y,
+                    targetPointId: feature.properties.targetPointId,
+                    currentSpans: feature.properties.spans
+                  });
+                  return;
+                }
               }
-            }}>
-              <Layer
-                id="calculated-route-layer"
-                type="line"
-                paint={{
-                  'line-color': '#06B6D4',
-                  'line-width': 4,
-                  'line-opacity': 0.8
-                }}
-              />
-            </Source>
-          )}
+            }
 
-          {currentPosition && (
-            <Marker longitude={currentPosition.lng} latitude={currentPosition.lat}>
-              <div className="current-position-marker" />
-            </Marker>
-          )}
+            setSpanSelectorInfo(null);
 
-          {pointPopupInfo && pointPopupInfo.isManualPoint && (
-            <Popup
-              longitude={pointPopupInfo.point.lng}
-              latitude={pointPopupInfo.point.lat}
-              onClose={() => setPointPopupInfo(null)}
-              className="modern-popup"
-              closeButton={false}
-              anchor="bottom"
-              offset={20}
-              maxWidth="300px"
-            >
-              <TrackingPointPopupContent 
-                pointInfo={pointPopupInfo}
-                onClose={() => setPointPopupInfo(null)}
-                onSelectStart={selectPointAsStart}
-                selectedStartPoint={selectedStartPoint}
-                manualPoints={manualPoints}
-              />
-            </Popup>
-          )}
+            // Lógica de clique no Marcador
+            if (features.length > 0) {
+              const feature = features[0];
+              const markerData = {
+                ...feature.properties,
+                lat: feature.geometry.coordinates[1],
+                lng: feature.geometry.coordinates[0]
+              };
 
-          {pointPopupInfo && pointPopupInfo.point && !pointPopupInfo.isManualPoint && (
-            <Popup
-              longitude={pointPopupInfo.point.lng}
-              latitude={pointPopupInfo.point.lat}
-              onClose={() => setPointPopupInfo(null)}
-              className="modern-popup"
-              closeButton={false}
-              maxWidth="300px"
-              anchor="bottom"
-              offset={15}
-            >
-              <div className="w-[260px] bg-slate-900/95 backdrop-blur-md border border-slate-700 rounded-xl shadow-2xl overflow-hidden flex flex-col">
-                
-                <div className="relative p-3 flex items-center justify-between bg-slate-800/50 border-b border-slate-700/50">
-                  <div 
-                    className="absolute left-0 top-0 bottom-0 w-1"
-                    style={{ backgroundColor: pointPopupInfo.color }}
-                  />
-                  
-                  <div className="pl-2 flex flex-col overflow-hidden">
-                    <span className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">
-                      Projeto
-                    </span>
-                    <span className="text-sm font-bold text-white truncate leading-tight" title={pointPopupInfo.projectName}>
-                      {pointPopupInfo.projectName}
-                    </span>
-                  </div>
+              setPopupMarker(markerData);
+              return;
+            }
 
-                  <button
-                    onClick={() => setPointPopupInfo(null)}
-                    className="h-6 w-6 flex items-center justify-center rounded-full bg-slate-700 text-slate-400 hover:bg-slate-600 hover:text-white transition-colors"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                </div>
+            // Lógica de adicionar ponto (Toque)
+            if (tracking && trackingInputMode === 'touch' && !paused) {
+              const { lat, lng } = e.lngLat;
 
-                <div className="p-3 space-y-3">
-                  
-                  <div className="flex items-center gap-3">
-                    <div 
-                      className="flex items-center justify-center w-10 h-10 rounded-lg bg-slate-800 border border-slate-700 shadow-inner"
-                    >
-                      <span 
-                        className="text-lg font-bold" 
-                        style={{ color: pointPopupInfo.color }}
-                      >
-                        {pointPopupInfo.pointNumber}
-                      </span>
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="text-xs text-slate-300 font-medium">Ponto de Traçado</span>
-                      <span className="text-[10px] text-slate-500">
-                        Total de {pointPopupInfo.totalPoints} pontos
-                      </span>
-                    </div>
-                  </div>
+              if (snappingEnabled) {
+                try {
+                  const snapped = await RoadSnappingService.snapToRoad(lat, lng);
+                  if (snapped.snapped) {
+                    addPoint({ lat: snapped.lat, lng: snapped.lng });
+                  } else {
+                    addPoint({ lat, lng });
+                  }
+                } catch (error) {
+                  console.warn('Erro no snapping de toque:', error);
+                  addPoint({ lat, lng });
+                }
+              } else {
+                addPoint({ lat, lng });
+              }
+              return;
+            }
 
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="bg-slate-950/50 p-2 rounded border border-slate-800 flex flex-col">
-                      <span className="text-[9px] uppercase text-slate-500 font-semibold mb-0.5">Latitude</span>
-                      <span className="font-mono text-xs text-cyan-400 font-medium truncate">
-                        {pointPopupInfo.point.lat?.toFixed(7)}
-                      </span>
-                    </div>
-                    <div className="bg-slate-950/50 p-2 rounded border border-slate-800 flex flex-col">
-                      <span className="text-[9px] uppercase text-slate-500 font-semibold mb-0.5">Longitude</span>
-                      <span className="font-mono text-xs text-cyan-400 font-medium truncate">
-                        {pointPopupInfo.point.lng?.toFixed(7)}
-                      </span>
-                    </div>
-                  </div>
-
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="w-full h-7 text-xs border border-dashed border-slate-700 text-slate-400 hover:text-white hover:bg-slate-800 hover:border-slate-500 transition-all"
-                    onClick={() => {
-                      const coords = `${pointPopupInfo.point.lat}, ${pointPopupInfo.point.lng}`;
-                      navigator.clipboard.writeText(coords);
-                    }}
-                  >
-                    <span className="flex items-center gap-2">
-                      <MapPin className="w-3 h-3" /> Copiar Coordenadas
-                    </span>
-                  </Button>
-
-                </div>
-              </div>
-            </Popup>
-          )}
-        </Map>
+            setPopupMarker(null);
+          }}
+          markersGeoJSON={markersGeoJSON}
+          loadedProjects={loadedProjects}
+          manualPoints={manualPoints}
+          segmentsGeoJSON={segmentsGeoJSON}
+          routeCoordinates={routeCoordinates}
+          currentPosition={currentPosition}
+          pointPopupInfo={pointPopupInfo}
+          setPointPopupInfo={setPointPopupInfo}
+          selectedStartPoint={selectedStartPoint}
+          onSelectStart={selectPointAsStart}
+        />
         
         {/* 5. NOVO CONTROLE DE MAPA E GPS (Substitui os botões antigos) */}
         <MapControls 
